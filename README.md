@@ -1,57 +1,17 @@
-# Local-Inertial 2D Flood Solver — Reference Implementation
+# Urban Pluvial Flood Simulator
 
-A compact reference implementation for a **Rain-on-Grid urban flood model** using:
+A compact **Rain-on-Grid urban pluvial flood simulator** based on the 2D Local-Inertial shallow-water approximation.
 
-- GSI DEM1A (~1 m grid) preprocessing
-- 2D Local-Inertial approximation
-- adaptive global CFL
-- de Almeida-style discharge stabilization
-- semi-implicit Manning friction
-- wet/dry handling
-- positivity-preserving donor-cell limiter
-- buildings as no-flow cells
-- lower Manning roughness on roads
-- roof-rainfall redistribution with rainfall-mass conservation
-- OpenMP parallelization
+The preprocessing pipeline can now build a simulation area from only a latitude/longitude and size:
 
-This repository contains **no private location data, DEM files, map files, or simulation results**.
+- elevation: **GSI public elevation tiles**, preferring DEM1A (~1 m)
+- buildings/roads: **Project PLATEAU CityGML** first
+- vector fallback: **OpenStreetMap / Overpass** when PLATEAU is unavailable
+- hydraulic rasterization: building no-flow cells, lower road roughness, roof-rainfall redistribution
 
-## Repository layout
+The repository contains no private location data or bundled source datasets.
 
-```text
-.
-├─ README.md
-├─ CMakeLists.txt
-├─ requirements.txt
-├─ src/
-│  └─ solver.cpp
-├─ scripts/
-│  ├─ gsi_dem1a_to_npz.py
-│  ├─ gsi_basic_to_vectors.py
-│  ├─ prepare_inputs.py
-│  └─ plot_results.py
-└─ docs/
-   ├─ qiita_article.md
-   ├─ data_download.md
-   └─ references.md
-```
-
-## 1. Download source data
-
-For Japan, GSI Fundamental Geospatial Data can provide:
-
-- DEM1A: ~1 m elevation grid derived from airborne laser surveying
-- building outlines
-- road edges
-
-See:
-
-- https://service.gsi.go.jp/kiban/
-- `docs/data_download.md`
-
-The GSI service currently requires user registration/login for downloads.
-
-## 2. Install Python dependencies
+## Quick start: fully automatic input preparation
 
 ```bash
 python -m venv .venv
@@ -59,18 +19,104 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Windows PowerShell:
+Prepare a 2 km x 2 km area at 1 m grid spacing:
 
-```powershell
-python -m venv .venv; .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```bash
+python -m scripts.prepare_area \
+  --center-lat <LATITUDE> \
+  --center-lon <LONGITUDE> \
+  --half-size-m 1000 \
+  --grid-m 1 \
+  --out-dir area
 ```
 
-## 3. Convert DEM1A GML/ZIP to a local metric grid
+This performs:
+
+```text
+latitude / longitude
+        ↓
+GSI DEM1A elevation tiles
+        ↓  NoData fallback
+DEM5A -> DEM5B -> DEM5C -> DEM10B
+        ↓
+local metric DEM
+        ↓
+PLATEAU CityGML range query (bldg, tran)
+        ↓
+LOD0 building footprints + road geometry
+        ↓  if PLATEAU unavailable
+OpenStreetMap fallback
+        ↓
+raster hydraulic inputs
+```
+
+Outputs:
+
+```text
+area/
+├─ dem_1m.npz
+├─ dem_1m.json
+├─ manifest.json
+├─ cache/
+├─ vectors/
+│  ├─ buildings.npz
+│  ├─ basemap_vectors.npz
+│  └─ vectors_manifest.json
+└─ hydraulic_inputs/
+   ├─ z.bin
+   ├─ manning.bin
+   ├─ rain_weight.bin
+   ├─ building.bin
+   ├─ road.bin
+   └─ metadata.npz
+```
+
+`manifest.json` records the providers actually used. Do not assume every area has DEM1A or PLATEAU coverage.
+
+### Vector provider selection
+
+Default `--vector-provider auto` tries PLATEAU first and uses OSM only if PLATEAU cannot provide usable building data.
+
+```bash
+python -m scripts.prepare_area ... --vector-provider plateau
+python -m scripts.prepare_area ... --vector-provider osm
+```
+
+## GSI elevation acquisition
+
+The automatic downloader uses the public GSI PNG elevation tile service, so a GSI Fundamental Geospatial Data account is **not required** for the normal automatic workflow.
+
+Provider priority:
+
+1. DEM1A (`dem1a_png`, zoom 17)
+1. DEM5A (`dem5a_png`, zoom 15)
+1. DEM5B (`dem5b_png`, zoom 15)
+1. DEM5C (`dem5c_png`, zoom 15)
+1. DEM10B (`dem_png`, zoom 14)
+
+Tiles are decoded from GSI's signed 24-bit RGB elevation representation, mosaicked in Web Mercator, and reprojected to a local azimuthal-equidistant metric grid.
+
+- https://maps.gsi.go.jp/development/ichiran.html
+- https://maps.gsi.go.jp/development/demtile.html
+
+## PLATEAU building/road acquisition
+
+The automatic vector downloader queries the official PLATEAU distribution API by bounding box with `types=bldg,tran` and downloads only intersecting CityGML files.
+
+- API endpoint: `https://api.plateauview.mlit.go.jp`
+- docs: https://docs.plateauview.mlit.go.jp/datasets/citygml/
+
+PLATEAU CityGML commonly uses EPSG:6697 and stores coordinate tuples as `latitude longitude elevation`. Buildings prefer `lod0FootPrint`, then `lod0RoofEdge`, then `GroundSurface`. Roads prefer surface polygons when available and fall back to line geometry.
+
+The PLATEAU API is currently documented as a trial service, which is why `auto` mode has an OSM fallback.
+
+## Legacy/manual GSI GML workflow
+
+The original converters remain available when a version-pinned GML dataset is required:
 
 ```bash
 python scripts/gsi_dem1a_to_npz.py \
   --zip DEM1A_A.zip \
-  --zip DEM1A_B.zip \
   --center-lat <LATITUDE> \
   --center-lon <LONGITUDE> \
   --half-size-m 1000 \
@@ -78,82 +124,37 @@ python scripts/gsi_dem1a_to_npz.py \
   --out dem_1m.npz
 ```
 
-The script:
-
-1. reads only overlapping DEM1A GML tiles;
-2. restores `gml:startPoint` omissions;
-3. projects JGD2024 latitude/longitude data to a local AEQD metric CRS;
-4. resamples to a regular metric grid;
-5. optionally blends source seams with a cosine taper.
-
-## 4. Extract buildings and roads
-
 ```bash
 python scripts/gsi_basic_to_vectors.py \
   --zip BASIC_A.zip \
-  --zip BASIC_B.zip \
   --center-lat <LATITUDE> \
   --center-lon <LONGITUDE> \
   --half-size-m 1000 \
   --out-dir vectors
 ```
 
-Output:
+See `docs/data_download.md` for automatic vs version-pinned acquisition.
 
-```text
-vectors/buildings.npz
-vectors/basemap_vectors.npz
-```
-
-## 5. Prepare hydraulic arrays
-
-```bash
-python scripts/prepare_inputs.py \
-  --dem dem_1m.npz \
-  --buildings vectors/buildings.npz \
-  --vectors vectors/basemap_vectors.npz \
-  --out hydraulic_inputs
-```
-
-Default reference parameters:
-
-```text
-general Manning n = 0.030
-road Manning n    = 0.020
-road buffer       = 3 m
-```
-
-Roof rainfall is redistributed to building-perimeter ground cells. The preprocessing script prints a rainfall-mass check.
-
-## 6. Build the solver
-
-### CMake
+## Build the solver
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-### Direct GCC
+or:
 
 ```bash
 g++ -O3 -march=native -fopenmp -std=c++17 src/solver.cpp -o solver
 ```
 
-## 7. Run
+## Run
 
-Example: `2001 × 2001`, `dx=1 m`, `1 h`, `115 mm/h`.
+Example: `2001 x 2001`, `dx=1 m`, `1 h`, `115 mm/h`:
 
 ```bash
 OMP_NUM_THREADS=8 ./build/local_inertial_solver \
-  2001 1.0 3600 115 hydraulic_inputs result
-```
-
-Direct-GCC executable:
-
-```bash
-OMP_NUM_THREADS=8 ./solver \
-  2001 1.0 3600 115 hydraulic_inputs result
+  2001 1.0 3600 115 area/hydraulic_inputs result
 ```
 
 Outputs:
@@ -165,16 +166,29 @@ result_qx.bin     final x-face unit-width discharge
 result_qy.bin     final y-face unit-width discharge
 ```
 
-## 8. Plot maximum water depth
+## Plot maximum depth
 
 ```bash
 python scripts/plot_results.py \
-  --metadata hydraulic_inputs/metadata.npz \
+  --metadata area/hydraulic_inputs/metadata.npz \
   --prefix result \
   --out max_depth_rainbow.png
 ```
 
-## Core equations
+## Hydraulic model
+
+The reference implementation includes:
+
+- 2D Local-Inertial approximation
+- adaptive global CFL
+- de Almeida-style discharge stabilization
+- semi-implicit Manning friction
+- wet/dry handling
+- positivity-preserving donor-cell limiter
+- buildings as no-flow cells
+- lower Manning roughness on roads
+- roof-rainfall redistribution with rainfall-mass conservation
+- OpenMP parallelization
 
 Water-surface elevation:
 
@@ -186,10 +200,8 @@ Continuity:
 
 ```math
 \frac{\partial h}{\partial t}
-+
-\frac{\partial q_x}{\partial x}
-+
-\frac{\partial q_y}{\partial y}
++\frac{\partial q_x}{\partial x}
++\frac{\partial q_y}{\partial y}
 =R
 ```
 
@@ -205,53 +217,27 @@ q^{n+1}
 }
 ```
 
-with de Almeida-style weighting:
+## Tests
 
-```math
-\bar q
-=
-\theta q_i
-+
-\frac{1-\theta}{2}
-(q_{i-1}+q_{i+1})
+```bash
+pip install -r requirements-dev.txt
+pytest -q
 ```
 
-Reference value:
-
-```text
-theta = 0.8
-```
+Network integration and solver smoke-test instructions for Codex are in `CODEX_TEST_PLAN.md`.
 
 ## Important limitations
 
-This is a **research/reference implementation**, not an operational flood-warning product.
+This is a research/reference implementation, not an operational flood-warning product. It does not currently model sewer networks, storm-drain inlet capacity, infiltration, detailed curbs/walls, building-entry flooding, river-stage boundaries, or full advective inertia.
 
-It does not currently model:
-
-- sewer networks
-- storm-drain inlet capacity
-- infiltration
-- curbs and small walls unless present in the DEM
-- building-entry flooding
-- river-stage boundary conditions
-- full advective inertia
-
-At 1 m resolution, DEM uncertainty and urban geometry can materially affect results. GSI describes DEM1A as approximately 1 m grid spacing with elevation standard deviation within 0.3 m; grid spacing is not the same as vertical accuracy.
-
-Always perform:
-
-- timestep-sensitivity checks
-- mass-balance checks
-- wet/dry checks
-- boundary-condition checks
-- comparison with established hydraulic software where possible
+At 1 m resolution, DEM uncertainty and urban geometry can materially affect results. Grid spacing is not vertical accuracy.
 
 ## Documentation
 
-- Qiita draft: `docs/qiita_article.md`
-- GSI download guide: `docs/data_download.md`
-- Primary references: `docs/references.md`
+- data acquisition: `docs/data_download.md`
+- primary references: `docs/references.md`
+- Codex validation: `CODEX_TEST_PLAN.md`
 
 ## License
 
-No license has been selected in this package. Choose an appropriate license before publishing the GitHub repository.
+No license has been selected yet. Choose an appropriate license before broad redistribution.
