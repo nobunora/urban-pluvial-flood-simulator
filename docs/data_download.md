@@ -1,68 +1,163 @@
-# 国土地理院の1m級DEM（DEM1A）を入手する
+# Automatic terrain and urban-geometry acquisition
 
-## 公式入口
+## Recommended workflow
 
-- 基盤地図情報サイト: https://www.gsi.go.jp/kiban/
-- 基盤地図情報ダウンロードサービス: https://service.gsi.go.jp/kiban/
-- 高精度標高データ: https://www.gsi.go.jp/gazochosa/gazochosa41019.html
+The normal workflow no longer requires manually downloading GSI ZIP files.
 
-## DEM1Aのダウンロード
+```bash
+python -m scripts.prepare_area \
+  --center-lat <LATITUDE> \
+  --center-lon <LONGITUDE> \
+  --half-size-m 1000 \
+  --grid-m 1 \
+  --out-dir area
+```
 
-2026年8月時点の基本的な手順です。
+This automatically acquires elevation and urban geometry, caches downloaded source files, and creates the binary arrays consumed by `src/solver.cpp`.
 
-1. 基盤地図情報ダウンロードサービスを開く
-1. 無料の利用者登録を行い、ログインする
-1. `数値標高モデル`を選択する
-1. 通常は`最新データ`を選ぶ
-1. `1mメッシュ` → `1A（航空レーザ測量）`を選ぶ
-1. 地図上で必要な範囲を選択する
-1. 検索結果をダウンロードリストへ追加する
-1. ZIPを取得する
+## Elevation: public GSI elevation tiles
 
-数値標高モデルの配布形式はJPGIS（GML）です。
+GSI publishes PNG elevation tiles at:
 
-1m DEMのデータ本体は3次メッシュ単位で提供されます。ダウンロードZIPの中に複数のXML/GMLが含まれることがあります。
+```text
+https://cyberjapandata.gsi.go.jp/xyz/dem1a_png/{z}/{x}/{y}.png
+https://cyberjapandata.gsi.go.jp/xyz/dem5a_png/{z}/{x}/{y}.png
+https://cyberjapandata.gsi.go.jp/xyz/dem5b_png/{z}/{x}/{y}.png
+https://cyberjapandata.gsi.go.jp/xyz/dem5c_png/{z}/{x}/{y}.png
+https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png
+```
 
-## 重要：1mは水平格子間隔
+Official tile list:
 
-DEM1Aは航空レーザ測量を基にした約1m格子です。
+https://maps.gsi.go.jp/development/ichiran.html
 
-国土地理院の標高タイル説明では、DEM1Aの標高精度は標準偏差0.3m以内とされています。
+The automatic downloader uses the highest native published zoom for each source and fills only missing cells from lower-resolution models.
 
-つまり、`1mメッシュ`は「1mごとに標高値がある」という意味であって、「高さが1mあるいは数cmの精度で必ず正しい」という意味ではありません。
+Priority:
 
-洪水解析では数cm〜数十cmの差が流路を変える場合があるため、この点は重要です。
+```text
+DEM1A -> DEM5A -> DEM5B -> DEM5C -> DEM10B
+```
 
-公式説明:
+DEM1A is approximately a 1 m elevation grid derived from airborne laser surveying where available. GSI's stated vertical accuracy is not 1 m simply because the horizontal grid is approximately 1 m.
+
 https://maps.gsi.go.jp/development/hyokochi.html
 
-## 提供範囲
+### PNG elevation decoding
 
-DEM1Aは順次提供範囲が拡大されていますが、必要な場所に必ず存在するとは限りません。
+GSI stores an elevation code in RGB:
 
-最新範囲は次のページで確認してください。
+```text
+x = 2^16 R + 2^8 G + B
+```
 
-https://www.gsi.go.jp/gazochosa/gazochosa41019.html
+The decoder handles positive values, signed negative values, and the NoData sentinel according to the official tile specification:
 
-DEM1Aがない場合は、DEM5Aなどを候補にします。
+https://maps.gsi.go.jp/development/demtile.html
 
-## 建物・道路を取得する
+### Why keep the manual GML converter?
 
-同じ基盤地図情報ダウンロードサービスの`基本項目`から、都市水理モデルに使える地物も取得できます。
+Live elevation tiles are convenient and automatic, but their content can be updated. For a paper, benchmark, or long-term reproducible run, it may be preferable to archive a specific Fundamental Geospatial Data GML release and use `gsi_dem1a_to_npz.py`.
 
-今回の参考実装で利用する主なものは次です。
+## Buildings and roads: PLATEAU first
 
-- 建築物の外周線
-- 道路縁
+Project PLATEAU provides an official distribution API:
 
-公式説明:
-https://www.gsi.go.jp/kiban/towa.html
+https://docs.plateauview.mlit.go.jp/api/rest/
 
-## DEM1A ZIPを解析用NPZへ変換する
+The downloader constructs a bounding-box query such as:
+
+```text
+GET https://api.plateauview.mlit.go.jp/datacatalog/citygml/r:<lon1>,<lat1>,<lon2>,<lat2>?types=bldg,tran
+```
+
+The API returns CityGML file URLs grouped by feature type. Only the intersecting building (`bldg`) and transportation (`tran`) files are downloaded.
+
+PLATEAU CityGML documentation:
+
+https://docs.plateauview.mlit.go.jp/datasets/citygml/
+
+### Coordinate handling
+
+PLATEAU commonly uses EPSG:6697. Its CityGML coordinate tuples are written in axis order:
+
+```text
+latitude longitude elevation
+```
+
+The downloader ignores the vertical component for footprint generation and transforms the horizontal coordinates to a local AEQD metric CRS centred on the requested simulation area.
+
+Official explanation:
+
+https://www.mlit.go.jp/plateau/learning/tpc03-4/
+
+### Footprint extraction priority
+
+For buildings:
+
+1. `lod0FootPrint`
+1. `lod0RoofEdge`
+1. `GroundSurface`
+1. remaining polygon geometry as a final conservative fallback
+
+For roads, polygon surfaces are preferred. When only network lines are available, the hydraulic rasterizer buffers them by `--road-half-width`.
+
+## PLATEAU fallback
+
+The PLATEAU API is documented as trial/experimental and PLATEAU coverage is not universal. The default:
+
+```text
+--vector-provider auto
+```
+
+therefore performs:
+
+```text
+PLATEAU
+   ↓ unavailable / no usable building footprint
+OpenStreetMap Overpass
+```
+
+OSM is a fallback, not equivalent-quality authoritative data. Completeness varies by region and `manifest.json` records when it was used.
+
+To prohibit fallback:
+
+```bash
+--vector-provider plateau
+```
+
+## Cache and reproducibility
+
+Downloaded GSI tiles, PLATEAU CityGML files, and OSM responses are cached under the selected output directory. A second identical preprocessing run should reuse the cache and produce the same raster inputs as long as the cached source files are retained.
+
+`manifest.json` records:
+
+- centre and area size
+- DEM source-cell counts
+- nearest-filled cell count
+- vector provider
+- PLATEAU city/year/spec metadata where available
+- hydraulic raster fractions and rain-weight mass check
+
+For reproducible publication work, archive both the manifest and cache/source data used for the run.
+
+## Attribution and terms
+
+Source data are not relicensed by this repository. Users are responsible for complying with current source-provider terms and attribution requirements.
+
+- GSI tiles: https://maps.gsi.go.jp/development/ichiran.html
+- PLATEAU: https://www.mlit.go.jp/plateau/open-data/
+- OpenStreetMap: https://www.openstreetmap.org/copyright
+
+## Manual Fundamental Geospatial Data path
+
+The old path remains useful when a version-pinned GML/ZIP is required.
+
+DEM:
 
 ```bash
 python scripts/gsi_dem1a_to_npz.py \
-  --zip DEM1A_A.zip \
+  --zip FG-GML-XXXXXX-DEM1A-YYYYMMDD.zip \
   --center-lat <LATITUDE> \
   --center-lon <LONGITUDE> \
   --half-size-m 1000 \
@@ -70,48 +165,18 @@ python scripts/gsi_dem1a_to_npz.py \
   --out dem_1m.npz
 ```
 
-ダウンロードファイル境界をまたぐ場合は`--zip`を繰り返します。
-
-```bash
-python scripts/gsi_dem1a_to_npz.py \
-  --zip DEM1A_A.zip \
-  --zip DEM1A_B.zip \
-  --zip DEM1A_C.zip \
-  --center-lat <LATITUDE> \
-  --center-lon <LONGITUDE> \
-  --half-size-m 1000 \
-  --grid-m 1 \
-  --out dem_1m.npz
-```
-
-引数で先に書いたZIPほど優先度が高く、完全重複地点では先頭ソースを採用します。
-
-デフォルトでは、異なるソース境界の人工段差を20m幅のcosine taperで補正します。無効化する場合は次を指定します。
-
-```bash
---blend-width-m 0
-```
-
-## 基本項目ZIPを建物・道路ベクトルへ変換する
+Buildings/roads:
 
 ```bash
 python scripts/gsi_basic_to_vectors.py \
   --zip BASIC_A.zip \
-  --zip BASIC_B.zip \
   --center-lat <LATITUDE> \
   --center-lon <LONGITUDE> \
   --half-size-m 1000 \
   --out-dir vectors
 ```
 
-出力:
-
-```text
-vectors/buildings.npz
-vectors/basemap_vectors.npz
-```
-
-## 水理入力を作る
+Then:
 
 ```bash
 python scripts/prepare_inputs.py \
@@ -120,23 +185,3 @@ python scripts/prepare_inputs.py \
   --vectors vectors/basemap_vectors.npz \
   --out hydraulic_inputs
 ```
-
-## 国土地理院GMLで注意する点
-
-国土地理院FAQでは、数値標高モデルの構成点は北西端から開始し、西→東へ進んだ後、南方向へ行を進める順序とされています。
-
-また先頭の無効値が連続する場合、`gml:startPoint`によって省略される場合があります。
-
-参考スクリプト`gsi_dem1a_to_npz.py`ではこれを考慮して配列を復元します。
-
-公式FAQ:
-https://service.gsi.go.jp/kiban/app/faq/
-
-## タイル境界について
-
-国土地理院は、元となる標高モデルが変わる境界などで標高値が不連続になる場合があると説明しています。
-
-公式説明:
-https://maps.gsi.go.jp/development/hyokochi.html
-
-洪水解析では小さな段差でも人工的な堤防として働く可能性があるため、境界確認を推奨します。
