@@ -10,8 +10,12 @@ The proposed v0.1 product direction is to use **SFINCS** as the primary hydrauli
 
 Draft specifications:
 
-- product specification: `docs/PRODUCT_SPEC_DRAFT.md`
-- detailed implementation-specification template: `docs/IMPLEMENTATION_SPEC_TEMPLATE.md`
+- product specification (canonical English): `docs/PRODUCT_SPEC_DRAFT.md`
+- product specification (Japanese reference translation): `docs/PRODUCT_SPEC_DRAFT.ja.md`
+- detailed implementation-specification template (canonical English): `docs/IMPLEMENTATION_SPEC_TEMPLATE.md`
+- detailed implementation-specification template (Japanese reference translation): `docs/IMPLEMENTATION_SPEC_TEMPLATE.ja.md`
+
+The English files are the source of truth. The Japanese files are maintained as human-readable reference translations; if the two versions conflict, the English version takes precedence.
 
 These documents are intentionally drafts. They distinguish what v0.1 will implement, what is deferred, and what the project should never claim or become.
 
@@ -249,8 +253,10 @@ At 1 m resolution, DEM uncertainty and urban geometry can materially affect resu
 
 ## Documentation
 
-- product specification draft: `docs/PRODUCT_SPEC_DRAFT.md`
-- implementation specification template: `docs/IMPLEMENTATION_SPEC_TEMPLATE.md`
+- product specification draft (canonical English): `docs/PRODUCT_SPEC_DRAFT.md`
+- product specification draft (Japanese reference translation): `docs/PRODUCT_SPEC_DRAFT.ja.md`
+- implementation specification template (canonical English): `docs/IMPLEMENTATION_SPEC_TEMPLATE.md`
+- implementation specification template (Japanese reference translation): `docs/IMPLEMENTATION_SPEC_TEMPLATE.ja.md`
 - data acquisition: `docs/data_download.md`
 - primary references: `docs/references.md`
 - Codex validation: `CODEX_TEST_PLAN.md`
