@@ -230,7 +230,9 @@ def download_dem(center_lat: float, center_lon: float, half_size_m: float = 1000
         "providers": counts,
         "nearest_filled_cells": nearest_filled,
         "missing_fraction_before_nearest_fill": missing_fraction,
-        "attribution": "Geospatial Information Authority of Japan (GSI)",
+        "attribution": "地理院タイル（標高タイル）を加工して作成",
+        "attribution_url": "https://maps.gsi.go.jp/development/ichiran.html",
+        "terms_url": "https://www.gsi.go.jp/kikakuchousei/kikakuchousei40182.html",
         "tile_url": "https://cyberjapandata.gsi.go.jp/xyz/{layer}/{z}/{x}/{y}.png",
     }
     out.with_suffix(".json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")

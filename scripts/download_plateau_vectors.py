@@ -276,7 +276,9 @@ def download_plateau_vectors(center_lat: float, center_lon: float, half_size_m: 
         "building_polygons": len(buildings),
         "road_lines": len(roads),
         "road_polygons": len(road_polygons),
-        "attribution": "Project PLATEAU, Ministry of Land, Infrastructure, Transport and Tourism",
+        "attribution": "Project PLATEAU 3D都市モデル（各地方公共団体）を加工して作成",
+        "license": "Public Data License 1.0 / CC BY 4.0 / ODC BY / ODbL",
+        "license_url": "https://www.mlit.go.jp/plateau/site-policy/",
     }
     (out / "vectors_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return manifest

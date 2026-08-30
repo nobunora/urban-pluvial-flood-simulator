@@ -1,0 +1,54 @@
+name: Spec ready gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-spec-contract:
+    if: contains(github.event.pull_request.labels.*.name, 'codex-ready')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate changed specifications
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE_REF" --depth=1
+          mapfile -t specs < <(git diff --name-only "origin/$BASE_REF...HEAD" -- 'docs/specs/*.md' | grep -v '/README.md$' | grep -v '/SPEC_TEMPLATE.md$' || true)
+
+          if (( ${#specs[@]} == 0 )); then
+            echo "codex-ready requires at least one changed specification under docs/specs/." >&2
+            exit 1
+          fi
+
+          required=(
+            '## Goal'
+            '## Scope'
+            '## Non-goals'
+            '## Requirements / Invariants'
+            '## Acceptance Criteria'
+            '## Validation'
+          )
+
+          for spec in "${specs[@]}"; do
+            echo "Validating $spec"
+            for heading in "${required[@]}"; do
+              if ! grep -Fqx "$heading" "$spec"; then
+                echo "$spec is missing required heading: $heading" >&2
+                exit 1
+              fi
+            done
+          done
+
+          echo "Specification contract gate passed."
+

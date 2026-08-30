@@ -1,0 +1,5 @@
+interface:
+  display_name: "Readable Code Audit"
+  short_description: "Audit all source files for readable-code refactoring issues"
+  default_prompt: "Audit this repository against the readable-code checklist and report findings with file and line references."
+

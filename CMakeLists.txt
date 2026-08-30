@@ -11,7 +11,9 @@ add_executable(local_inertial_solver src/solver.cpp)
 target_link_libraries(local_inertial_solver PRIVATE OpenMP::OpenMP_CXX)
 
 if(MSVC)
-    target_compile_options(local_inertial_solver PRIVATE /O2)
+    # MSVC's classic OpenMP mode does not support the max reductions used by
+    # the solver. Select the LLVM OpenMP frontend explicitly on Windows.
+    target_compile_options(local_inertial_solver PRIVATE /O2 /openmp:llvm)
 else()
     target_compile_options(local_inertial_solver PRIVATE -O3 -march=native)
 endif()
