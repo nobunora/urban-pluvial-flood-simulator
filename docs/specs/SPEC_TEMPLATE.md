@@ -2,7 +2,9 @@
 
 > Status: Draft / Ready / Validated
 >
-> Canonical file/language:
+> Contract shape: standard / specialized-detailed / specialized-ui
+>
+> Canonical file/language: English
 >
 > Parent/source-of-truth specification:
 >
@@ -36,6 +38,8 @@ List public APIs, persistent formats, configuration, hardware interfaces, protoc
 For implementation-independent specifications write `Not fixed here`.
 
 For detailed implementation contracts, list exact approved architecture/tool/dependency choices and prohibited substitutions. If a required tool cannot be used, the implementer must stop for specification revision rather than silently replace it.
+
+Distinguish **required capabilities** from optional repository-local wrappers. A wrapper documented elsewhere but absent from the repository is not a blocker unless this specification explicitly makes that wrapper a prerequisite or deliverable. In that case use the underlying deterministic tool directly and record the substitution.
 
 ## Inputs and Outputs
 
@@ -81,16 +85,19 @@ Provide a checklist defining exactly when this specification is complete. Passin
 
 ## Required Repository Tools
 
-Name project-native discovery/review tools when applicable, for example:
+Name required capabilities first. If project-native wrappers exist, name them as preferred interfaces, for example:
 
 ```text
-CodebaseMemory
-python3 scripts/repo_query.py ...
-python3 scripts/analyze.py ...
-rg
+CodebaseMemory (when available)
+git / rg
+CMake / compiler
+clang-tidy or project wrapper
+language-native test tools
+optional: python3 scripts/repo_query.py ...
+optional: python3 scripts/analyze.py ...
 ```
 
-Indexes are evidence aids; source remains authoritative.
+Indexes are evidence aids; source remains authoritative. Do not create unrelated helper infrastructure inside a product feature PR unless the specification explicitly requires it.
 
 ## Risks / Rollback
 
@@ -101,3 +108,16 @@ Describe material failure modes, migration concerns, rollback constraints, or st
 - None, or list questions that block repository validation.
 
 A `Ready`/`Validated` implementation contract should not contain an unresolved question that requires the implementer to choose product behavior.
+
+---
+
+## Specialized contract note
+
+A specialized detailed/UI contract may use a numbered structure instead of the standard headings above. For `codex-ready`, it must still explicitly state:
+
+- English canonical/source-of-truth status;
+- observable completion criteria;
+- explicit non-goals / not-implemented scope;
+- validation, tests, acceptance flows, or clear-condition evidence.
+
+Japanese `*.ja.md` reference translations are not required to reproduce English heading names and are excluded from the structural CI gate.
