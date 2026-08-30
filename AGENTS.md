@@ -19,6 +19,7 @@ Keep context small and act from evidence.
 - Do not leave debug code, commented-out code, or temporary bypasses behind.
 - Do not add new dependencies unless the need, maintenance cost, and risk are clear.
 - Report briefly: changed files, reason, checks run, risks, and open questions.
+- A repository-local helper described in docs is not automatically a prerequisite. If a documented wrapper such as `scripts/repo_query.py` or `scripts/analyze.py` is absent, record that fact and use the underlying deterministic tools (`git`, `rg`, CMake, clang/clang-tidy, language-native test tools) unless the approved task specification explicitly requires the wrapper itself to exist. Do not stop product work merely to build optional developer infrastructure.
 
 ## CodebaseMemory
 
@@ -53,4 +54,3 @@ Keep context small and act from evidence.
 - Do not parallelize checks that fight with the same watcher, browser, or dev server.
 - If a test or command cannot run, give the exact reason and the command a human should run.
 - Keep generated, cache, build, log, and artifact paths out of normal reads.
-
