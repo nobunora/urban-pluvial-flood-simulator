@@ -26,7 +26,19 @@ If translations are provided:
 
 - the canonical file must be identified explicitly;
 - translations must preserve requirement IDs and scope categories;
-- a translation must not silently introduce a new requirement.
+- a translation must not silently introduce a new requirement;
+- `*.ja.md` files are reference translations and are not required to duplicate English heading names.
+
+## `codex-ready` gate rule
+
+The GitHub `Spec ready gate` validates **canonical specification files only**. It ignores `README.md`, `SPEC_TEMPLATE.md`, and `*.ja.md` reference translations.
+
+Two contract shapes are accepted:
+
+- **standard contracts** using the template headings (`Goal`, `Scope`, `Non-goals`, `Requirements / Invariants`, `Acceptance Criteria`, `Validation`);
+- **specialized detailed/UI contracts** using their own numbered structure, provided they explicitly define completion criteria, excluded/not-implemented scope, and validation/acceptance evidence.
+
+Every canonical specification checked by the gate must explicitly identify English as the canonical file/language. Do not change translations merely to satisfy an English-heading CI rule.
 
 ## Repository-validation rule
 
@@ -49,5 +61,7 @@ When a specification is intended for a bounded/low-context implementation agent,
 - explicit stop conditions.
 
 Do not use chat history as an implementation contract.
+
+Repository-local helper wrappers are optional unless the approved specification explicitly makes the wrapper itself a deliverable or prerequisite. If a documented wrapper is absent, use its underlying deterministic tool directly and record the substitution. Do not create unrelated tooling infrastructure inside a product feature PR just to satisfy aspirational documentation.
 
 When a specification is ready for repository review, its PR may be labeled `codex-ready`.
