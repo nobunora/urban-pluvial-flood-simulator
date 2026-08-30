@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 build/
 .cache/
+artifacts/
 area/
 *.pyc
 *.bin
