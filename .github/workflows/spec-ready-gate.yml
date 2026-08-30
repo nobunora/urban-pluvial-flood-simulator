@@ -24,31 +24,74 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin "$BASE_REF" --depth=1
-          mapfile -t specs < <(git diff --name-only "origin/$BASE_REF...HEAD" -- 'docs/specs/*.md' | grep -v '/README.md$' | grep -v '/SPEC_TEMPLATE.md$' || true)
+
+          # Validate canonical specifications only. Japanese files are reference
+          # translations and deliberately do not mirror English heading names.
+          mapfile -t specs < <(
+            git diff --name-only "origin/$BASE_REF...HEAD" -- 'docs/specs/*.md' \
+              | grep -v '/README.md$' \
+              | grep -v '/SPEC_TEMPLATE.md$' \
+              | grep -v '\.ja\.md$' \
+              || true
+          )
 
           if (( ${#specs[@]} == 0 )); then
-            echo "codex-ready requires at least one changed specification under docs/specs/." >&2
+            echo "codex-ready requires at least one changed canonical specification under docs/specs/." >&2
             exit 1
           fi
 
-          required=(
-            '## Goal'
-            '## Scope'
-            '## Non-goals'
-            '## Requirements / Invariants'
-            '## Acceptance Criteria'
-            '## Validation'
-          )
-
-          for spec in "${specs[@]}"; do
-            echo "Validating $spec"
+          validate_standard_contract() {
+            local spec="$1"
+            local required=(
+              '## Goal'
+              '## Scope'
+              '## Non-goals'
+              '## Requirements / Invariants'
+              '## Acceptance Criteria'
+              '## Validation'
+            )
             for heading in "${required[@]}"; do
               if ! grep -Fqx "$heading" "$spec"; then
                 echo "$spec is missing required heading: $heading" >&2
-                exit 1
+                return 1
               fi
             done
+          }
+
+          validate_specialized_contract() {
+            local spec="$1"
+
+            # Specialized detailed/UI contracts may use numbered chapters rather
+            # than the standard template headings, but must still define the
+            # three things an implementation agent cannot safely infer:
+            # completion, explicit exclusions, and validation/acceptance evidence.
+            if ! grep -Eiq 'completion criteria' "$spec"; then
+              echo "$spec is missing a completion-criteria section." >&2
+              return 1
+            fi
+            if ! grep -Eiq 'non-goals|not implemented|do not implement' "$spec"; then
+              echo "$spec is missing explicit non-goals/not-implemented scope." >&2
+              return 1
+            fi
+            if ! grep -Eiq 'validation|acceptance|tests|clear condition' "$spec"; then
+              echo "$spec is missing validation/acceptance evidence." >&2
+              return 1
+            fi
+          }
+
+          for spec in "${specs[@]}"; do
+            echo "Validating $spec"
+
+            if ! grep -Eq '^> Canonical (file/language|language):.*English' "$spec"; then
+              echo "$spec must explicitly identify English as the canonical language/file." >&2
+              exit 1
+            fi
+
+            if grep -Fqx '## Goal' "$spec"; then
+              validate_standard_contract "$spec"
+            else
+              validate_specialized_contract "$spec"
+            fi
           done
 
           echo "Specification contract gate passed."
-
