@@ -1,8 +1,25 @@
 # Urban Pluvial Flood Simulator
 
-A compact **Rain-on-Grid urban pluvial flood simulator** based on the 2D Local-Inertial shallow-water approximation.
+A compact **Rain-on-Grid urban pluvial flood simulator** with automatic Japanese terrain and urban-data preparation.
 
-The preprocessing pipeline can now build a simulation area from only a latitude/longitude and size:
+## Product direction
+
+The repository currently contains the original native Local-Inertial reference solver and its preprocessing workflow.
+
+The proposed v0.1 product direction is to use **SFINCS** as the primary hydraulic engine while retaining the existing data-acquisition work and evolving it toward an accuracy-first Full 1 m / Adaptive workflow.
+
+Draft specifications:
+
+- product specification (canonical English): `docs/PRODUCT_SPEC_DRAFT.md`
+- product specification (Japanese reference translation): `docs/PRODUCT_SPEC_DRAFT.ja.md`
+- detailed implementation-specification template (canonical English): `docs/IMPLEMENTATION_SPEC_TEMPLATE.md`
+- detailed implementation-specification template (Japanese reference translation): `docs/IMPLEMENTATION_SPEC_TEMPLATE.ja.md`
+
+The English files are the source of truth. The Japanese files are maintained as human-readable reference translations; if the two versions conflict, the English version takes precedence.
+
+These documents are intentionally drafts. They distinguish what v0.1 will implement, what is deferred, and what the project should never claim or become.
+
+The preprocessing pipeline can build a simulation area from only a latitude/longitude and size:
 
 - elevation: **GSI public elevation tiles**, preferring DEM1A (~1 m)
 - buildings/roads: **Project PLATEAU CityGML** first
@@ -135,7 +152,9 @@ python scripts/gsi_basic_to_vectors.py \
 
 See `docs/data_download.md` for automatic vs version-pinned acquisition.
 
-## Build the solver
+## Current reference solver
+
+The current native solver remains available as a research/reference implementation while the SFINCS product integration is designed.
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -148,9 +167,7 @@ or:
 g++ -O3 -march=native -fopenmp -std=c++17 src/solver.cpp -o solver
 ```
 
-## Run
-
-Example: `2001 x 2001`, `dx=1 m`, `1 h`, `115 mm/h`:
+Example run: `2001 x 2001`, `dx=1 m`, `1 h`, `115 mm/h`:
 
 ```bash
 OMP_NUM_THREADS=8 ./build/local_inertial_solver \
@@ -175,7 +192,7 @@ python scripts/plot_results.py \
   --out max_depth_rainbow.png
 ```
 
-## Hydraulic model
+## Current native hydraulic model
 
 The reference implementation includes:
 
@@ -186,7 +203,7 @@ The reference implementation includes:
 - wet/dry handling
 - positivity-preserving donor-cell limiter
 - buildings as no-flow cells
-- lower Manning roughness on roads
+- lower road Manning roughness
 - roof-rainfall redistribution with rainfall-mass conservation
 - OpenMP parallelization
 
@@ -228,16 +245,22 @@ Network integration and solver smoke-test instructions for Codex are in `CODEX_T
 
 ## Important limitations
 
-This is a research/reference implementation, not an operational flood-warning product. It does not currently model sewer networks, storm-drain inlet capacity, infiltration, detailed curbs/walls, building-entry flooding, river-stage boundaries, or full advective inertia.
+The current implementation is a research/reference implementation, not an operational flood-warning product. It does not currently model sewer networks, storm-drain inlet capacity, infiltration, detailed curbs/walls, building-entry flooding, river-stage boundaries, or spatially varying forecast rainfall.
+
+The proposed product specification requires these omissions to be clearly visible to users. In particular, v0.1 intentionally ignores infiltration and sewer/drain capacity, and treats roof rainfall using mass-conserving redistribution rather than detailed building drainage.
 
 At 1 m resolution, DEM uncertainty and urban geometry can materially affect results. Grid spacing is not vertical accuracy.
 
 ## Documentation
 
+- product specification draft (canonical English): `docs/PRODUCT_SPEC_DRAFT.md`
+- product specification draft (Japanese reference translation): `docs/PRODUCT_SPEC_DRAFT.ja.md`
+- implementation specification template (canonical English): `docs/IMPLEMENTATION_SPEC_TEMPLATE.md`
+- implementation specification template (Japanese reference translation): `docs/IMPLEMENTATION_SPEC_TEMPLATE.ja.md`
 - data acquisition: `docs/data_download.md`
 - primary references: `docs/references.md`
 - Codex validation: `CODEX_TEST_PLAN.md`
 
 ## License
 
-No license has been selected yet. Choose an appropriate license before broad redistribution.
+No license has been selected yet. Choose an appropriate license before broad redistribution. External engine and data-source licenses/terms must be handled independently as described in the product specification.
