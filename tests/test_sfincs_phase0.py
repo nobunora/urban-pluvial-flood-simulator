@@ -1,6 +1,5 @@
 import pytest
 
-
 spike = pytest.importorskip("scripts.sfincs_phase0_spike")
 pytest.importorskip("hydromt_sfincs")
 xr = pytest.importorskip("xarray")
