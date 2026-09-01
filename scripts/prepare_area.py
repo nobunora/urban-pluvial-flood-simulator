@@ -6,9 +6,9 @@ import argparse
 import json
 from pathlib import Path
 
-from scripts.download_gsi_dem import download_dem
-from scripts.download_osm_vectors import download_osm_vectors
-from scripts.download_plateau_vectors import download_plateau_vectors
+from floodsim.providers.common import area_from_square
+from floodsim.providers.gsi_elevation import GsiElevationProvider
+from floodsim.providers.vectors import acquire_vectors
 from scripts.prepare_inputs import prepare_inputs
 
 
@@ -22,23 +22,14 @@ def prepare_area(center_lat: float, center_lon: float, half_size_m: float,
     vectors = out / "vectors"
     dem_path = out / "dem_1m.npz"
 
-    dem_info = download_dem(center_lat, center_lon, half_size_m, grid_m, dem_path, cache)
+    area = area_from_square(center_lat, center_lon, half_size_m)
+    dem_info = GsiElevationProvider().acquire(area, grid_m, cache).write_legacy(dem_path, area, grid_m)
 
     vector_info = None
     errors: list[str] = []
-    if vector_provider in ("auto", "plateau"):
-        try:
-            vector_info = download_plateau_vectors(center_lat, center_lon, half_size_m, vectors, cache)
-        except Exception as exc:
-            errors.append(f"PLATEAU: {exc}")
-            if vector_provider == "plateau":
-                raise
-    if vector_info is None and vector_provider in ("auto", "osm"):
-        try:
-            vector_info = download_osm_vectors(center_lat, center_lon, half_size_m, vectors, cache)
-        except Exception as exc:
-            errors.append(f"OSM: {exc}")
-            raise RuntimeError("Automatic vector acquisition failed: " + " | ".join(errors)) from exc
+    vector_result = acquire_vectors(area, vector_provider, cache_dir=str(cache), out_dir=str(vectors))
+    vector_info = vector_result.legacy_manifest()
+    errors.extend(vector_result.provenance.warnings)
 
     hydraulic = prepare_inputs(dem_path, vectors / "buildings.npz", vectors / "basemap_vectors.npz",
                                out / "hydraulic_inputs", road_half_width, n_ground, n_road)
