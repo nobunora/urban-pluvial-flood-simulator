@@ -1,4 +1,5 @@
 import numpy as np
+
 from scripts.prepare_inputs import roof_rain_weights
 
 

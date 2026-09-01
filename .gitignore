@@ -6,4 +6,5 @@ build/
 artifacts/
 area/
 *.pyc
+web/node_modules/
 *.bin

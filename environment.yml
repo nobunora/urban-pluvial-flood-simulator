@@ -17,3 +17,8 @@ dependencies:
   - pip:
       - hydromt_sfincs @ git+https://github.com/Deltares/hydromt_sfincs.git@82e58ee85136cf5155c92b42bb9a397869ed8035
       - pytest==9.1.1
+      - fastapi==0.141.1
+      - uvicorn==0.52.4
+      - httpx==0.28.1
+      - ruff==0.16.5
+      - mypy==2.3.1
