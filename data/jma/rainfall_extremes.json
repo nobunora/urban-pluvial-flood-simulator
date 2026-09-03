@@ -1,0 +1,90 @@
+{
+  "catalog_generated_at_utc": "2026-09-03T00:00:00+00:00",
+  "events": [
+    {
+      "catalog_generated_at_utc": "2026-09-03T00:00:00+00:00",
+      "data_quality_flags": [],
+      "duration_minutes": 10,
+      "event_date_or_datetime_metadata": "2018/9/10",
+      "event_id": "jma-391658be2b0a0d7a08b33858",
+      "profile_available": false,
+      "profile_id": null,
+      "rank": 1,
+      "source_url": "https://www.data.jma.go.jp/stats/etrn/view/rank_a.php?block_no=1467&day=&month=&prec_no=44&view=a2&year=",
+      "station_id": "44173",
+      "station_name": "大島北ノ山",
+      "total_precipitation_mm": 26.0
+    },
+    {
+      "catalog_generated_at_utc": "2026-09-03T00:00:00+00:00",
+      "data_quality_flags": [],
+      "duration_minutes": 1440,
+      "event_date_or_datetime_metadata": "2013/10/16",
+      "event_id": "jma-50c5d577915b895cca146bf7",
+      "profile_available": false,
+      "profile_id": null,
+      "rank": 1,
+      "source_url": "https://www.data.jma.go.jp/stats/etrn/view/rank_a.php?block_no=1467&day=&month=&prec_no=44&view=a2&year=",
+      "station_id": "44173",
+      "station_name": "大島北ノ山",
+      "total_precipitation_mm": 267.0
+    },
+    {
+      "catalog_generated_at_utc": "2026-09-03T00:00:00+00:00",
+      "data_quality_flags": [],
+      "duration_minutes": 60,
+      "event_date_or_datetime_metadata": "2000/7/4",
+      "event_id": "jma-d97548dd091ed12d7636a3aa",
+      "profile_available": false,
+      "profile_id": null,
+      "rank": 1,
+      "source_url": "https://www.data.jma.go.jp/stats/etrn/view/rank_a.php?block_no=47662&day=&month=&prec_no=44&view=np0&year=",
+      "station_id": "44132",
+      "station_name": "東京",
+      "total_precipitation_mm": 78.0
+    },
+    {
+      "catalog_generated_at_utc": "2026-09-03T00:00:00+00:00",
+      "data_quality_flags": [],
+      "duration_minutes": 10,
+      "event_date_or_datetime_metadata": "2017/10/29",
+      "event_id": "jma-505c64fedaf71e27871b84ec",
+      "profile_available": false,
+      "profile_id": null,
+      "rank": 2,
+      "source_url": "https://www.data.jma.go.jp/stats/etrn/view/rank_a.php?block_no=1467&day=&month=&prec_no=44&view=a2&year=",
+      "station_id": "44173",
+      "station_name": "大島北ノ山",
+      "total_precipitation_mm": 26.0
+    },
+    {
+      "catalog_generated_at_utc": "2026-09-03T00:00:00+00:00",
+      "data_quality_flags": [],
+      "duration_minutes": 1440,
+      "event_date_or_datetime_metadata": "2005/8/25",
+      "event_id": "jma-bbe6da8817c41ad701ae8c03",
+      "profile_available": false,
+      "profile_id": null,
+      "rank": 2,
+      "source_url": "https://www.data.jma.go.jp/stats/etrn/view/rank_a.php?block_no=1467&day=&month=&prec_no=44&view=a2&year=",
+      "station_id": "44173",
+      "station_name": "大島北ノ山",
+      "total_precipitation_mm": 248.0
+    },
+    {
+      "catalog_generated_at_utc": "2026-09-03T00:00:00+00:00",
+      "data_quality_flags": [],
+      "duration_minutes": 60,
+      "event_date_or_datetime_metadata": "2014/9/10",
+      "event_id": "jma-d96a0e3f7da28e4c91b433eb",
+      "profile_available": false,
+      "profile_id": null,
+      "rank": 2,
+      "source_url": "https://www.data.jma.go.jp/stats/etrn/view/rank_a.php?block_no=47662&day=&month=&prec_no=44&view=np0&year=",
+      "station_id": "44132",
+      "station_name": "東京",
+      "total_precipitation_mm": 69.0
+    }
+  ],
+  "schema_version": "1"
+}

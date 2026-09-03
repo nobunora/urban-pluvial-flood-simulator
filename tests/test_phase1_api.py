@@ -31,4 +31,10 @@ def test_built_placeholder_spa_is_served() -> None:
 
 def test_phase2_endpoints_are_not_fake() -> None:
     openapi = app.openapi()
-    assert set(openapi["paths"]) == {"/api/v1/health"}
+    assert set(openapi["paths"]) == {
+        "/api/v1/geocode",
+        "/api/v1/health",
+        "/api/v1/rainfall/events/{event_id}",
+        "/api/v1/rainfall/stations",
+        "/api/v1/rainfall/stations/{station_id}/extremes",
+    }

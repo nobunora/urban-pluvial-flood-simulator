@@ -76,3 +76,15 @@ class RainfallTimeSeries(RainfallModel):
         if len(self.elapsed_seconds) != len(self.intensity_mm_per_h):
             raise ValueError("elapsed_seconds and intensity_mm_per_h must have equal length")
         return self
+
+
+def historical_uniform_intensity(total_precipitation_mm: float, duration_minutes: float) -> float:
+    """Convert a positive historical total to a spatially uniform intensity."""
+    if not math.isfinite(total_precipitation_mm) or total_precipitation_mm <= 0:
+        raise ValueError("total_precipitation_mm must be finite and positive")
+    if not math.isfinite(float(duration_minutes)) or duration_minutes <= 0:
+        raise ValueError("duration_minutes must be finite and positive")
+    return total_precipitation_mm / (float(duration_minutes) / 60.0)
+
+
+uniform_intensity_from_total = historical_uniform_intensity

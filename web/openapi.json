@@ -1,0 +1,609 @@
+{
+  "components": {
+    "schemas": {
+      "EngineSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "required": {
+            "const": "SFINCS 2.4.0 Galibier",
+            "default": "SFINCS 2.4.0 Galibier",
+            "title": "Required",
+            "type": "string"
+          }
+        },
+        "title": "EngineSummary",
+        "type": "object"
+      },
+      "GeocodeAttribution": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "url"
+        ],
+        "title": "GeocodeAttribution",
+        "type": "object"
+      },
+      "GeocodeCandidateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "converted": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Converted"
+          },
+          "lat": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat",
+            "type": "number"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "lon": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lon",
+            "type": "number"
+          },
+          "provider": {
+            "const": "csis_simple_geocoding",
+            "title": "Provider",
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "lon",
+          "lat",
+          "provider"
+        ],
+        "title": "GeocodeCandidateResponse",
+        "type": "object"
+      },
+      "GeocodeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "attribution": {
+            "$ref": "#/components/schemas/GeocodeAttribution"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/GeocodeCandidateResponse"
+            },
+            "maxItems": 10,
+            "title": "Candidates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidates",
+          "attribution"
+        ],
+        "title": "GeocodeResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "api_version": {
+            "const": "v1",
+            "default": "v1",
+            "title": "Api Version",
+            "type": "string"
+          },
+          "application_version": {
+            "title": "Application Version",
+            "type": "string"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineSummary"
+          },
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_version",
+          "engine"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "RainfallEventResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog_generated_at_utc": {
+            "title": "Catalog Generated At Utc",
+            "type": "string"
+          },
+          "data_quality_flags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Data Quality Flags",
+            "type": "array"
+          },
+          "duration_minutes": {
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "event_date_or_datetime_metadata": {
+            "title": "Event Date Or Datetime Metadata"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "intensity_mm_per_h": {
+            "title": "Intensity Mm Per H",
+            "type": "number"
+          },
+          "profile_available": {
+            "title": "Profile Available",
+            "type": "boolean"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "station_id": {
+            "title": "Station Id",
+            "type": "string"
+          },
+          "station_name": {
+            "title": "Station Name",
+            "type": "string"
+          },
+          "total_precipitation_mm": {
+            "title": "Total Precipitation Mm",
+            "type": "number"
+          }
+        },
+        "required": [
+          "event_id",
+          "station_id",
+          "station_name",
+          "duration_minutes",
+          "total_precipitation_mm",
+          "source_url",
+          "catalog_generated_at_utc",
+          "data_quality_flags",
+          "profile_available",
+          "intensity_mm_per_h"
+        ],
+        "title": "RainfallEventResponse",
+        "type": "object"
+      },
+      "RainfallExtremesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RainfallEventResponse"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "station": {
+            "$ref": "#/components/schemas/RainfallStationResponse"
+          }
+        },
+        "required": [
+          "station",
+          "events"
+        ],
+        "title": "RainfallExtremesResponse",
+        "type": "object"
+      },
+      "RainfallStationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "distance_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance Km"
+          },
+          "lat_deg": {
+            "title": "Lat Deg",
+            "type": "number"
+          },
+          "lon_deg": {
+            "title": "Lon Deg",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prefecture_or_region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefecture Or Region"
+          },
+          "station_id": {
+            "title": "Station Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "station_id",
+          "name",
+          "lon_deg",
+          "lat_deg"
+        ],
+        "title": "RainfallStationResponse",
+        "type": "object"
+      },
+      "RainfallStationSearchResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "stations": {
+            "items": {
+              "$ref": "#/components/schemas/RainfallStationResponse"
+            },
+            "title": "Stations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stations"
+        ],
+        "title": "RainfallStationSearchResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Urban Pluvial Flood Simulator",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/geocode": {
+      "get": {
+        "operationId": "geocode_api_v1_geocode_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeocodeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Geocode",
+        "tags": [
+          "geocode"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "description": "Return readiness information without probing or launching SFINCS.",
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/rainfall/events/{event_id}": {
+      "get": {
+        "operationId": "rainfall_event_api_v1_rainfall_events__event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RainfallEventResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rainfall Event",
+        "tags": [
+          "rainfall"
+        ]
+      }
+    },
+    "/api/v1/rainfall/stations": {
+      "get": {
+        "operationId": "rainfall_stations_api_v1_rainfall_stations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lon",
+            "required": true,
+            "schema": {
+              "maximum": 180,
+              "minimum": -180,
+              "title": "Lon",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lat",
+            "required": true,
+            "schema": {
+              "maximum": 90,
+              "minimum": -90,
+              "title": "Lat",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RainfallStationSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rainfall Stations",
+        "tags": [
+          "rainfall"
+        ]
+      }
+    },
+    "/api/v1/rainfall/stations/{station_id}/extremes": {
+      "get": {
+        "operationId": "rainfall_station_extremes_api_v1_rainfall_stations__station_id__extremes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "station_id",
+            "required": true,
+            "schema": {
+              "title": "Station Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RainfallExtremesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rainfall Station Extremes",
+        "tags": [
+          "rainfall"
+        ]
+      }
+    }
+  }
+}
