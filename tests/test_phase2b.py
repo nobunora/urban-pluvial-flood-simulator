@@ -9,7 +9,11 @@ from fastapi.testclient import TestClient
 
 from floodsim.api.app import app
 from floodsim.domain.rainfall import historical_uniform_intensity
-from floodsim.providers.common import ProviderParseError, ProviderRequestError
+from floodsim.providers.common import (
+    DEFAULT_NETWORK_POLICY,
+    ProviderParseError,
+    ProviderRequestError,
+)
 from floodsim.providers.geocoder import CsisSimpleGeocoder, parse_csis_xml
 from floodsim.providers.jma import (
     JmaCatalogError,
@@ -23,9 +27,15 @@ from floodsim.providers.jma import (
     parse_amedas_csv,
     parse_jma_ranking_html,
 )
-from scripts.build_jma_rainfall_catalog import build_catalog
+from scripts.build_jma_rainfall_catalog import (
+    DEFAULT_EVENT_DURATIONS,
+    DEFAULT_EVENT_MAX_RANK,
+    DEFAULT_RANKING_SOURCES,
+    build_catalog,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "phase2b"
+JMA_DATA = Path(__file__).parents[1] / "data" / "jma"
 
 
 def fixture(name: str) -> bytes:
@@ -98,6 +108,11 @@ def test_csis_provider_uses_approved_params_and_transport_error() -> None:
         ).search("駅")
 
 
+def test_csis_default_session_uses_shared_user_agent() -> None:
+    geocoder = CsisSimpleGeocoder()
+    assert geocoder.session.headers["User-Agent"] == DEFAULT_NETWORK_POLICY.user_agent
+
+
 def test_amedas_fixture_parses_only_precipitation_stations() -> None:
     stations = parse_amedas_csv(
         fixture("jma_amedas.csv"), catalog_generated_at_utc="2026-09-03T00:00:00+00:00"
@@ -139,6 +154,24 @@ def test_catalog_generator_builds_deterministic_fixture_payloads() -> None:
     assert sorted(event["duration_minutes"] for event in events["events"]) == [10, 10, 60, 60, 1440, 1440]
 
 
+def test_committed_jma_catalogs_are_reproducible_from_packaged_sources() -> None:
+    source_dir = JMA_DATA / "sources"
+    ranking_payloads = [
+        (station_id, station_name, source_url, (source_dir / f"rank_{station_id}.html").read_bytes())
+        for station_id, station_name, source_url in DEFAULT_RANKING_SOURCES
+    ]
+    stations, events = build_catalog(
+        station_payload=(source_dir / "ame_master.zip").read_bytes(),
+        station_source_url="https://www.jma.go.jp/jma/kishou/know/amedas/ame_master.zip",
+        ranking_payloads=ranking_payloads,
+        generated_at_utc="2026-09-03T00:00:00+00:00",
+        allowed_durations_by_station=DEFAULT_EVENT_DURATIONS,
+        max_rank=DEFAULT_EVENT_MAX_RANK,
+    )
+    assert stations == json.loads((JMA_DATA / "stations.json").read_text(encoding="utf-8"))
+    assert events == json.loads((JMA_DATA / "rainfall_extremes.json").read_text(encoding="utf-8"))
+
+
 def test_event_ids_and_uniform_conversion_are_deterministic() -> None:
     args = ("44173", 60, 78.0, 1, "2000/7/4", "https://example.test/rank")
     assert make_event_id(*args) == make_event_id(*args)
@@ -169,10 +202,38 @@ def _catalog_files(tmp_path: Path) -> tuple[Path, Path]:
 def test_catalog_loads_nearest_order_and_rejects_corruption(tmp_path: Path) -> None:
     stations_path, events_path = _catalog_files(tmp_path)
     catalog = JmaCatalogProvider(stations_path, events_path).load()
-    assert [station.station_id for station, _ in catalog.nearest_stations(139.0, 35.0, 2)] == ["a", "b"]
+    assert [station.station_id for station, _ in catalog.nearest_stations(139.0, 35.0, 2)] == ["a"]
     assert catalog.extremes("a")[0].event_id == "e"
     assert haversine_distance_km(139.0, 35.0, 139.0, 35.0) == 0.0
     events_path.write_text("not json", encoding="utf-8")
+    with pytest.raises(JmaCatalogError):
+        load_catalog(stations_path, events_path)
+
+
+@pytest.mark.parametrize(
+    ("target", "mutation"),
+    [
+        ("stations", lambda payload: payload.pop("schema_version")),
+        ("events", lambda payload: payload.update(schema_version="2")),
+        (
+            "events",
+            lambda payload: payload["events"][0].update(event_date_or_datetime_metadata=123),
+        ),
+        ("events", lambda payload: payload["events"][0].update(profile_id="")),
+        (
+            "events",
+            lambda payload: payload["events"][0].update(profile_available=True, profile_id=None),
+        ),
+    ],
+)
+def test_catalog_rejects_schema_and_event_contract_corruption(
+    tmp_path: Path, target: str, mutation
+) -> None:
+    stations_path, events_path = _catalog_files(tmp_path)
+    path = stations_path if target == "stations" else events_path
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    mutation(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(JmaCatalogError):
         load_catalog(stations_path, events_path)
 
@@ -194,6 +255,9 @@ def test_geocode_api_input_limit_and_provider_error(monkeypatch) -> None:
     long_query = client.get("/api/v1/geocode", params={"q": "a" * 201})
     assert long_query.status_code == 400
     assert long_query.json()["error"]["code"] == "INPUT_GEOCODE_QUERY_TOO_LONG"
+    missing = client.get("/api/v1/geocode")
+    assert missing.status_code == 400
+    assert missing.json()["error"]["code"] == "INPUT_VALIDATION_ERROR"
 
 
 def test_rainfall_api_uses_packaged_catalog_and_stable_not_found_errors() -> None:
@@ -201,12 +265,12 @@ def test_rainfall_api_uses_packaged_catalog_and_stable_not_found_errors() -> Non
 
     stations = client.get("/api/v1/rainfall/stations", params={"lon": 139.75, "lat": 35.69, "limit": 2})
     assert stations.status_code == 200
-    assert [station["station_id"] for station in stations.json()["stations"]] == ["44132", "44136"]
+    assert [station["station_id"] for station in stations.json()["stations"]] == ["44132", "44173"]
     assert stations.json()["stations"][0]["distance_km"] == pytest.approx(0.185, abs=0.01)
 
     extremes = client.get("/api/v1/rainfall/stations/44132/extremes")
     assert extremes.status_code == 200
-    assert extremes.json()["events"][0]["intensity_mm_per_h"] == pytest.approx(78.0)
+    assert extremes.json()["events"][0]["intensity_mm_per_h"] == pytest.approx(88.7)
     assert extremes.json()["events"][0]["profile_available"] is False
 
     missing_station = client.get("/api/v1/rainfall/stations/missing/extremes")
@@ -223,6 +287,30 @@ def test_rainfall_api_uses_packaged_catalog_and_stable_not_found_errors() -> Non
     missing_event = client.get("/api/v1/rainfall/events/missing")
     assert missing_event.status_code == 404
     assert missing_event.json()["error"]["code"] == "JMA_EVENT_NOT_FOUND"
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"lat": 35},
+        {"lon": 139},
+        {"lon": -181, "lat": 35},
+        {"lon": 139, "lat": 91},
+        {"lon": 139, "lat": 35, "limit": 0},
+        {"lon": 139, "lat": 35, "limit": 21},
+    ],
+)
+def test_rainfall_query_validation_uses_canonical_error_envelope(params) -> None:
+    response = TestClient(app).get("/api/v1/rainfall/stations", params=params)
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": {
+            "code": "INPUT_VALIDATION_ERROR",
+            "message": "入力値を確認してください。",
+            "stage": None,
+            "retryable": False,
+        }
+    }
 
 
 def test_rainfall_api_returns_stable_unavailable_error_for_corrupt_catalog(

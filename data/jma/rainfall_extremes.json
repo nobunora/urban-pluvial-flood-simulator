@@ -4,6 +4,20 @@
     {
       "catalog_generated_at_utc": "2026-09-03T00:00:00+00:00",
       "data_quality_flags": [],
+      "duration_minutes": 60,
+      "event_date_or_datetime_metadata": "1939/7/31",
+      "event_id": "jma-2c324a553eadf40a75c85f1b",
+      "profile_available": false,
+      "profile_id": null,
+      "rank": 1,
+      "source_url": "https://www.data.jma.go.jp/stats/etrn/view/rank_s.php?prec_no=44&block_no=47662&year=&month=&day=&view=a2",
+      "station_id": "44132",
+      "station_name": "東京",
+      "total_precipitation_mm": 88.7
+    },
+    {
+      "catalog_generated_at_utc": "2026-09-03T00:00:00+00:00",
+      "data_quality_flags": [],
       "duration_minutes": 10,
       "event_date_or_datetime_metadata": "2018/9/10",
       "event_id": "jma-391658be2b0a0d7a08b33858",
@@ -34,14 +48,14 @@
       "data_quality_flags": [],
       "duration_minutes": 60,
       "event_date_or_datetime_metadata": "2000/7/4",
-      "event_id": "jma-d97548dd091ed12d7636a3aa",
+      "event_id": "jma-49ff5d23ed7cc5c012734daa",
       "profile_available": false,
       "profile_id": null,
-      "rank": 1,
-      "source_url": "https://www.data.jma.go.jp/stats/etrn/view/rank_a.php?block_no=47662&day=&month=&prec_no=44&view=np0&year=",
+      "rank": 2,
+      "source_url": "https://www.data.jma.go.jp/stats/etrn/view/rank_s.php?prec_no=44&block_no=47662&year=&month=&day=&view=a2",
       "station_id": "44132",
       "station_name": "東京",
-      "total_precipitation_mm": 78.0
+      "total_precipitation_mm": 82.5
     },
     {
       "catalog_generated_at_utc": "2026-09-03T00:00:00+00:00",
@@ -70,20 +84,6 @@
       "station_id": "44173",
       "station_name": "大島北ノ山",
       "total_precipitation_mm": 248.0
-    },
-    {
-      "catalog_generated_at_utc": "2026-09-03T00:00:00+00:00",
-      "data_quality_flags": [],
-      "duration_minutes": 60,
-      "event_date_or_datetime_metadata": "2014/9/10",
-      "event_id": "jma-d96a0e3f7da28e4c91b433eb",
-      "profile_available": false,
-      "profile_id": null,
-      "rank": 2,
-      "source_url": "https://www.data.jma.go.jp/stats/etrn/view/rank_a.php?block_no=47662&day=&month=&prec_no=44&view=np0&year=",
-      "station_id": "44132",
-      "station_name": "東京",
-      "total_precipitation_mm": 69.0
     }
   ],
   "schema_version": "1"

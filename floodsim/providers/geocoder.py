@@ -13,6 +13,7 @@ from floodsim.providers.common import (
     DEFAULT_NETWORK_POLICY,
     NetworkPolicy,
     ProviderParseError,
+    make_session,
     request_with_retry,
 )
 
@@ -130,8 +131,8 @@ class CsisSimpleGeocoder:
         policy: NetworkPolicy = DEFAULT_NETWORK_POLICY,
         sleeper: Callable[[float], None] | None = None,
     ) -> None:
-        self.session = session or requests.Session()
         self.policy = policy
+        self.session = session or make_session(policy)
         self.sleeper = sleeper
 
     def search(self, query: str) -> GeocodeResult:

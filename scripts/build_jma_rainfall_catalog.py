@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -30,9 +31,14 @@ DEFAULT_RANKING_SOURCES = (
     (
         "44132",
         "東京",
-        "https://www.data.jma.go.jp/stats/etrn/view/rank_a.php?block_no=47662&day=&month=&prec_no=44&view=np0&year=",
+        "https://www.data.jma.go.jp/stats/etrn/view/rank_s.php?prec_no=44&block_no=47662&year=&month=&day=&view=a2",
     ),
 )
+DEFAULT_EVENT_DURATIONS: Mapping[str, frozenset[int]] = {
+    "44173": frozenset({10, 1440}),
+    "44132": frozenset({60}),
+}
+DEFAULT_EVENT_MAX_RANK = 2
 
 
 def _now_utc() -> str:
@@ -55,6 +61,21 @@ def _parse_source_spec(spec: str) -> tuple[str, str, str]:
     return parts[0].strip(), parts[1].strip(), url
 
 
+def _parse_snapshot_spec(spec: str) -> tuple[str, str, str, Path]:
+    parts = spec.split("|", 3)
+    if len(parts) != 4 or any(not part.strip() for part in parts):
+        raise ValueError("ranking input must be STATION_ID|STATION_NAME|HTTPS_URL|PATH")
+    station_id, station_name, source_url = _parse_source_spec("|".join(parts[:3]))
+    return station_id, station_name, source_url, Path(parts[3].strip())
+
+
+def _read_snapshot(path: Path) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"snapshot input cannot be read: {path}") from exc
+
+
 def build_catalog(
     *,
     station_payload: bytes,
@@ -62,7 +83,11 @@ def build_catalog(
     ranking_payloads: list[tuple[str, str, str, bytes]],
     generated_at_utc: str,
     station_limit: int | None = None,
+    allowed_durations_by_station: Mapping[str, frozenset[int]] | None = None,
+    max_rank: int | None = None,
 ) -> tuple[dict, dict]:
+    if max_rank is not None and max_rank <= 0:
+        raise ValueError("max_rank must be positive")
     stations = parse_amedas_csv(
         station_payload,
         source_url=station_source_url,
@@ -86,6 +111,20 @@ def build_catalog(
         )
         if not parsed_events:
             raise ValueError(f"ranking source {source_url} has no recognized required rainfall rows")
+        if allowed_durations_by_station is not None:
+            if station_id not in allowed_durations_by_station:
+                raise ValueError(f"no duration selection is configured for ranking station {station_id}")
+            parsed_events = [
+                event
+                for event in parsed_events
+                if event.duration_minutes in allowed_durations_by_station[station_id]
+            ]
+        if max_rank is not None:
+            parsed_events = [
+                event for event in parsed_events if event.rank is None or event.rank <= max_rank
+            ]
+        if not parsed_events:
+            raise ValueError(f"ranking source {source_url} has no events after deterministic selection")
         events.extend(parsed_events)
     if not events:
         raise ValueError("no JMA rainfall events were parsed")
@@ -107,6 +146,22 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path("data/jma"))
     parser.add_argument("--station-url", default=JMA_STATION_SOURCE_URL)
     parser.add_argument(
+        "--station-input",
+        type=Path,
+        help="local station CSV snapshot; omit to fetch the official station archive",
+    )
+    ranking_inputs = parser.add_mutually_exclusive_group()
+    ranking_inputs.add_argument(
+        "--ranking-input",
+        action="append",
+        help="STATION_ID|STATION_NAME|HTTPS_URL|PATH; may be repeated",
+    )
+    parser.add_argument(
+        "--default-selection",
+        action="store_true",
+        help="apply the documented packaged-catalog duration and rank selection",
+    )
+    parser.add_argument(
         "--ranking-source",
         action="append",
         help="STATION_ID|STATION_NAME|HTTPS_URL; may be repeated",
@@ -116,22 +171,33 @@ def main() -> None:
     args = parser.parse_args()
 
     generated_at = args.generated_at_utc or _now_utc()
-    station_response = _fetch(args.station_url)
-    source_specs = (
-        [_parse_source_spec(spec) for spec in args.ranking_source]
-        if args.ranking_source
-        else list(DEFAULT_RANKING_SOURCES)
+    station_payload = _read_snapshot(args.station_input) if args.station_input else _fetch(args.station_url).content
+    if args.ranking_input:
+        ranking_payloads = [
+            (station_id, station_name, url, _read_snapshot(path))
+            for station_id, station_name, url, path in (_parse_snapshot_spec(spec) for spec in args.ranking_input)
+        ]
+    else:
+        source_specs = (
+            [_parse_source_spec(spec) for spec in args.ranking_source]
+            if args.ranking_source
+            else list(DEFAULT_RANKING_SOURCES)
+        )
+        ranking_payloads = [
+            (station_id, station_name, url, _fetch(url).content)
+            for station_id, station_name, url in source_specs
+        ]
+    use_default_selection = args.default_selection or (
+        not args.ranking_source and not args.ranking_input
     )
-    ranking_payloads = [
-        (station_id, station_name, url, _fetch(url).content)
-        for station_id, station_name, url in source_specs
-    ]
     stations, events = build_catalog(
-        station_payload=station_response.content,
+        station_payload=station_payload,
         station_source_url=args.station_url,
         ranking_payloads=ranking_payloads,
         generated_at_utc=generated_at,
         station_limit=args.station_limit,
+        allowed_durations_by_station=DEFAULT_EVENT_DURATIONS if use_default_selection else None,
+        max_rank=DEFAULT_EVENT_MAX_RANK if use_default_selection else None,
     )
     _write_catalog(args.output_dir, stations, events)
 

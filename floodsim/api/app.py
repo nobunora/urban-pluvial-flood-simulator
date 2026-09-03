@@ -3,6 +3,8 @@
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -30,6 +32,23 @@ async def api_contract_error_handler(_: Request, exc: ApiContractError) -> JSONR
                 "message": exc.message,
                 "stage": exc.stage,
                 "retryable": exc.retryable,
+            }
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(request: Request, exc: RequestValidationError):
+    if not request.url.path.startswith("/api/v1"):
+        return await request_validation_exception_handler(request, exc)
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": {
+                "code": "INPUT_VALIDATION_ERROR",
+                "message": "入力値を確認してください。",
+                "stage": None,
+                "retryable": False,
             }
         },
     )

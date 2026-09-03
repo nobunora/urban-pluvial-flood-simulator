@@ -10,6 +10,7 @@ import json
 import math
 import re
 import unicodedata
+import zipfile
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -21,6 +22,7 @@ from floodsim.providers.common import ProviderParseError, ProviderUnavailableErr
 
 JMA_STATION_SOURCE_URL = "https://www.jma.go.jp/jma/kishou/know/amedas/ame_master.zip"
 JMA_EARTH_RADIUS_KM = 6371.0088
+CATALOG_SCHEMA_VERSION = "1"
 PRECIPITATION_STATION_TYPES = frozenset({"四", "三", "官", "雨"})
 _RANK_LABEL_DURATIONS = {
     "日最大10分間降水量の多い方から": 10,
@@ -90,10 +92,11 @@ class JmaCatalog:
         _validate_coordinates(lon_deg, lat_deg)
         if not 1 <= limit <= 20:
             raise ValueError("limit must be between 1 and 20")
+        event_station_ids = {event.station_id for event in self.events}
         candidates = (
             (station, haversine_distance_km(lon_deg, lat_deg, station.lon_deg, station.lat_deg))
             for station in self.stations
-            if station.precipitation_capable
+            if station.precipitation_capable and station.station_id in event_station_ids
         )
         return sorted(candidates, key=lambda item: (item[1], item[0].station_id))[:limit]
 
@@ -127,6 +130,15 @@ def _generated_timestamp(value: str | None) -> str:
 def _decode_station_csv(payload: bytes | str) -> str:
     if isinstance(payload, str):
         return payload
+    if payload.startswith(b"PK\x03\x04"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                csv_names = sorted(name for name in archive.namelist() if name.lower().endswith(".csv"))
+                if len(csv_names) != 1:
+                    raise JmaCatalogError("JMA station archive must contain exactly one CSV")
+                payload = archive.read(csv_names[0])
+        except (OSError, KeyError, zipfile.BadZipFile) as exc:
+            raise JmaCatalogError("JMA station archive is corrupt") from exc
     for encoding in ("utf-8-sig", "cp932", "shift_jis"):
         try:
             return payload.decode(encoding)
@@ -323,6 +335,8 @@ def _read_catalog_payload(path: Path, key: str) -> tuple[dict[str, Any], list[di
         raise JmaCatalogError("JMA catalog file is corrupt") from exc
     if not isinstance(raw, dict) or not isinstance(raw.get(key), list):
         raise JmaCatalogError(f"JMA catalog does not contain a {key} list")
+    if raw.get("schema_version") != CATALOG_SCHEMA_VERSION:
+        raise JmaCatalogError("JMA catalog schema version is unsupported")
     if not all(isinstance(item, dict) for item in raw[key]):
         raise JmaCatalogError(f"JMA catalog {key} entries must be objects")
     return raw, raw[key]
@@ -401,8 +415,13 @@ def _load_catalog(stations_path: Path, events_path: Path) -> JmaCatalog:
         if not isinstance(profile_available, bool):
             raise JmaCatalogError("JMA profile availability is invalid")
         profile_id = item.get("profile_id")
-        if profile_id is not None and not isinstance(profile_id, str):
+        if profile_id is not None and (not isinstance(profile_id, str) or not profile_id.strip()):
             raise JmaCatalogError("JMA profile ID is invalid")
+        if profile_available and profile_id is None:
+            raise JmaCatalogError("JMA available profile has no profile ID")
+        event_metadata = item.get("event_date_or_datetime_metadata")
+        if event_metadata is not None and not isinstance(event_metadata, str):
+            raise JmaCatalogError("JMA event metadata must be a string or null")
         events.append(
             JmaRainfallEvent(
                 event_id=event_id,
@@ -411,7 +430,7 @@ def _load_catalog(stations_path: Path, events_path: Path) -> JmaCatalog:
                 duration_minutes=duration,
                 total_precipitation_mm=total,
                 rank=rank,
-                event_date_or_datetime_metadata=item.get("event_date_or_datetime_metadata"),
+                event_date_or_datetime_metadata=event_metadata,
                 source_url=_required_string(item, "source_url"),
                 catalog_generated_at_utc=_required_string(item, "catalog_generated_at_utc") if item.get("catalog_generated_at_utc") else event_timestamp,
                 data_quality_flags=list(flags),
@@ -457,6 +476,6 @@ def catalog_payload(stations: Iterable[JmaStation], events: Iterable[JmaRainfall
     station_list = [asdict(station) for station in stations]
     event_list = [asdict(event) for event in sorted(events, key=_event_sort_key)]
     return (
-        {"schema_version": "1", "catalog_generated_at_utc": generated_at, "stations": station_list},
-        {"schema_version": "1", "catalog_generated_at_utc": generated_at, "events": event_list},
+        {"schema_version": CATALOG_SCHEMA_VERSION, "catalog_generated_at_utc": generated_at, "stations": station_list},
+        {"schema_version": CATALOG_SCHEMA_VERSION, "catalog_generated_at_utc": generated_at, "events": event_list},
     )
