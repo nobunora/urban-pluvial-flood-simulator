@@ -14,18 +14,22 @@
 - Phase 0: `validated`
 - Phase 1: `validated`
 - Phase 2A geographic providers: `validated`
-- Latest completed implementation: GSI / PLATEAU / OSM application provider integration, including arbitrary rectangles and typed fallback/provenance behavior.
-- Phase 2B has not been implemented.
+- Phase 2B: `validated` locally in implementation commit `0e3308e`
+- Latest completed implementation: CSIS geocoder API, packaged JMA station/extreme-event catalog and APIs, deterministic OpenAPI/frontend DTO generation, and fixture/live-contract validation.
 - Phase 3+ has not been implemented.
 
 ## Current work boundary
 
-The next implementation work is Phase 2B only:
+The completed implementation boundary was Phase 2B only:
 
 - CSIS geocoder provider + API contract;
 - packaged JMA station/extreme-event catalog and rainfall catalog APIs;
 - deterministic fixture-based parsing / validation / provenance;
 - no simulation orchestration, Full 1 m production flow, Adaptive, result UI, or packaging.
+
+Validation evidence is recorded in `docs/implementation/v0.1-phase2b-report.md`.
+Do not start Phase 3 until the Phase 2B Draft PR review is complete and the
+persistent workflow explicitly authorizes the next phase.
 
 The exact task instructions are supplied in the Draft PR conversation, not by creating a new instruction commit for every iteration.
 
