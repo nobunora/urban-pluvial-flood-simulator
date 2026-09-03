@@ -14,8 +14,11 @@
 - Phase 0: `validated`
 - Phase 1: `validated`
 - Phase 2A geographic providers: `validated`
-- Phase 2B: `validated` locally in implementation commit `0e3308e`
-- Latest completed implementation: CSIS geocoder API, packaged JMA station/extreme-event catalog and APIs, deterministic OpenAPI/frontend DTO generation, and fixture/live-contract validation.
+- Phase 2B: `review-pending`; review fixes pass locally and await Draft PR #12 review.
+- Phase 2B review-fix implementation commit: `a332b54ac2c00a3cb03ca7c0a72ba6d1ba81b318`.
+- Latest completed implementation: Phase 2B plus reproducible JMA snapshots,
+  event-backed station search, strict catalog validation, shared CSIS network
+  policy, and canonical `/api/v1` request-validation errors.
 - Phase 3+ has not been implemented.
 
 ## Current work boundary
@@ -28,6 +31,10 @@ The completed implementation boundary was Phase 2B only:
 - no simulation orchestration, Full 1 m production flow, Adaptive, result UI, or packaging.
 
 Validation evidence is recorded in `docs/implementation/v0.1-phase2b-report.md`.
+Focused checks pass (30 tests); full Python regression passes (51 passed,
+1 skipped); Ruff, mypy, and all frontend generation/type/lint/test/build gates
+pass. Import Linter, ty, and deptry are not installed in the project environment;
+Import Linter also has no repository configuration.
 Do not start Phase 3 until the Phase 2B Draft PR review is complete and the
 persistent workflow explicitly authorizes the next phase.
 

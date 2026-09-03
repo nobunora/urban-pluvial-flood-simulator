@@ -24,8 +24,8 @@
 - Phase 1 application skeleton/domain/API is validated.
 - Phase 2 is intentionally split for reviewability:
   - Phase 2A: GSI / PLATEAU / OSM geographic providers — validated.
-  - Phase 2B: CSIS geocoder + packaged JMA rainfall catalog/APIs — next.
-- Phase 3 may not start until Phase 2B is validated.
+  - Phase 2B: CSIS geocoder + packaged JMA rainfall catalog/APIs.
+- Phase 3 may not start until Phase 2B review is complete and the persistent workflow explicitly authorizes it.
 
 ## Preservation constraints
 
