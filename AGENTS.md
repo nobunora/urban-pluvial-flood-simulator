@@ -41,6 +41,21 @@ Keep context small and act from evidence.
 - `docs/00_index.md`
 - Then choose one category index only when needed.
 
+## Persistent Draft PR Workflow
+
+This repository uses the persistent Draft PR workflow described in
+[`docs/current/agent/persistent-draft-pr-workflow.md`](docs/current/agent/persistent-draft-pr-workflow.md).
+Read and follow that document for work communicated through the persistent
+GitHub Draft PR. In particular:
+
+- use one persistent working branch and one long-lived Draft PR;
+- read `.ai/HANDOFF.md`, `.ai/BUG_REPORT.md`, and `.ai/DECISIONS.md` first;
+- treat the latest applicable PR task comment as the active contract;
+- inspect the latest relevant diff before broad repository analysis;
+- keep confirmed findings separate from hypotheses;
+- update the handoff before pushing implementation work;
+- push to the persistent branch and wait for review; do not merge intermediate work.
+
 ## Working Rules
 
 - Prefer focused tests near the changed code first.
