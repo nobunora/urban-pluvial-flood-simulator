@@ -170,7 +170,7 @@ export interface components {
             /** Duration Minutes */
             duration_minutes: number;
             /** Event Date Or Datetime Metadata */
-            event_date_or_datetime_metadata?: unknown;
+            event_date_or_datetime_metadata?: string | null;
             /** Event Id */
             event_id: string;
             /** Intensity Mm Per H */
@@ -185,6 +185,10 @@ export interface components {
             source_url: string;
             /** Station Id */
             station_id: string;
+            /** Station Lat Deg */
+            station_lat_deg: number;
+            /** Station Lon Deg */
+            station_lon_deg: number;
             /** Station Name */
             station_name: string;
             /** Total Precipitation Mm */
