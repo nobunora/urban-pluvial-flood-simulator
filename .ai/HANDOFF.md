@@ -15,10 +15,9 @@
 - Phase 0: `validated`
 - Phase 1: `validated`
 - Phase 2A geographic providers: `validated`
-- Phase 2B: `validation-pending` after Web ChatGPT implemented the remaining review fixes.
+- Phase 2B: `validation-pending` after Web ChatGPT implemented the remaining review fixes and refreshed generated API artifacts.
 - Phase 2B first review-fix implementation commit: `a332b54ac2c00a3cb03ca7c0a72ba6d1ba81b318`.
-- Web ChatGPT has now corrected the canonical station-search semantics, JMA top-ten parsing, event station coordinates, event/catalog cross-validation, packaged event coverage, generator behavior, API event typing, tests, snapshot documentation, and Phase 2B report.
-- `web/openapi.json` and `web/src/api/generated.ts` still need to be refreshed to the current backend schema before final Phase 2B validation.
+- Web ChatGPT corrected the canonical station-search semantics, JMA top-ten parsing, event station coordinates, event/catalog cross-validation, packaged event coverage, generator behavior, API event typing, tests, snapshot documentation, Phase 2B report, OpenAPI JSON, and generated TypeScript DTOs.
 - Phase 3+ has not been implemented.
 
 ## Current work boundary
@@ -36,10 +35,15 @@ Current JMA event semantics:
 - a station may return an empty extremes list when its ranking events are not packaged;
 - the two fixed ranking snapshots each contribute 30 events: 10-minute, 1-hour, and daily rainfall × ranks 1..10;
 - the statistics-period column is never parsed as rank 11;
-- each event carries station coordinates and they must match the station catalog.
+- each event carries station coordinates and they must match the station catalog;
+- fixed snapshot generation must reproduce both committed catalog JSON documents exactly as parsed JSON content.
 
-Validation evidence and the remaining checks are recorded in `docs/implementation/v0.1-phase2b-report.md`.
-Do not start Phase 3 until Local Codex validates the exact final Phase 2B commit and Web ChatGPT explicitly changes the Phase 2B disposition to `validated`.
+Generated API artifacts have been refreshed to the current backend models:
+
+- `web/openapi.json`
+- `web/src/api/generated.ts`
+
+Local Codex must now validate the exact branch head identified in the latest PR validation comment. Do not start Phase 3 until that validation passes and Web ChatGPT explicitly changes Phase 2B to `validated`.
 
 ## Role protocol
 
