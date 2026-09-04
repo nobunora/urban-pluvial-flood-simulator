@@ -59,6 +59,8 @@ class JmaRainfallEvent:
     event_id: str
     station_id: str
     station_name: str
+    station_lon_deg: float
+    station_lat_deg: float
     duration_minutes: int
     total_precipitation_mm: float
     rank: int | None
@@ -92,11 +94,10 @@ class JmaCatalog:
         _validate_coordinates(lon_deg, lat_deg)
         if not 1 <= limit <= 20:
             raise ValueError("limit must be between 1 and 20")
-        event_station_ids = {event.station_id for event in self.events}
         candidates = (
             (station, haversine_distance_km(lon_deg, lat_deg, station.lon_deg, station.lat_deg))
             for station in self.stations
-            if station.precipitation_capable and station.station_id in event_station_ids
+            if station.precipitation_capable
         )
         return sorted(candidates, key=lambda item: (item[1], item[0].station_id))[:limit]
 
@@ -173,9 +174,6 @@ def parse_amedas_csv(
         if not re.fullmatch(r"\d{5}", station_id):
             raise JmaCatalogError("JMA station identifier is malformed")
         if station_id in seen:
-            # The official master can retain a second row for a moved or
-            # co-located station under the same identifier. Keep its first
-            # deterministic occurrence rather than serving duplicate IDs.
             continue
         name = row[3].strip()
         if not name:
@@ -280,10 +278,13 @@ def parse_jma_ranking_html(
     *,
     station_id: str,
     station_name: str,
+    station_lon_deg: float,
+    station_lat_deg: float,
     source_url: str,
     catalog_generated_at_utc: str | None = None,
 ) -> list[JmaRainfallEvent]:
-    """Parse only explicitly mapped annual JMA rainfall ranking rows."""
+    """Parse explicitly mapped JMA rainfall rows and only their top-ten rank cells."""
+    _validate_coordinates(station_lon_deg, station_lat_deg)
     text = payload.decode("utf-8") if isinstance(payload, bytes) else payload
     parser = _TableParser()
     try:
@@ -302,7 +303,10 @@ def parse_jma_ranking_html(
         duration = _RANK_LABEL_DURATIONS.get(_normalize_rank_label(row[0]))
         if duration is None:
             continue
-        for rank, cell in enumerate(row[1:], start=1):
+        # JMA ranking pages contain ten ranked value cells followed by a
+        # statistics-period column. Never interpret that trailing period as
+        # an eleventh rainfall event.
+        for rank, cell in enumerate(row[1:11], start=1):
             parsed = _parse_rank_cell(cell)
             if parsed is None:
                 continue
@@ -312,6 +316,8 @@ def parse_jma_ranking_html(
                     event_id=make_event_id(station_id, duration, value, rank, event_date, source_url),
                     station_id=station_id,
                     station_name=station_name,
+                    station_lon_deg=station_lon_deg,
+                    station_lat_deg=station_lat_deg,
                     duration_minutes=duration,
                     total_precipitation_mm=value,
                     rank=rank,
@@ -366,30 +372,30 @@ def _load_catalog(stations_path: Path, events_path: Path) -> JmaCatalog:
     event_root, event_items = _read_catalog_payload(events_path, "events")
     station_timestamp = _required_string(station_root, "catalog_generated_at_utc")
     event_timestamp = _required_string(event_root, "catalog_generated_at_utc")
+
     stations: list[JmaStation] = []
-    station_ids: set[str] = set()
+    station_by_id: dict[str, JmaStation] = {}
     for item in station_items:
         station_id = _required_string(item, "station_id")
-        if station_id in station_ids:
+        if station_id in station_by_id:
             raise JmaCatalogError("JMA station IDs are duplicated")
-        station_ids.add(station_id)
         if item.get("precipitation_capable") is not True:
             raise JmaCatalogError("JMA catalog contains a non-precipitation station")
         lon = _number(item, "lon_deg", minimum=-180.000001, maximum=180.0)
         lat = _number(item, "lat_deg", minimum=-90.000001, maximum=90.0)
         _validate_coordinates(lon, lat)
-        stations.append(
-            JmaStation(
-                station_id=station_id,
-                name=_required_string(item, "name"),
-                prefecture_or_region=item.get("prefecture_or_region") if isinstance(item.get("prefecture_or_region"), str) else None,
-                lon_deg=lon,
-                lat_deg=lat,
-                precipitation_capable=True,
-                source_url=_required_string(item, "source_url"),
-                catalog_generated_at_utc=_required_string(item, "catalog_generated_at_utc") if item.get("catalog_generated_at_utc") else station_timestamp,
-            )
+        station = JmaStation(
+            station_id=station_id,
+            name=_required_string(item, "name"),
+            prefecture_or_region=item.get("prefecture_or_region") if isinstance(item.get("prefecture_or_region"), str) else None,
+            lon_deg=lon,
+            lat_deg=lat,
+            precipitation_capable=True,
+            source_url=_required_string(item, "source_url"),
+            catalog_generated_at_utc=_required_string(item, "catalog_generated_at_utc") if item.get("catalog_generated_at_utc") else station_timestamp,
         )
+        stations.append(station)
+        station_by_id[station_id] = station
 
     events: list[JmaRainfallEvent] = []
     event_ids: set[str] = set()
@@ -399,14 +405,25 @@ def _load_catalog(stations_path: Path, events_path: Path) -> JmaCatalog:
             raise JmaCatalogError("JMA event IDs are duplicated")
         event_ids.add(event_id)
         station_id = _required_string(item, "station_id")
-        if station_id not in station_ids:
+        station = station_by_id.get(station_id)
+        if station is None:
             raise JmaCatalogError("JMA event refers to an unknown station")
+        station_name = _required_string(item, "station_name")
+        station_lon = _number(item, "station_lon_deg", minimum=-180.000001, maximum=180.0)
+        station_lat = _number(item, "station_lat_deg", minimum=-90.000001, maximum=90.0)
+        _validate_coordinates(station_lon, station_lat)
+        if station_name != station.name:
+            raise JmaCatalogError("JMA event station name does not match station catalog")
+        if not math.isclose(station_lon, station.lon_deg, rel_tol=0.0, abs_tol=1e-12) or not math.isclose(
+            station_lat, station.lat_deg, rel_tol=0.0, abs_tol=1e-12
+        ):
+            raise JmaCatalogError("JMA event station coordinates do not match station catalog")
         duration = item.get("duration_minutes")
         if isinstance(duration, bool) or not isinstance(duration, int) or duration <= 0:
             raise JmaCatalogError("JMA event duration is invalid")
         total = _number(item, "total_precipitation_mm", minimum=0.0)
         rank = item.get("rank")
-        if rank is not None and (isinstance(rank, bool) or not isinstance(rank, int) or rank <= 0):
+        if rank is not None and (isinstance(rank, bool) or not isinstance(rank, int) or not 1 <= rank <= 10):
             raise JmaCatalogError("JMA event rank is invalid")
         flags = item.get("data_quality_flags", [])
         if not isinstance(flags, list) or not all(isinstance(flag, str) for flag in flags):
@@ -426,7 +443,9 @@ def _load_catalog(stations_path: Path, events_path: Path) -> JmaCatalog:
             JmaRainfallEvent(
                 event_id=event_id,
                 station_id=station_id,
-                station_name=_required_string(item, "station_name"),
+                station_name=station_name,
+                station_lon_deg=station_lon,
+                station_lat_deg=station_lat,
                 duration_minutes=duration,
                 total_precipitation_mm=total,
                 rank=rank,
@@ -472,7 +491,9 @@ class JmaCatalogProvider:
         return load_catalog(self.stations_path, self.events_path)
 
 
-def catalog_payload(stations: Iterable[JmaStation], events: Iterable[JmaRainfallEvent], generated_at: str) -> tuple[dict[str, Any], dict[str, Any]]:
+def catalog_payload(
+    stations: Iterable[JmaStation], events: Iterable[JmaRainfallEvent], generated_at: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
     station_list = [asdict(station) for station in stations]
     event_list = [asdict(event) for event in sorted(events, key=_event_sort_key)]
     return (
