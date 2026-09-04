@@ -16,6 +16,12 @@ Official source URLs:
 The catalog generation timestamp used for these packaged assets is
 `2026-09-03T00:00:00+00:00`.
 
+Validated SHA-256 values:
+
+- `ame_master.zip` — `2374836F9F7FBF884D92F49DEFB9EA166ABD60ABE075914BCF7720947AF33596`
+- `rank_44132.html` — `3A5D658076A41DE29C450A76EC1EAFC8D669833E251F17AF281E741152DAF123`
+- `rank_44173.html` — `68B64F3B86399DB83B7554BC5E10CE9E0E6CFD957F35D1C999C605D49B8DE92D`
+
 Rebuild the committed catalogs from the fixed snapshots with:
 
 ```powershell
@@ -42,6 +48,4 @@ stations even when a station currently has no packaged extreme event; in that
 case the station extremes endpoint returns an empty event list.
 
 JMA source attribution must be preserved in generated event/station records and
-in user-facing provenance where those records are used. Snapshot SHA-256 values
-are verified during the validation pass and should be recorded in the Phase 2B
-validation report before final validation.
+in user-facing provenance where those records are used.
