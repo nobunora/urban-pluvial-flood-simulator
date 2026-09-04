@@ -405,17 +405,17 @@ def _load_catalog(stations_path: Path, events_path: Path) -> JmaCatalog:
             raise JmaCatalogError("JMA event IDs are duplicated")
         event_ids.add(event_id)
         station_id = _required_string(item, "station_id")
-        station = station_by_id.get(station_id)
-        if station is None:
+        event_station = station_by_id.get(station_id)
+        if event_station is None:
             raise JmaCatalogError("JMA event refers to an unknown station")
         station_name = _required_string(item, "station_name")
         station_lon = _number(item, "station_lon_deg", minimum=-180.000001, maximum=180.0)
         station_lat = _number(item, "station_lat_deg", minimum=-90.000001, maximum=90.0)
         _validate_coordinates(station_lon, station_lat)
-        if station_name != station.name:
+        if station_name != event_station.name:
             raise JmaCatalogError("JMA event station name does not match station catalog")
-        if not math.isclose(station_lon, station.lon_deg, rel_tol=0.0, abs_tol=1e-12) or not math.isclose(
-            station_lat, station.lat_deg, rel_tol=0.0, abs_tol=1e-12
+        if not math.isclose(station_lon, event_station.lon_deg, rel_tol=0.0, abs_tol=1e-12) or not math.isclose(
+            station_lat, event_station.lat_deg, rel_tol=0.0, abs_tol=1e-12
         ):
             raise JmaCatalogError("JMA event station coordinates do not match station catalog")
         duration = item.get("duration_minutes")
