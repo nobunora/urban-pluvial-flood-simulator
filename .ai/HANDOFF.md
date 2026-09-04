@@ -15,10 +15,10 @@
 - Phase 0: `validated`
 - Phase 1: `validated`
 - Phase 2A geographic providers: `validated`
-- Phase 2B: `validation-pending` after Web ChatGPT implemented the remaining review fixes and refreshed generated API artifacts.
+- Phase 2B: `validation-pending` after Web ChatGPT implemented the remaining review fixes and additional generator-contract hardening.
 - Phase 2B first review-fix implementation commit: `a332b54ac2c00a3cb03ca7c0a72ba6d1ba81b318`.
 - Web ChatGPT corrected the canonical station-search semantics, JMA top-ten parsing, event station coordinates, event/catalog cross-validation, packaged event coverage, generator behavior, API event typing, tests, snapshot documentation, Phase 2B report, OpenAPI JSON, and generated TypeScript DTOs.
-- A transient Web ChatGPT write accidentally truncated `web/openapi.json`; the full generated contract was immediately restored before validation. Validation must use the latest PR head only.
+- A later audit found two additional Phase 2B generator gaps: arbitrary HTTPS provenance/source URLs were accepted, and a missing required rainfall-duration row could silently produce a partial catalog. Web ChatGPT fixed both and added `tests/test_phase2b_generator_contracts.py`.
 - Phase 3+ has not been implemented.
 
 ## Current work boundary
@@ -30,16 +30,18 @@ The active implementation boundary remains Phase 2B only:
 - deterministic fixture/snapshot parsing, validation, provenance, and generated API contracts;
 - no simulation orchestration, Full 1 m production flow, Adaptive, result UI, or packaging.
 
-Current JMA event semantics:
+Current JMA event/generator semantics:
 
 - nearest-station search considers all 1,286 packaged precipitation-capable stations;
 - a station may return an empty extremes list when its ranking events are not packaged;
 - the two fixed ranking snapshots each contribute 30 events: 10-minute, 1-hour, and daily rainfall × ranks 1..10;
 - the statistics-period column is never parsed as rank 11;
 - each event carries station coordinates and they must match the station catalog;
-- fixed snapshot generation must reproduce both committed catalog JSON documents exactly as parsed JSON content.
+- fixed snapshot generation must reproduce both committed catalog JSON documents exactly as parsed JSON content;
+- maintenance generation accepts only official HTTPS `jma.go.jp` hosts for recorded/fetched station and ranking sources;
+- every ranking source must expose recognized 10-minute, 1-hour, and daily rainfall rows or catalog generation fails explicitly.
 
-Generated API artifacts have been refreshed to the current backend models:
+Generated API artifacts remain:
 
 - `web/openapi.json`
 - `web/src/api/generated.ts`
