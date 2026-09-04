@@ -31,6 +31,10 @@ function currentOpenApi(outputPath) {
   run(python, ["-m", "scripts.export_openapi", "--output", outputPath], repositoryRoot);
 }
 
+function canonicalText(path) {
+  return readFileSync(path, "utf8").replace(/\r\n?/g, "\n");
+}
+
 if (!python) {
   console.error("No project Python interpreter was found.");
   process.exit(1);
@@ -47,12 +51,12 @@ const temporaryOpenApi = join(temporaryDirectory, "openapi.json");
 const temporaryGenerated = join(temporaryDirectory, "generated.ts");
 try {
   currentOpenApi(temporaryOpenApi);
-  if (!existsSync(openapiPath) || readFileSync(temporaryOpenApi, "utf8") !== readFileSync(openapiPath, "utf8")) {
+  if (!existsSync(openapiPath) || canonicalText(temporaryOpenApi) !== canonicalText(openapiPath)) {
     console.error("web/openapi.json is out of date; run npm run api:generate.");
     process.exit(1);
   }
   generateTypes(temporaryOpenApi, temporaryGenerated);
-  if (!existsSync(generatedPath) || readFileSync(temporaryGenerated, "utf8") !== readFileSync(generatedPath, "utf8")) {
+  if (!existsSync(generatedPath) || canonicalText(temporaryGenerated) !== canonicalText(generatedPath)) {
     console.error("web/src/api/generated.ts is out of date; run npm run api:generate.");
     process.exit(1);
   }
