@@ -18,6 +18,7 @@
 - Phase 2B: `validation-pending` after Web ChatGPT implemented the remaining review fixes and refreshed generated API artifacts.
 - Phase 2B first review-fix implementation commit: `a332b54ac2c00a3cb03ca7c0a72ba6d1ba81b318`.
 - Web ChatGPT corrected the canonical station-search semantics, JMA top-ten parsing, event station coordinates, event/catalog cross-validation, packaged event coverage, generator behavior, API event typing, tests, snapshot documentation, Phase 2B report, OpenAPI JSON, and generated TypeScript DTOs.
+- A transient Web ChatGPT write accidentally truncated `web/openapi.json`; the full generated contract was immediately restored before validation. Validation must use the latest PR head only.
 - Phase 3+ has not been implemented.
 
 ## Current work boundary
