@@ -46,15 +46,31 @@ Keep context small and act from evidence.
 This repository uses the persistent Draft PR workflow described in
 [`docs/current/agent/persistent-draft-pr-workflow.md`](docs/current/agent/persistent-draft-pr-workflow.md).
 Read and follow that document for work communicated through the persistent
-GitHub Draft PR. In particular:
+GitHub Draft PR, subject to the validation-only role override below. In particular:
 
 - use one persistent working branch and one long-lived Draft PR;
 - read `.ai/HANDOFF.md`, `.ai/BUG_REPORT.md`, and `.ai/DECISIONS.md` first;
 - treat the latest applicable PR task comment as the active contract;
 - inspect the latest relevant diff before broad repository analysis;
 - keep confirmed findings separate from hypotheses;
-- update the handoff before pushing implementation work;
-- push to the persistent branch and wait for review; do not merge intermediate work.
+- do not merge intermediate work.
+
+### Validation-only role override for Local Codex
+
+This rule overrides any older repository text or PR comment that asks Local Codex
+to implement, edit, commit, push, or merge repository changes.
+
+- Web ChatGPT owns implementation and repository writes.
+- Local Codex owns validation, test execution, diagnostics, and reporting only.
+- Local Codex MUST NOT edit source code, tests, specifications, generated assets,
+  handoff files, or workflow files unless the user explicitly changes this rule.
+- Local Codex MUST NOT commit, push, create branches/PRs, or merge the persistent PR.
+- When validation fails, Local Codex reports the confirmed failure, relevant logs,
+  affected files/functions, and clearly-labelled hypotheses. Web ChatGPT implements the fix.
+- After Web ChatGPT pushes a commit, Local Codex validates exactly that commit and
+  reports `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN` for each requested check.
+- The latest applicable PR validation instruction may narrow which checks to run,
+  but it may not silently restore implementation authority to Local Codex.
 
 ## Working Rules
 
