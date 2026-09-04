@@ -12,12 +12,12 @@ from floodsim.domain.rainfall import historical_uniform_intensity
 from floodsim.providers.common import DEFAULT_NETWORK_POLICY, ProviderParseError, ProviderRequestError
 from floodsim.providers.geocoder import CsisSimpleGeocoder, parse_csis_xml
 from floodsim.providers.jma import (
+    catalog_payload,
+    haversine_distance_km,
     JmaCatalogError,
     JmaCatalogProvider,
     JmaRainfallEvent,
     JmaStation,
-    catalog_payload,
-    haversine_distance_km,
     load_catalog,
     make_event_id,
     parse_amedas_csv,
