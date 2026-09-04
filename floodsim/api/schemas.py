@@ -1,6 +1,6 @@
 """API response schemas."""
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -67,9 +67,9 @@ class RainfallStationResponse(BaseModel):
     station_id: str
     name: str
     prefecture_or_region: str | None = None
-    lon_deg: float
-    lat_deg: float
-    distance_km: float | None = None
+    lon_deg: float = Field(ge=-180, le=180)
+    lat_deg: float = Field(ge=-90, le=90)
+    distance_km: float | None = Field(default=None, ge=0)
 
 
 class RainfallStationSearchResponse(BaseModel):
@@ -84,16 +84,18 @@ class RainfallEventResponse(BaseModel):
     event_id: str
     station_id: str
     station_name: str
-    duration_minutes: int
-    total_precipitation_mm: float
-    rank: int | None = None
-    event_date_or_datetime_metadata: Any = None
+    station_lon_deg: float = Field(ge=-180, le=180)
+    station_lat_deg: float = Field(ge=-90, le=90)
+    duration_minutes: int = Field(gt=0)
+    total_precipitation_mm: float = Field(gt=0)
+    rank: int | None = Field(default=None, ge=1, le=10)
+    event_date_or_datetime_metadata: str | None = None
     source_url: str
     catalog_generated_at_utc: str
     data_quality_flags: list[str]
     profile_available: bool
     profile_id: str | None = None
-    intensity_mm_per_h: float
+    intensity_mm_per_h: float = Field(gt=0)
 
 
 class RainfallExtremesResponse(BaseModel):
