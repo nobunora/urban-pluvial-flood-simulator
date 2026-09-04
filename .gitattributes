@@ -1,0 +1,4 @@
+# Keep generated application artifacts byte-stable across Windows and POSIX checkouts.
+web/openapi.json text eol=lf
+web/src/api/generated.ts text eol=lf
+floodsim/static/** text eol=lf
