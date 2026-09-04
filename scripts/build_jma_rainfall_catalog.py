@@ -29,13 +29,40 @@ DEFAULT_RANKING_SOURCES = (
         "https://www.data.jma.go.jp/stats/etrn/view/rank_s.php?prec_no=44&block_no=47662&year=&month=&day=&view=a2",
     ),
 )
+REQUIRED_RAINFALL_DURATIONS = frozenset({10, 60, 1440})
 
 
 def _now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _require_official_jma_url(url: str, *, label: str) -> str:
+    """Accept only HTTPS URLs hosted by JMA itself.
+
+    The Phase 2B maintenance generator is intentionally restricted to official
+    JMA sources. Snapshot mode may read bytes locally, but the recorded source
+    URL must still identify an official JMA origin.
+    """
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{label} URL is malformed") from exc
+
+    host = (parsed.hostname or "").casefold().rstrip(".")
+    if parsed.scheme.casefold() != "https" or not host:
+        raise ValueError(f"{label} URL must use HTTPS")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError(f"{label} URL must not contain credentials")
+    if port not in (None, 443):
+        raise ValueError(f"{label} URL must use the standard HTTPS port")
+    if host != "jma.go.jp" and not host.endswith(".jma.go.jp"):
+        raise ValueError(f"{label} URL must use an official jma.go.jp host")
+    return url
+
+
 def _fetch(url: str):
+    _require_official_jma_url(url, label="source")
     session = make_session(DEFAULT_NETWORK_POLICY)
     return request_with_retry(session, "GET", url, policy=DEFAULT_NETWORK_POLICY)
 
@@ -44,10 +71,7 @@ def _parse_source_spec(spec: str) -> tuple[str, str, str]:
     parts = spec.split("|", 2)
     if len(parts) != 3 or any(not part.strip() for part in parts):
         raise ValueError("ranking source must be STATION_ID|STATION_NAME|URL")
-    url = parts[2].strip()
-    parsed = urlsplit(url)
-    if parsed.scheme != "https" or not parsed.netloc:
-        raise ValueError("ranking source URL must be HTTPS")
+    url = _require_official_jma_url(parts[2].strip(), label="ranking source")
     return parts[0].strip(), parts[1].strip(), url
 
 
@@ -74,7 +98,8 @@ def build_catalog(
     generated_at_utc: str,
     station_limit: int | None = None,
 ) -> tuple[dict, dict]:
-    """Build deterministic catalogs without discarding recognized top-ten rainfall ranks."""
+    """Build deterministic catalogs from official JMA sources only."""
+    _require_official_jma_url(station_source_url, label="station source")
     stations = parse_amedas_csv(
         station_payload,
         source_url=station_source_url,
@@ -88,6 +113,7 @@ def build_catalog(
     station_by_id = {station.station_id: station for station in stations}
     events: list[JmaRainfallEvent] = []
     for station_id, station_name, source_url, payload in ranking_payloads:
+        _require_official_jma_url(source_url, label="ranking source")
         station = station_by_id.get(station_id)
         if station is None:
             raise ValueError(f"ranking station {station_id} is not in the AMeDAS catalog")
@@ -106,6 +132,14 @@ def build_catalog(
         )
         if not parsed_events:
             raise ValueError(f"ranking source {source_url} has no recognized required rainfall rows")
+
+        parsed_durations = {event.duration_minutes for event in parsed_events}
+        missing_durations = REQUIRED_RAINFALL_DURATIONS - parsed_durations
+        if missing_durations:
+            missing = ", ".join(str(duration) for duration in sorted(missing_durations))
+            raise ValueError(
+                f"ranking source {source_url} is missing required rainfall durations: {missing} minutes"
+            )
         events.extend(parsed_events)
 
     if not events:
@@ -149,8 +183,9 @@ def main() -> None:
     if args.ranking_input and args.ranking_source:
         parser.error("--ranking-input and --ranking-source cannot be combined")
 
+    station_source_url = _require_official_jma_url(args.station_url, label="station source")
     generated_at = args.generated_at_utc or _now_utc()
-    station_payload = _read_snapshot(args.station_input) if args.station_input else _fetch(args.station_url).content
+    station_payload = _read_snapshot(args.station_input) if args.station_input else _fetch(station_source_url).content
     if args.ranking_input:
         ranking_payloads = [
             (station_id, station_name, url, _read_snapshot(path))
@@ -169,7 +204,7 @@ def main() -> None:
 
     stations, events = build_catalog(
         station_payload=station_payload,
-        station_source_url=args.station_url,
+        station_source_url=station_source_url,
         ranking_payloads=ranking_payloads,
         generated_at_utc=generated_at,
         station_limit=args.station_limit,
