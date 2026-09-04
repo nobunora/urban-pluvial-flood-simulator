@@ -5,9 +5,19 @@
 - Use one long-lived Draft PR as the Web ChatGPT ↔ Local Codex communication channel.
 - Do not create a new PR for each iteration.
 - Web ChatGPT posts concrete executable tasks as PR conversation comments.
-- Local Codex pushes commits to the same working branch.
+- Local Codex uses the same persistent working branch as the validation target.
 - Review the latest relevant diff instead of re-reading the whole repository.
 - Merge only when the full assigned task is complete and validation passes.
+
+## Implementation / validation role split
+
+- Web ChatGPT owns implementation and repository writes.
+- Web ChatGPT may edit source, tests, docs, generated assets, handoff files, and workflow files as required by the approved task.
+- Local Codex is validation/reporting only.
+- Local Codex must not edit repository files, commit, push, create branches or PRs, or merge changes unless the user explicitly changes this decision later.
+- After Web ChatGPT pushes a commit, Local Codex runs the requested focused/regression/static/frontend/live checks against that exact commit and reports `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN` with useful diagnostics.
+- If Local Codex finds a defect, it reports the defect; Web ChatGPT implements the correction.
+- This role split overrides older workflow text or PR comments that assign implementation work to Local Codex.
 
 ## Specification precedence
 
