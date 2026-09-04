@@ -61,10 +61,22 @@ def test_generator_fails_when_required_rainfall_duration_is_missing() -> None:
 
 
 def test_programmatic_catalog_build_rejects_non_jma_provenance_urls() -> None:
+    station_payload = (FIXTURES / "jma_amedas.csv").read_bytes()
+
     with pytest.raises(ValueError, match="official jma.go.jp host"):
         build_catalog(
-            station_payload=(FIXTURES / "jma_amedas.csv").read_bytes(),
+            station_payload=station_payload,
             station_source_url="https://example.com/ame_master.zip",
             ranking_payloads=[],
+            generated_at_utc=GENERATED_AT,
+        )
+
+    with pytest.raises(ValueError, match="official jma.go.jp host"):
+        build_catalog(
+            station_payload=station_payload,
+            station_source_url=STATION_SOURCE,
+            ranking_payloads=[
+                ("44173", "大島北ノ山", "https://example.com/rank", b"<table></table>")
+            ],
             generated_at_utc=GENERATED_AT,
         )
