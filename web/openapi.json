@@ -181,10 +181,19 @@
             "type": "array"
           },
           "duration_minutes": {
+            "exclusiveMinimum": 0.0,
             "title": "Duration Minutes",
             "type": "integer"
           },
           "event_date_or_datetime_metadata": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Event Date Or Datetime Metadata"
           },
           "event_id": {
@@ -192,6 +201,7 @@
             "type": "string"
           },
           "intensity_mm_per_h": {
+            "exclusiveMinimum": 0.0,
             "title": "Intensity Mm Per H",
             "type": "number"
           },
@@ -213,6 +223,8 @@
           "rank": {
             "anyOf": [
               {
+                "maximum": 10.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -229,11 +241,24 @@
             "title": "Station Id",
             "type": "string"
           },
+          "station_lat_deg": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Station Lat Deg",
+            "type": "number"
+          },
+          "station_lon_deg": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Station Lon Deg",
+            "type": "number"
+          },
           "station_name": {
             "title": "Station Name",
             "type": "string"
           },
           "total_precipitation_mm": {
+            "exclusiveMinimum": 0.0,
             "title": "Total Precipitation Mm",
             "type": "number"
           }
@@ -242,6 +267,8 @@
           "event_id",
           "station_id",
           "station_name",
+          "station_lon_deg",
+          "station_lat_deg",
           "duration_minutes",
           "total_precipitation_mm",
           "source_url",
@@ -280,6 +307,7 @@
           "distance_km": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "number"
               },
               {
@@ -289,10 +317,14 @@
             "title": "Distance Km"
           },
           "lat_deg": {
+            "maximum": 90.0,
+            "minimum": -90.0,
             "title": "Lat Deg",
             "type": "number"
           },
           "lon_deg": {
+            "maximum": 180.0,
+            "minimum": -180.0,
             "title": "Lon Deg",
             "type": "number"
           },
