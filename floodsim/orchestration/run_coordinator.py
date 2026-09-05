@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from uuid import UUID, uuid4
 
 from platformdirs import user_data_path
@@ -376,7 +377,7 @@ class RunCoordinator:
                     record.manifest = record.manifest.model_copy(update={"run_status": RunState.CANCELLED})
                     self._append_event(record, RunState.CANCELLED, "計算をキャンセルしました。")
                     self._persist_manifest(record)
-        except BaseException as exc:
+        except Exception as exc:
             with record.lock:
                 if record.cancel_event.is_set():
                     if record.machine.state is not RunState.CANCELLING:
