@@ -18,12 +18,22 @@ from floodsim.domain.rainfall import ConstantRainfall
 from floodsim.domain.run_config import AccuracyMode, RunConfig
 from floodsim.domain.run_state import RunState
 from floodsim.orchestration.run_coordinator import RunCoordinator
-from floodsim.preprocessing.full_grid import GENERAL_MANNING, ROAD_MANNING, build_full_1m_grid
-from floodsim.preprocessing.roof_rainfall import RoofRunoffNoRecipient, allocate_roof_rainfall
+from floodsim.preprocessing.full_grid import (
+    GENERAL_MANNING,
+    ROAD_MANNING,
+    build_full_1m_grid,
+)
+from floodsim.preprocessing.roof_rainfall import (
+    RoofRunoffNoRecipient,
+    allocate_roof_rainfall,
+)
 from floodsim.providers.common import ProviderProvenance
 from floodsim.providers.gsi_elevation import ElevationProduct
 from floodsim.results.normalize import normalize_regular_result
-from floodsim.sfincs.model_builder import ModelBuildResult, derive_output_interval_seconds
+from floodsim.sfincs.model_builder import (
+    ModelBuildResult,
+    derive_output_interval_seconds,
+)
 from floodsim.sfincs.output_reader import SfincsResultError, read_regular_result
 from floodsim.sfincs.runner import ResolvedEngine, SfincsRunResult
 
@@ -196,7 +206,7 @@ def _test_coordinator(tmp_path: Path) -> RunCoordinator:
     return RunCoordinator(
         runs_root=tmp_path / "runs",
         elevation_provider=_FakeElevationProvider(),
-        vector_acquirer=lambda area, **kwargs: _vectors(area, with_building=False),
+        vector_acquirer=lambda area, **_kwargs: _vectors(area, with_building=False),
         model_builder=_FakeModelBuilder(),
         engine_resolver=lambda: ResolvedEngine(Path(__file__), "test", "TESTSHA"),
         runner_factory=_FakeRunner,
