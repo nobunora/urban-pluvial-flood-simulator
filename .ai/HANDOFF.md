@@ -4,8 +4,8 @@
 
 - Persistent branch: `codex/persistent-workspace`
 - Communication channel: one long-lived GitHub Draft PR targeting `main`
-- Web ChatGPT owns implementation and repository writes on this branch.
-- Local Codex is validation/reporting only and must not edit, commit, push, create PRs, or merge unless the user explicitly changes that rule.
+- Web ChatGPT owns analysis, specification, review, acceptance decisions, and PR task wording.
+- Local Codex owns implementation, source/test/generated-asset edits, validation, commits, and pushes to the persistent branch.
 - Do not open a new PR for each iteration.
 - Keep the Draft PR open until the user explicitly requests merge or the persistent workspace is intentionally retired.
 
@@ -17,7 +17,7 @@
 - Phase 2B CSIS/JMA providers and API contracts: `validated`
 - Phase 3 has not been implemented yet.
 
-Phase 2B was validated by Local Codex against exact commit:
+Phase 2B was validated by Local Codex against exact implementation commit:
 
 `660579bfebb5f1e275004ed0f1d0a0b4db7cb322`
 
@@ -48,28 +48,37 @@ Phase 2B implementation includes:
 
 Phase 3 may now begin under `docs/specs/v0.1-implementation-spec.md` §22.
 
-Web ChatGPT must implement Phase 3. Local Codex must not implement it; Local Codex only runs the exact validation commands requested after Web ChatGPT pushes a Phase 3 implementation commit.
+Phase 3 implementation is delegated to Local Codex. Web ChatGPT must first read the canonical Phase 3 contract and post a precise `## Codex Task` comment in PR #12. Codex must implement only that contract, run the required tests, push to `codex/persistent-workspace`, and stop for review.
 
-Do not assume Phase 3 scope from memory. Web ChatGPT must read the canonical Phase 3 contract and post a new validation task after implementation.
+Do not assume Phase 3 scope from memory. The latest applicable PR task comment plus canonical specifications define the executable contract.
+
+## Why implementation is delegated to Codex
+
+Direct source-level editing through Web ChatGPT was found to consume substantially more conversation tokens. To keep the workflow efficient, Web ChatGPT should normally not patch production source code itself. Instead it should spend tokens on high-value analysis, specification, review, and very explicit PR instructions, while Local Codex performs the code changes and local validation.
 
 ## Role protocol
 
 ### Web ChatGPT
 
 1. Read this handoff and the latest relevant PR discussion.
-2. Read the canonical specification for the active phase.
-3. Implement required changes directly on `codex/persistent-workspace`.
-4. Commit/push the implementation.
-5. Post an exact validation request for Local Codex.
-6. Review Codex's validation report and decide `validated`, `needs-fix`, `blocked`, or `spec-change-required`.
+2. Read the canonical specification for the active phase and inspect only the directly relevant repository state.
+3. Post a strict implementation contract to PR #12. Include objective, confirmed findings, exact required behavior, target files/symbols when known, scope boundaries, explicit non-goals, acceptance criteria, required tests, and reporting format.
+4. Do not normally edit production source code directly.
+5. After Codex pushes, review the latest relevant commit/diff and validation evidence.
+6. If corrections are needed, post another precise PR comment; do not patch source directly unless the user explicitly changes this workflow or an exceptional repository-control fix is required.
+7. Decide `validated`, `needs-fix`, `blocked`, or `spec-change-required` from evidence.
 
 ### Local Codex
 
-1. Fetch the exact commit identified by Web ChatGPT into a clean/disposable validation worktree if requested.
-2. Read `.ai/HANDOFF.md`, `.ai/BUG_REPORT.md`, `.ai/DECISIONS.md`, and the latest applicable validation instruction.
-3. Run only the requested checks.
-4. Report exact commands and `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN`.
-5. Include confirmed failures, useful logs, affected files/functions, and clearly labelled hypotheses if needed.
-6. Make no repository changes, commits, pushes, branches, PRs, or merges.
+1. Read `.ai/HANDOFF.md`, `.ai/BUG_REPORT.md`, `.ai/DECISIONS.md`, `AGENTS.md`, and the latest applicable PR task comment.
+2. Inspect only the repository areas needed to execute that contract.
+3. Implement the requested code/test/generated-asset changes on `codex/persistent-workspace`.
+4. Preserve validated Phase 0/1/2A/2B behavior unless explicitly authorized otherwise.
+5. If the task conflicts with canonical specifications or requires a product/architecture decision not already made, stop and report `spec-change-required` with evidence.
+6. Run focused tests first, then all required regression/static/frontend/live checks specified by the task.
+7. Update `.ai/HANDOFF.md` when implementation state materially changes; update `.ai/BUG_REPORT.md` or `.ai/DECISIONS.md` only when their documented criteria are met.
+8. Commit and push to `codex/persistent-workspace`.
+9. Report the exact commit SHA, changed files, implementation summary, exact checks/results, remaining risks/blockers, and disposition recommendation.
+10. Stop for Web ChatGPT review. Do not begin the next phase independently and do not merge PR #12.
 
 Do not infer completion from commit messages alone. Completion requires the active acceptance criteria and validation request to pass.
