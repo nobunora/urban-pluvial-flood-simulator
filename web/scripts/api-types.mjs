@@ -8,10 +8,25 @@ const repositoryRoot = resolve(webRoot, "..");
 const openapiPath = resolve(webRoot, "openapi.json");
 const generatedPath = resolve(webRoot, "src", "api", "generated.ts");
 const checkMode = process.argv[2] === "--check";
-const pythonCandidates = process.platform === "win32"
-  ? [resolve(repositoryRoot, ".venv", "Scripts", "python.exe"), "python"]
-  : [resolve(repositoryRoot, ".venv", "bin", "python"), "python3", "python"];
-const python = pythonCandidates.find((candidate) => candidate === "python" || candidate === "python3" || existsSync(candidate));
+const configuredPython = process.env.FLOODSIM_PYTHON?.trim() || process.env.PYTHON?.trim();
+const activeEnvironment = process.env.CONDA_PREFIX?.trim() || process.env.VIRTUAL_ENV?.trim();
+const activeEnvironmentPython = activeEnvironment
+  ? resolve(activeEnvironment, process.platform === "win32" ? "python.exe" : "bin/python")
+  : undefined;
+const repositoryVenvPython = resolve(
+  repositoryRoot,
+  ".venv",
+  process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+);
+const pythonCandidates = [
+  configuredPython,
+  activeEnvironmentPython,
+  repositoryVenvPython,
+  ...(process.platform === "win32" ? ["python"] : ["python3", "python"]),
+].filter(Boolean);
+const python = pythonCandidates.find(
+  (candidate) => candidate === "python" || candidate === "python3" || existsSync(candidate),
+);
 const openapiCli = resolve(webRoot, "node_modules", "openapi-typescript", "bin", "cli.js");
 
 function run(command, args, cwd) {
