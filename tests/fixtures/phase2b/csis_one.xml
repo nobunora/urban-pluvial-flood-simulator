@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<results>
+  <query>東京駅</query>
+  <geodetic>wgs1984</geodetic>
+  <iConf>3</iConf>
+  <converted>東京都千代田区</converted>
+  <candidate>
+    <address>東京都千代田区丸の内一丁目</address>
+    <longitude>139.753632</longitude>
+    <latitude>35.694004</latitude>
+    <iLvl>1</iLvl>
+  </candidate>
+</results>

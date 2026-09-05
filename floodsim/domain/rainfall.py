@@ -21,7 +21,11 @@ class RainfallModel(BaseModel):
 
 class ConstantRainfall(RainfallModel):
     kind: Literal["constant"] = "constant"
-    intensity_mm_per_h: float = Field(ge=0)
+    intensity_mm_per_h: float = Field(ge=0, le=500)
+    # Phase 1 callers omitted duration. Keep a 60-minute default so the
+    # established contract remains source-compatible while Phase 3 can resolve
+    # an exact simulation stop time.
+    duration_minutes: int = Field(default=60, ge=1, le=10080)
 
 
 class HistoricalUniformRainfall(RainfallModel):
@@ -76,3 +80,15 @@ class RainfallTimeSeries(RainfallModel):
         if len(self.elapsed_seconds) != len(self.intensity_mm_per_h):
             raise ValueError("elapsed_seconds and intensity_mm_per_h must have equal length")
         return self
+
+
+def historical_uniform_intensity(total_precipitation_mm: float, duration_minutes: float) -> float:
+    """Convert a positive historical total to a spatially uniform intensity."""
+    if not math.isfinite(total_precipitation_mm) or total_precipitation_mm <= 0:
+        raise ValueError("total_precipitation_mm must be finite and positive")
+    if not math.isfinite(float(duration_minutes)) or duration_minutes <= 0:
+        raise ValueError("duration_minutes must be finite and positive")
+    return total_precipitation_mm / (float(duration_minutes) / 60.0)
+
+
+uniform_intensity_from_total = historical_uniform_intensity
