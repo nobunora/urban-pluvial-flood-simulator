@@ -21,7 +21,11 @@ class RainfallModel(BaseModel):
 
 class ConstantRainfall(RainfallModel):
     kind: Literal["constant"] = "constant"
-    intensity_mm_per_h: float = Field(ge=0)
+    intensity_mm_per_h: float = Field(ge=0, le=500)
+    # Phase 1 callers omitted duration. Keep a 60-minute default so the
+    # established contract remains source-compatible while Phase 3 can resolve
+    # an exact simulation stop time.
+    duration_minutes: int = Field(default=60, ge=1, le=10080)
 
 
 class HistoricalUniformRainfall(RainfallModel):
