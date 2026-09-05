@@ -9,9 +9,13 @@ const openapiPath = resolve(webRoot, "openapi.json");
 const generatedPath = resolve(webRoot, "src", "api", "generated.ts");
 const checkMode = process.argv[2] === "--check";
 const configuredPython = process.env.FLOODSIM_PYTHON?.trim() || process.env.PYTHON?.trim();
-const activeEnvironment = process.env.CONDA_PREFIX?.trim() || process.env.VIRTUAL_ENV?.trim();
-const activeEnvironmentPython = activeEnvironment
-  ? resolve(activeEnvironment, process.platform === "win32" ? "python.exe" : "bin/python")
+const condaPrefix = process.env.CONDA_PREFIX?.trim();
+const virtualEnv = process.env.VIRTUAL_ENV?.trim();
+const condaPython = condaPrefix
+  ? resolve(condaPrefix, process.platform === "win32" ? "python.exe" : "bin/python")
+  : undefined;
+const virtualEnvPython = virtualEnv
+  ? resolve(virtualEnv, process.platform === "win32" ? "Scripts/python.exe" : "bin/python")
   : undefined;
 const repositoryVenvPython = resolve(
   repositoryRoot,
@@ -20,7 +24,8 @@ const repositoryVenvPython = resolve(
 );
 const pythonCandidates = [
   configuredPython,
-  activeEnvironmentPython,
+  condaPython,
+  virtualEnvPython,
   repositoryVenvPython,
   ...(process.platform === "win32" ? ["python"] : ["python3", "python"]),
 ].filter(Boolean);
