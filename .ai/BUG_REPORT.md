@@ -10,7 +10,6 @@ None.
 - OSM completeness varies by area and must remain disclosed as fallback data.
 - SFINCS executable redistribution/bootstrap licensing remains unresolved for later packaging phases.
 - CodebaseMemory has intermittently returned `Transport closed`; source code and deterministic repository tests remain authoritative.
-- Phase 2B packaged extreme-event coverage is intentionally limited to the fixed ranking snapshots documented in the implementation report; the station catalog itself is nationwide.
 
 ## Reporting rule
 
