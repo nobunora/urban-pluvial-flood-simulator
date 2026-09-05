@@ -36,7 +36,7 @@ def _load_sfincs_model() -> Any:
     if restore_debug:
         os.environ.pop("DEBUG", None)
     try:
-        from hydromt_sfincs import SfincsModel
+        from hydromt_sfincs import SfincsModel  # type: ignore[import-untyped]
     except Exception as exc:  # pragma: no cover - environment dependent
         raise ModelBuildError("HydroMT-SFINCS 2.0.0rc3 is unavailable") from exc
     finally:
@@ -122,10 +122,10 @@ class SfincsModelBuilder:
             # rc3's regular-grid create() requires an integer EPSG during
             # initialization. The normalized providers deliberately use a local
             # AEQD CRS, which has no EPSG code. Initialize with a valid temporary
-            # EPSG, immediately replace the Dataset CRS with the canonical AEQD
-            # WKT, then clear the config EPSG. With epsg=None, rc3's grid.crs
-            # property uses the Dataset CRS and SFINCS itself does not require a
-            # persisted EPSG code for the hydraulic calculation.
+            # EPSG, then replace every rc3 CRS owner with the canonical AEQD CRS.
+            # SfincsGrid.crs checks the instance `epsg` attribute before the
+            # Dataset CRS, so clearing only config.epsg leaves the temporary 4326
+            # active. Keep config, grid.epsg and crsgeo synchronized explicitly.
             model.grid.create(
                 x0=grid.x0_m,
                 y0=grid.y0_m,
@@ -138,7 +138,9 @@ class SfincsModelBuilder:
             )
             crs = CRS.from_wkt(grid.crs_wkt)
             model.grid.data.raster.set_crs(crs)
+            model.grid.epsg = None
             model.config.set("epsg", None)
+            model.config.set("crsgeo", int(crs.is_geographic))
             if not model.grid.crs.equals(crs):
                 raise ModelBuildError("HydroMT-SFINCS did not retain the normalized model CRS")
 
