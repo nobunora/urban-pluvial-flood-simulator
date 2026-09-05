@@ -40,7 +40,7 @@ def _load_sfincs_model() -> Any:
     except Exception as exc:  # pragma: no cover - environment dependent
         raise ModelBuildError("HydroMT-SFINCS 2.0.0rc3 is unavailable") from exc
     finally:
-        if restore_debug:
+        if restore_debug and debug is not None:
             os.environ["DEBUG"] = debug
     return SfincsModel
 
