@@ -4,6 +4,39 @@ Use one long-lived GitHub Draft Pull Request as the persistent workspace and com
 
 The purpose of this workflow is to minimize unnecessary Git operations, repeated repository analysis, duplicated pull requests, and token usage while keeping all implementation decisions and review history visible in GitHub.
 
+## Role split and token-efficiency rule
+
+Web ChatGPT is responsible for analysis, specification, review, acceptance decisions, and writing strict implementation instructions in the persistent Draft PR.
+
+Local Codex is responsible for coding, source/test/generated-asset edits, implementation-time validation, commits, and pushes to the persistent working branch.
+
+This split is deliberate: direct source-level editing through Web ChatGPT consumes substantially more conversation tokens than delegating implementation to Local Codex. Web ChatGPT should therefore normally avoid patching production source code itself and instead spend its token budget on high-value repository review and precise implementation contracts.
+
+Every implementation request posted by Web ChatGPT should be written as an executable contract with minimal room for interpretation. Include, when applicable:
+
+```text
+Objective
+Canonical spec references
+Confirmed findings
+Exact required behavior
+Known target files/symbols
+In-scope work
+Explicit non-goals
+Error and edge-case behavior
+Acceptance criteria
+Focused tests
+Regression/static/frontend/live checks
+Required report format
+```
+
+If a PR instruction conflicts with a canonical specification or requires a product/architecture decision that has not been made, Local Codex must not improvise. Report:
+
+```text
+spec-change-required
+```
+
+with evidence and stop for Web ChatGPT review.
+
 ## 1. Core Rule
 
 Do **not** create a new pull request for every implementation iteration.
@@ -499,9 +532,11 @@ Always preserve these rules:
 ```text
 One persistent Draft PR.
 One persistent working branch.
-Instructions are PR comments.
+Instructions are strict PR implementation contracts.
+Local Codex performs coding and validation.
 Implementation is pushed to the same branch.
-Review latest changes first.
+Web ChatGPT reviews latest changes first.
+Web ChatGPT normally does not patch production source directly.
 Do not repeatedly reread the entire repository.
 Do not create PRs merely to send instructions.
 Do not merge intermediate iterations.
@@ -515,14 +550,13 @@ The goal is a low-overhead development loop:
 ```text
 Web ChatGPT
    │
-   │ PR comment
+   │ strict PR implementation contract
    ▼
 Persistent Draft PR
    ▲
-   │ commits
+   │ implementation commits + validation
    │
 Local Codex
 ```
 
 Use GitHub as the persistent shared memory and audit trail. Do not depend on chat history alone.
-
