@@ -6,7 +6,7 @@ on:
       - codex/persistent-workspace
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate-api-artifacts:
@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: codex/persistent-workspace
 
       - name: Set up Python 3.12.10
         uses: actions/setup-python@v5
@@ -46,6 +48,19 @@ jobs:
           npm run api:generate
           npm run api:check
           sha256sum openapi.json src/api/generated.ts | tee api-artifact-sha256.txt
+
+      - name: Commit generated API artifacts
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/openapi.json web/src/api/generated.ts
+          if git diff --cached --quiet; then
+            echo "Generated API artifacts are already current."
+            exit 0
+          fi
+          git commit -m "chore: sync Phase 3 generated API artifacts"
+          git push origin HEAD:codex/persistent-workspace
 
       - name: Upload generated API artifacts
         uses: actions/upload-artifact@v4
