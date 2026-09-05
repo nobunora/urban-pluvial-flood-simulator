@@ -1,8 +1,12 @@
 """API response schemas."""
 
-from typing import Literal
+from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from floodsim.domain.geometry import GeoBounds
+from floodsim.domain.run_state import RunState
 
 
 class EngineSummary(BaseModel):
@@ -103,3 +107,78 @@ class RainfallExtremesResponse(BaseModel):
 
     station: RainfallStationResponse
     events: list[RainfallEventResponse]
+
+
+class RunCreateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: UUID
+    status: Literal["QUEUED"] = "QUEUED"
+
+
+class RunStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: UUID
+    state: RunState
+    stage_code: str
+    stage_label: str
+    failure_code: str | None = None
+    failure_message: str | None = None
+
+
+class CancelRunResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: UUID
+    state: RunState
+
+
+class ResourceEstimateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    width_m: float = Field(gt=0)
+    height_m: float = Field(gt=0)
+    accuracy_mode: Literal["full_1m", "adaptive"]
+
+
+class ResourceEstimateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    full_1m_equivalent_cells: int
+    preliminary_adaptive_cells: int | None = None
+    estimated_memory_class: Literal["small", "medium", "heavy", "very_heavy"]
+    estimated_disk_class: Literal["small", "medium", "heavy", "very_heavy"]
+    runtime_class: Literal["small", "medium", "heavy", "very_heavy"]
+    warnings: list[str]
+
+
+class ResultMetadataResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    bounds: GeoBounds
+    units: dict[str, str]
+    available_time_indices: list[int]
+    time_values: list[str]
+    max_depth_summary: dict[str, float]
+    grid_level_summary: dict[str, int]
+    no_data_policy: str
+    limitations: dict[str, bool]
+
+
+class RunEventResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sequence: int = Field(ge=1)
+    state: RunState
+    stage_code: str
+    stage_label: str
+    progress: float | None = Field(default=None, ge=0, le=1)
+    message: str
+    timestamp: str
+
+
+class GenericJsonResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    data: dict[str, Any] = Field(default_factory=dict)
