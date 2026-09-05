@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Estimate Resources */
+        post: operations["estimate_resources_api_v1_estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/geocode": {
         parameters: {
             query?: never;
@@ -92,10 +109,140 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Run */
+        post: operations["create_run_api_v1_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run_api_v1_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Run */
+        post: operations["cancel_run_api_v1_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run Events */
+        get: operations["run_events_api_v1_runs__run_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/result-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Result Metadata */
+        get: operations["result_metadata_api_v1_runs__run_id__result_metadata_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AccuracyMode
+         * @enum {string}
+         */
+        AccuracyMode: "full_1m" | "adaptive";
+        /** AnalysisArea */
+        AnalysisArea: {
+            /** Area M2 */
+            area_m2: number;
+            bounds: components["schemas"]["GeoBounds"];
+            center: components["schemas"]["LonLat"];
+            /** Height M */
+            height_m: number;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "preset_square" | "rectangle";
+            /** Width M */
+            width_m: number;
+        };
+        /** CancelRunResponse */
+        CancelRunResponse: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            state: components["schemas"]["RunState"];
+        };
+        /** ConstantRainfall */
+        ConstantRainfall: {
+            /**
+             * Duration Minutes
+             * @default 60
+             */
+            duration_minutes: number;
+            /** Intensity Mm Per H */
+            intensity_mm_per_h: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "constant";
+        };
         /** EngineSummary */
         EngineSummary: {
             /**
@@ -104,6 +251,17 @@ export interface components {
              * @constant
              */
             required: "SFINCS 2.4.0 Galibier";
+        };
+        /** GeoBounds */
+        GeoBounds: {
+            /** East Deg */
+            east_deg: number;
+            /** North Deg */
+            north_deg: number;
+            /** South Deg */
+            south_deg: number;
+            /** West Deg */
+            west_deg: number;
         };
         /** GeocodeAttribution */
         GeocodeAttribution: {
@@ -160,6 +318,37 @@ export interface components {
              * @constant
              */
             status: "ok";
+        };
+        /** HistoricalObservedProfile */
+        HistoricalObservedProfile: {
+            /** Available */
+            available: boolean;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "historical_observed_profile";
+            /** Profile Id */
+            profile_id?: string | null;
+        };
+        /** HistoricalUniformRainfall */
+        HistoricalUniformRainfall: {
+            /** Available */
+            available: boolean;
+            /** Event Id */
+            event_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "historical_uniform";
+        };
+        /** LonLat */
+        LonLat: {
+            /** Lat Deg */
+            lat_deg: number;
+            /** Lon Deg */
+            lon_deg: number;
         };
         /** RainfallEventResponse */
         RainfallEventResponse: {
@@ -220,6 +409,110 @@ export interface components {
             /** Stations */
             stations: components["schemas"]["RainfallStationResponse"][];
         };
+        /** ResourceEstimateRequest */
+        ResourceEstimateRequest: {
+            /**
+             * Accuracy Mode
+             * @enum {string}
+             */
+            accuracy_mode: "full_1m" | "adaptive";
+            analysis_area: components["schemas"]["AnalysisArea"];
+        };
+        /** ResourceEstimateResponse */
+        ResourceEstimateResponse: {
+            /**
+             * Estimated Disk Class
+             * @enum {string}
+             */
+            estimated_disk_class: "small" | "medium" | "heavy" | "very_heavy";
+            /**
+             * Estimated Memory Class
+             * @enum {string}
+             */
+            estimated_memory_class: "small" | "medium" | "heavy" | "very_heavy";
+            /** Full 1M Equivalent Cells */
+            full_1m_equivalent_cells: number;
+            /** Preliminary Adaptive Cells */
+            preliminary_adaptive_cells?: number | null;
+            /**
+             * Runtime Class
+             * @enum {string}
+             */
+            runtime_class: "small" | "medium" | "heavy" | "very_heavy";
+            /** Warnings */
+            warnings: string[];
+        };
+        /** ResultMetadataResponse */
+        ResultMetadataResponse: {
+            /** Available Time Indices */
+            available_time_indices: number[];
+            bounds: components["schemas"]["GeoBounds"];
+            /** Grid Level Summary */
+            grid_level_summary: {
+                [key: string]: number;
+            };
+            /** Limitations */
+            limitations: {
+                [key: string]: boolean;
+            };
+            /** Max Depth Summary */
+            max_depth_summary: {
+                [key: string]: number;
+            };
+            /** No Data Policy */
+            no_data_policy: string;
+            /** Schema Version */
+            schema_version: string;
+            /** Time Values */
+            time_values: string[];
+            /** Units */
+            units: {
+                [key: string]: string;
+            };
+        };
+        /** RunConfig */
+        RunConfig: {
+            analysis_area: components["schemas"]["AnalysisArea"];
+            /** Rainfall */
+            rainfall: components["schemas"]["ConstantRainfall"] | components["schemas"]["HistoricalUniformRainfall"] | components["schemas"]["HistoricalObservedProfile"];
+            requested_accuracy_mode: components["schemas"]["AccuracyMode"];
+        };
+        /** RunCreateResponse */
+        RunCreateResponse: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Status
+             * @default QUEUED
+             * @constant
+             */
+            status: "QUEUED";
+        };
+        /**
+         * RunState
+         * @enum {string}
+         */
+        RunState: "CREATED" | "VALIDATING" | "ACQUIRING_TERRAIN" | "ACQUIRING_VECTORS" | "ACQUIRING_RAINFALL" | "PREPROCESSING_TERRAIN" | "ALLOCATING_ROOF_RAIN" | "BUILDING_GRID" | "BUILDING_MODEL" | "ENSURING_ENGINE" | "RUNNING_ENGINE" | "READING_RESULTS" | "COMPLETE" | "FAILED" | "CANCELLING" | "CANCELLED";
+        /** RunStatusResponse */
+        RunStatusResponse: {
+            /** Failure Code */
+            failure_code?: string | null;
+            /** Failure Message */
+            failure_message?: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Stage Code */
+            stage_code: string;
+            /** Stage Label */
+            stage_label: string;
+            state: components["schemas"]["RunState"];
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -242,6 +535,39 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    estimate_resources_api_v1_estimate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResourceEstimateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceEstimateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     geocode_api_v1_geocode_get: {
         parameters: {
             query: {
@@ -375,6 +701,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RainfallExtremesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_run_api_v1_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_api_v1_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_run_api_v1_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_events_api_v1_runs__run_id__events_get: {
+        parameters: {
+            query?: {
+                after?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    result_metadata_api_v1_runs__run_id__result_metadata_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultMetadataResponse"];
                 };
             };
             /** @description Validation Error */
