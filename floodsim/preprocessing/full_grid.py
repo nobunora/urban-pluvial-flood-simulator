@@ -45,7 +45,7 @@ class FullGridProduct:
 
 
 def _cell_count(size_m: float) -> int:
-    rounded = int(round(size_m))
+    rounded = round(size_m)
     if rounded <= 0 or not math.isclose(size_m, rounded, rel_tol=0.0, abs_tol=1e-6):
         raise ValueError("Full 1 m mode requires integer-metre analysis dimensions")
     return rounded

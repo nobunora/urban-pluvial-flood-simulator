@@ -377,7 +377,8 @@ class RunCoordinator:
                     record.manifest = record.manifest.model_copy(update={"run_status": RunState.CANCELLED})
                     self._append_event(record, RunState.CANCELLED, "計算をキャンセルしました。")
                     self._persist_manifest(record)
-        except Exception as exc:
+        # Top-level worker boundary: persist unexpected operational failures as FAILED.
+        except Exception as exc:  # noqa: BLE001
             with record.lock:
                 if record.cancel_event.is_set():
                     if record.machine.state is not RunState.CANCELLING:

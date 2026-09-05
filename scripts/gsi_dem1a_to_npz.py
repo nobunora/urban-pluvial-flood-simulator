@@ -19,7 +19,6 @@ ZIP order is priority order: values from the first source win on exact overlaps.
 from __future__ import annotations
 
 import argparse
-import math
 import re
 import zipfile
 from pathlib import Path
@@ -186,7 +185,7 @@ def main() -> None:
     )
     to_ll = Transformer.from_crs(crs_local, crs_jgd2024, always_xy=True)
 
-    n = int(round((2.0 * half) / dx)) + 1
+    n = round((2.0 * half) / dx) + 1
     x = np.linspace(-half, half, n, dtype=np.float64)
     y = np.linspace(-half, half, n, dtype=np.float64)  # south -> north
     X, Y = np.meshgrid(x, y)
@@ -247,7 +246,7 @@ def main() -> None:
         z[missing] = z[nearest[0][missing], nearest[1][missing]]
         source[missing] = source[nearest[0][missing], nearest[1][missing]]
 
-    blend_cells = int(round(args.blend_width_m / dx))
+    blend_cells = round(args.blend_width_m / dx)
     z_blended = seam_blend(z, source, blend_cells)
 
     out = Path(args.out)

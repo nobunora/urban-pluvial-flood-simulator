@@ -133,7 +133,7 @@ def _quadtree_model(root: Path) -> dict[str, Any]:
         "path": str(root),
         "files": sorted(path.name for path in root.iterdir()),
         "grid": "quadtree",
-        "cells": int(len(model.quadtree_grid.data["level"])),
+        "cells": len(model.quadtree_grid.data["level"]),
         "levels": {str(int(level)): int(count) for level, count in zip(levels, counts)},
     }
 
