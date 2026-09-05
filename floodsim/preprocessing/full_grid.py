@@ -12,7 +12,10 @@ from rasterio.transform import from_origin  # type: ignore[import-untyped]
 from shapely.geometry import LineString, Polygon  # type: ignore[import-untyped]
 
 from floodsim.domain.geometry import AnalysisArea
-from floodsim.preprocessing.roof_rainfall import RoofRainAllocation, allocate_roof_rainfall
+from floodsim.preprocessing.roof_rainfall import (
+    RoofRainAllocation,
+    allocate_roof_rainfall,
+)
 from floodsim.providers.common import local_crs
 from floodsim.providers.gsi_elevation import ElevationProduct
 
