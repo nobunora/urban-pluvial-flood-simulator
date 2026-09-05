@@ -8,11 +8,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from floodsim.providers.common import DEFAULT_NETWORK_POLICY, make_session, request_with_retry
+from floodsim.providers.common import (
+    DEFAULT_NETWORK_POLICY,
+    make_session,
+    request_with_retry,
+)
 from floodsim.providers.jma import (
-    catalog_payload,
     JMA_STATION_SOURCE_URL,
     JmaRainfallEvent,
+    catalog_payload,
     parse_amedas_csv,
     parse_jma_ranking_html,
 )
