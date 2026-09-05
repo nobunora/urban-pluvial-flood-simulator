@@ -21,7 +21,7 @@ def atomic_write_json(path: str | Path, payload: Any) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary_name, target)
-    except BaseException:
+    except Exception:
         try:
             os.unlink(temporary_name)
         except FileNotFoundError:
