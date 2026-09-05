@@ -27,7 +27,7 @@ def _load_sfincs_model() -> Any:
     try:
         from hydromt_sfincs import SfincsModel
     finally:
-        if restore_debug:
+        if restore_debug and debug is not None:
             os.environ["DEBUG"] = debug
     return SfincsModel
 
@@ -207,9 +207,18 @@ def read_result(path: str | Path, require_zero: bool = True) -> dict[str, Any]:
 def _run_engine(executable: Path, model: dict[str, Any]) -> dict[str, Any]:
     digest = hashlib.sha256(executable.read_bytes()).hexdigest()
     completed = subprocess.run(
-        [str(executable)], cwd=model["path"], capture_output=True, text=True, timeout=120
+        [str(executable)],
+        cwd=model["path"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
     )
     output = (completed.stdout + "\n" + completed.stderr).strip()
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"SFINCS exited with code {completed.returncode}: {output[-2000:]}"
+        )
     result_path = Path(model["path"]) / "sfincs_map.nc"
     result = read_result(result_path)
     return {
