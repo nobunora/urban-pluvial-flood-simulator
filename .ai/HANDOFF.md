@@ -15,7 +15,7 @@
 - Phase 1: `validated`
 - Phase 2A geographic providers: `validated`
 - Phase 2B CSIS/JMA providers and API contracts: `validated`
-- Phase 3: backend implementation substantially complete; `needs-fix / revalidation-pending`
+- Phase 3: backend implementation substantially complete; `revalidation-pending`
 
 Phase 2B was validated by Local Codex against exact implementation commit:
 
@@ -25,13 +25,20 @@ Phase 3 includes the Full 1 m grid, roof-rain redistribution, rainfall resolutio
 
 The first Phase 3 exact-SHA validation against `473d1e18a485459c75c0c1d64c71480cb989afcc` returned `needs-fix`. Confirmed code-quality findings were addressed by Web ChatGPT, including exception breadth, typing, import ordering, subprocess/return-code handling, and runtime dependency declaration.
 
-A second revalidation against `dee72373a54e7ddfe1c05060523d7e1e785d0ca7` was blocked before the Python gates because `environment.yml` pinned `scipy=1.18.1`, which was not available from conda-forge main on the Windows validation host. That pass also confirmed that `web/openapi.json` and `web/src/api/generated.ts` are stale and omit the Phase 3 run/result routes. Frontend typecheck/lint/test/build otherwise passed, and no source defect was inferred from the blocked Python environment.
+A second revalidation against `dee72373a54e7ddfe1c05060523d7e1e785d0ca7` was blocked before the Python gates because `environment.yml` pinned `scipy=1.18.1`, which was not available from conda-forge main on the Windows validation host. That pass also confirmed that `web/openapi.json` and `web/src/api/generated.ts` were stale and omitted the Phase 3 run/result routes. Frontend typecheck/lint/test/build otherwise passed, and no source defect was inferred from the blocked Python environment.
 
-Web ChatGPT has since:
+Web ChatGPT subsequently:
 
-- changed the conda SciPy pin to `scipy=1.18.0`, which has a conda-forge win-64 Python 3.12 build;
+- changed the conda SciPy pin to `scipy=1.18.0` while retaining Python 3.12.10 and the rest of the pinned validation stack;
 - changed `web/scripts/api-types.mjs` so an explicit or active conda/virtual environment is preferred over a stale repository `.venv`;
-- recorded the stale generated API artifacts as the current confirmed blocking defect.
+- regenerated and committed `web/openapi.json` and `web/src/api/generated.ts` from the current FastAPI application using Python 3.12.10, repository runtime requirements, Node 22, `npm ci`, `npm run api:generate`, and `npm run api:check`;
+- verified that the generated OpenAPI and TypeScript contain `/api/v1/estimate`, `/api/v1/runs`, `/api/v1/runs/{run_id}`, `/api/v1/runs/{run_id}/cancel`, `/api/v1/runs/{run_id}/events`, and `/api/v1/runs/{run_id}/result-metadata`;
+- removed the temporary generation helper after the canonical artifacts were committed, so it is not part of the final repository diff.
+
+Generated artifact SHA-256 values at canonical regeneration:
+
+- `web/openapi.json`: `b9036afa1e1b864e60f4aeb6b2bbb8883c7fc28308fe8e2eb873cdcb970adb79`
+- `web/src/api/generated.ts`: `48b3728d9d8e664f46a5a716c6118732315801707526f42cf0ef8362ed9d0e94`
 
 Revalidation must use the exact PR head named by the latest PR validation comment.
 
@@ -49,20 +56,20 @@ The runtime `requirements.txt` also declares the same pinned HydroMT-SFINCS sour
 
 `SFINCS_BIN` remains an external local-engine requirement. Automatic SFINCS download/redistribution is intentionally prohibited while licensing/bootstrap is unresolved. If no permitted SFINCS 2.4.0 Galibier executable is available, the real-engine gate is `BLOCKED`, not `PASS` and not a reason to skip the other gates.
 
-## Current confirmed Phase 3 blocker
+## Current confirmed Phase 3 blockers
 
-`web/openapi.json` and `web/src/api/generated.ts` are not synchronized with the current FastAPI application. They must be regenerated from the current app using the pinned Python environment and `openapi-typescript`, reviewed by Web ChatGPT, and committed before final Phase 3 validation can pass.
+No confirmed repository source/generated-artifact blocker is currently recorded. Phase 3 remains unvalidated until the exact-head acceptance gates below are executed. A missing permitted SFINCS executable may externally block only the real-engine smoke gate.
 
 ## Remaining Phase 3 gates
 
 1. Exact-SHA clean-worktree validation.
-2. Creation of the pinned Python 3.12.10 validation environment from `environment.yml`.
+2. Creation of the pinned Python 3.12.10 validation environment from `environment.yml` on the Local Codex host and package/version verification.
 3. Focused Phase 3 pytest and full pytest.
 4. Ruff across the requested repository scope and mypy for `floodsim`.
 5. Real `hydromt_sfincs==2.0.0rc3` regular 1 m model build using the normalized AEQD Dataset CRS and `precip_2d` component contract.
-6. If a permitted `SFINCS_BIN` exists, tiny Full1m execution through real `sfincs_map.nc` read and normalized max-depth output.
-7. Regenerate backend OpenAPI and `web/src/api/generated.ts` in a disposable validation worktree, prove `api:check`/frontend checks pass on the generated result, and report the exact generated diff for Web ChatGPT to commit.
-8. Final Phase 3 implementation report and handoff disposition after Web ChatGPT reviews the evidence.
+6. If a permitted `SFINCS_BIN` exists, tiny Full1m execution through real `sfincs_map.nc` read and normalized max-depth output; otherwise report only that gate as `BLOCKED`.
+7. On the exact head, prove committed OpenAPI/generated TypeScript synchronization with `npm run api:check`, then frontend typecheck/lint/test/build.
+8. Final Phase 3 implementation report and durable handoff disposition after Web ChatGPT reviews the validation evidence.
 
 ## Workflow correction
 
