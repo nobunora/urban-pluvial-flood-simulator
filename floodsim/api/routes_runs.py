@@ -22,12 +22,12 @@ from floodsim.api.schemas import (
 from floodsim.domain.run_config import RunConfig
 from floodsim.domain.run_state import RunState
 from floodsim.orchestration.run_coordinator import (
+    STAGE_LABELS,
     AdaptiveNotAvailable,
     ResultNotReady,
     RunAlreadyActive,
     RunCoordinator,
     RunNotFound,
-    STAGE_LABELS,
 )
 
 router = APIRouter()
