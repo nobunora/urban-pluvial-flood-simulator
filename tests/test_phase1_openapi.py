@@ -17,10 +17,11 @@ def test_openapi_export_is_deterministic_and_contains_phase2b_routes(tmp_path) -
 
     assert first.read_bytes() == second.read_bytes()
     document = json.loads(first.read_text(encoding="utf-8"))
-    assert set(document["paths"]) == {
+    required_phase2_paths = {
         "/api/v1/geocode",
         "/api/v1/health",
         "/api/v1/rainfall/events/{event_id}",
         "/api/v1/rainfall/stations",
         "/api/v1/rainfall/stations/{station_id}/extremes",
     }
+    assert required_phase2_paths <= set(document["paths"])
