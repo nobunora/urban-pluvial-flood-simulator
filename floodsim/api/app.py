@@ -13,6 +13,8 @@ from floodsim.api.errors import ApiContractError
 from floodsim.api.routes_geocode import router as geocode_router
 from floodsim.api.routes_health import router as health_router
 from floodsim.api.routes_rainfall import router as rainfall_router
+from floodsim.api.routes_results import router as results_router
+from floodsim.api.routes_runs import router as runs_router
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 
@@ -57,4 +59,6 @@ async def request_validation_error_handler(request: Request, exc: RequestValidat
 app.include_router(health_router, prefix="/api/v1", tags=["health"])
 app.include_router(geocode_router, prefix="/api/v1", tags=["geocode"])
 app.include_router(rainfall_router, prefix="/api/v1", tags=["rainfall"])
+app.include_router(runs_router, prefix="/api/v1", tags=["runs"])
+app.include_router(results_router, prefix="/api/v1", tags=["results"])
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="spa")
