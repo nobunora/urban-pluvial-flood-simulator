@@ -61,5 +61,5 @@ class RunStore:
         with path.open("r", encoding="utf-8") as handle:
             value = json.load(handle)
         if not isinstance(value, dict):
-            raise ValueError("manifest root must be an object")
+            raise TypeError("manifest root must be an object")
         return value
