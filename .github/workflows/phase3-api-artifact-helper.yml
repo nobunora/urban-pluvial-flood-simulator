@@ -1,0 +1,58 @@
+name: Phase 3 API artifact helper
+
+on:
+  push:
+    branches:
+      - codex/persistent-workspace
+
+permissions:
+  contents: read
+
+jobs:
+  generate-api-artifacts:
+    if: contains(github.event.head_commit.message, '[api-artifact-helper]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          cache: pip
+
+      - name: Install backend runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Generate canonical OpenAPI and TypeScript DTOs
+        working-directory: web
+        shell: bash
+        run: |
+          export FLOODSIM_PYTHON="$(python -c 'import sys; print(sys.executable)')"
+          npm run api:generate
+          npm run api:check
+          sha256sum openapi.json src/api/generated.ts | tee api-artifact-sha256.txt
+
+      - name: Upload generated API artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3-api-artifacts
+          path: |
+            web/openapi.json
+            web/src/api/generated.ts
+            web/api-artifact-sha256.txt
+          if-no-files-found: error
