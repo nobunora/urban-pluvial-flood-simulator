@@ -50,26 +50,23 @@ GitHub Draft PR. In particular:
 
 - use one persistent working branch and one long-lived Draft PR;
 - read `.ai/HANDOFF.md`, `.ai/BUG_REPORT.md`, and `.ai/DECISIONS.md` first;
-- treat the latest applicable PR task comment as the active contract;
+- treat the latest applicable PR task/validation comment as the active contract;
 - inspect the latest relevant diff before broad repository analysis;
 - keep confirmed findings separate from hypotheses;
 - do not merge intermediate work.
 
-### Implementation role split
+### Validation-only role for Local Codex
 
 The repository uses the following role split unless the user explicitly changes it later:
 
-- **Web ChatGPT owns analysis, specification, review, and task definition.**
-- **Local Codex owns coding, repository source/test/generated-asset edits, validation, commits, and pushes to `codex/persistent-workspace`.**
-- Web ChatGPT should avoid directly editing production source code because source-level editing through Web ChatGPT consumes substantially more conversation tokens than delegating implementation to Local Codex.
-- Web ChatGPT may still update workflow metadata or PR instructions when needed to maintain the communication protocol, but implementation work should normally be delegated to Local Codex.
-- Web ChatGPT must make implementation requests concrete enough that Codex has minimal design freedom: objective, confirmed findings, exact required behavior, in-scope/out-of-scope boundaries, acceptance criteria, tests, constraints, and any known target files/symbols.
-- If the active PR instruction conflicts with a canonical specification, Codex must not improvise; report `spec-change-required` with evidence.
-- Codex may fix confirmed defects that are clearly within the active task contract, but must not expand scope or begin the next phase without a new Web ChatGPT instruction.
-- After implementation, Codex runs the requested focused/regression checks, updates `.ai/HANDOFF.md` when state materially changes, commits, pushes to the persistent branch, reports the exact commit SHA and test results, then stops for Web ChatGPT review.
-- Web ChatGPT reviews the latest relevant diff and validation evidence. If corrections are required, Web ChatGPT posts another precise PR comment rather than directly patching source code.
-
-This implementation role split supersedes the former validation-only Local Codex override.
+- **Web ChatGPT owns implementation and repository writes.**
+- **Local Codex owns validation, test execution, diagnostics, and reporting only.**
+- Local Codex MUST NOT edit source code, tests, specifications, generated assets, handoff files, workflow files, or other repository files.
+- Local Codex MUST NOT commit, push, create branches/PRs, or merge the persistent PR.
+- After Web ChatGPT pushes an implementation commit, Local Codex validates exactly the commit named by the latest validation request and reports `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN` for each requested check.
+- When validation fails, Local Codex reports confirmed failures, relevant logs, affected files/functions, and clearly labelled hypotheses. Web ChatGPT implements the correction.
+- The latest applicable PR comment may narrow validation scope, but it may not silently restore implementation authority to Local Codex.
+- This validation-only role supersedes the earlier `Workflow Override — Codex Owns Implementation` instruction and any repository text that assigned coding/commit/push work to Local Codex.
 
 ## Working Rules
 
