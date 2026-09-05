@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -30,19 +32,33 @@ class ModelBuildResult:
     report: dict[str, Any]
 
 
+@contextmanager
+def _sfincs_environment() -> Iterator[None]:
+    """Hide host variables that collide with lazy rc3 settings loading."""
+    debug_values = {
+        key: value for key, value in os.environ.items() if key.casefold() == "debug"
+    }
+    for key in debug_values:
+        os.environ.pop(key, None)
+    try:
+        yield
+    finally:
+        os.environ.update(debug_values)
+
+
 def _load_sfincs_model() -> Any:
-    debug = os.environ.get("DEBUG")
-    restore_debug = debug is not None and not debug.isdigit()
-    if restore_debug:
-        os.environ.pop("DEBUG", None)
     try:
         from hydromt_sfincs import SfincsModel  # type: ignore[import-untyped]
     except Exception as exc:  # pragma: no cover - environment dependent
         raise ModelBuildError("HydroMT-SFINCS 2.0.0rc3 is unavailable") from exc
-    finally:
-        if restore_debug and debug is not None:
-            os.environ["DEBUG"] = debug
     return SfincsModel
+
+
+def _sfincs_datetime(value: datetime) -> datetime:
+    """Return the timezone-naive UTC datetime expected by rc3 NetCDF writers."""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def _raster(values: np.ndarray, grid: FullGridProduct, name: str) -> xr.DataArray:
@@ -60,9 +76,9 @@ def _precipitation(
 ) -> xr.DataArray:
     if len(rainfall.elapsed_seconds) < 2:
         raise ModelBuildError("rainfall time series requires start and stop samples")
+    start = _sfincs_datetime(rainfall.start_time)
     times = [
-        rainfall.start_time + timedelta(seconds=float(value))
-        for value in rainfall.elapsed_seconds
+        start + timedelta(seconds=float(value)) for value in rainfall.elapsed_seconds
     ]
     rates = np.asarray(rainfall.intensity_mm_per_h, dtype=np.float32)
     values = rates[:, None, None] * grid.rain_weight[None, :, :]
@@ -90,6 +106,8 @@ def _configure_precipitation(
     if component is None or not hasattr(component, "set"):
         raise ModelBuildError("HydroMT-SFINCS precipitation component is incompatible")
     component.set(precip, name="precip_2d")
+    model.config.set("netamprfile", "sfincs_netampr.nc")
+    model.config.set("precipfile", None)
     interval = float(rainfall.elapsed_seconds[1] - rainfall.elapsed_seconds[0])
     if interval <= 0:
         raise ModelBuildError("rainfall forcing interval must be positive")
@@ -116,9 +134,13 @@ class SfincsModelBuilder:
     ) -> ModelBuildResult:
         root = Path(model_dir)
         root.mkdir(parents=True, exist_ok=True)
-        SfincsModel = _load_sfincs_model()
-        model = SfincsModel(root=root, mode="w+", write_gis=False)
         try:
+            with _sfincs_environment():
+                SfincsModel = _load_sfincs_model()
+                model = SfincsModel(root=root, mode="w+", write_gis=False)
+                # rc3 defers BaseSettings construction until config data is first
+                # accessed, so initialize it while the generic host DEBUG is hidden.
+                _ = model.config.data
             # rc3's regular-grid create() requires an integer EPSG during
             # initialization. The normalized providers deliberately use a local
             # AEQD CRS, which has no EPSG code. Initialize with a valid temporary
@@ -142,7 +164,9 @@ class SfincsModelBuilder:
             model.config.set("epsg", None)
             model.config.set("crsgeo", int(crs.is_geographic))
             if not model.grid.crs.equals(crs):
-                raise ModelBuildError("HydroMT-SFINCS did not retain the normalized model CRS")
+                raise ModelBuildError(
+                    "HydroMT-SFINCS did not retain the normalized model CRS"
+                )
 
             elevation = _raster(grid.elevation_m, grid, "elevtn")
             roughness = _raster(grid.manning_n, grid, "manning")
@@ -153,7 +177,7 @@ class SfincsModelBuilder:
 
             duration_seconds = float(rainfall.elapsed_seconds[-1])
             output_interval = derive_output_interval_seconds(duration_seconds)
-            start = rainfall.start_time
+            start = _sfincs_datetime(rainfall.start_time)
             stop = start + timedelta(seconds=duration_seconds)
             stamp = "%Y%m%d %H%M%S"
             model.config.set("tref", start.strftime(stamp))
@@ -171,7 +195,9 @@ class SfincsModelBuilder:
         except ModelBuildError:
             raise
         except Exception as exc:
-            raise ModelBuildError("failed to build Full 1 m HydroMT-SFINCS model") from exc
+            raise ModelBuildError(
+                "failed to build Full 1 m HydroMT-SFINCS model"
+            ) from exc
 
         report = {
             "schema_version": "1",

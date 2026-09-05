@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
@@ -17,6 +18,7 @@ from floodsim.domain.manifest import Limitations
 from floodsim.domain.rainfall import ConstantRainfall
 from floodsim.domain.run_config import AccuracyMode, RunConfig
 from floodsim.domain.run_state import RunState
+from floodsim.orchestration.rainfall_resolution import resolve_rainfall
 from floodsim.orchestration.run_coordinator import RunCoordinator
 from floodsim.preprocessing.full_grid import (
     GENERAL_MANNING,
@@ -32,6 +34,7 @@ from floodsim.providers.gsi_elevation import ElevationProduct
 from floodsim.results.normalize import normalize_regular_result
 from floodsim.sfincs.model_builder import (
     ModelBuildResult,
+    SfincsModelBuilder,
     derive_output_interval_seconds,
 )
 from floodsim.sfincs.output_reader import SfincsResultError, read_regular_result
@@ -115,6 +118,42 @@ def test_full_grid_sets_building_boundary_and_manning() -> None:
     assert np.any(np.isclose(grid.manning_n, ROAD_MANNING))
     assert np.any(np.isclose(grid.manning_n, GENERAL_MANNING))
     assert grid.roof_allocation.relative_mass_error <= 1e-9
+
+
+@pytest.mark.parametrize("host_debug", ["release", "1"])
+def test_real_sfincs_builder_writes_with_host_debug(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    host_debug: str,
+) -> None:
+    monkeypatch.setenv("DEBUG", host_debug)
+    area = _area()
+    grid = build_full_1m_grid(area, _elevation(area), _vectors(area))
+
+    result = SfincsModelBuilder().build(
+        tmp_path / "model", grid, resolve_rainfall(_config())
+    )
+
+    assert os.environ["DEBUG"] == host_debug
+    assert result.report_path.is_file()
+    assert result.report["grid_resolution_m"] == 1.0
+    assert result.report["roof_rain_relative_mass_error"] <= 1e-9
+    config = (result.model_dir / "sfincs.inp").read_text(encoding="utf-8")
+    assert "netamprfile          = sfincs_netampr.nc" in config
+    assert "epsg" not in config.lower()
+    assert "debug" not in config.lower()
+    with xr.open_dataset(result.model_dir / "sfincs_netampr.nc") as precipitation:
+        values = precipitation["Precipitation"]
+        assert values.dims == ("time", "y", "x")
+        assert precipitation.sizes["time"] == 2
+        np.testing.assert_array_equal(
+            precipitation["time"].values,
+            np.asarray(
+                ["2000-01-01T00:00:00", "2000-01-01T00:01:00"], dtype="datetime64[s]"
+            ),
+        )
+        assert float(values.isel(time=0).sum()) == pytest.approx(60.0 * grid.cell_count)
+        assert float(values.isel(time=1).sum()) == 0.0
 
 
 def _write_synthetic_result(path: Path, *, nonfinite: bool = False) -> None:
