@@ -2,7 +2,7 @@
 
 ## Current confirmed blocking bugs
 
-- Phase 3 generated API artifacts are stale: `web/openapi.json` and `web/src/api/generated.ts` do not yet contain the Phase 3 estimate/run/cancel/events/result-metadata routes. They must be regenerated from the current FastAPI app with the repository's pinned validation environment and `openapi-typescript`, then committed by Web ChatGPT before Phase 3 can be validated.
+None.
 
 ## Current known risks / non-blocking issues
 
@@ -16,6 +16,7 @@
 
 - The conda validation environment previously pinned `scipy=1.18.1`, which was not available from conda-forge main for the Windows validation host. It now pins `scipy=1.18.0`, for which a Python 3.12 win-64 build is available.
 - `web/scripts/api-types.mjs` previously preferred a stale repository `.venv` even when a compliant conda/virtual environment was active. It now prefers an explicit `FLOODSIM_PYTHON`/`PYTHON`, then the active conda or virtual environment, before falling back to the repository `.venv` and PATH.
+- Phase 3 generated API artifacts were stale. Web ChatGPT regenerated them using Python 3.12.10, the repository runtime requirements, Node 22, `npm ci`, `npm run api:generate`, and `npm run api:check`. The committed artifacts now contain the Phase 3 estimate/run/cancel/events/result-metadata routes. Generated SHA-256 values at regeneration were `b9036afa1e1b864e60f4aeb6b2bbb8883c7fc28308fe8e2eb873cdcb970adb79` for `web/openapi.json` and `48b3728d9d8e664f46a5a716c6118732315801707526f42cf0ef8362ed9d0e94` for `web/src/api/generated.ts`.
 
 ## Reporting rule
 
