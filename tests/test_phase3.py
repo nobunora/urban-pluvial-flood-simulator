@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import UUID
 
 import numpy as np
 import pytest
@@ -10,9 +10,10 @@ import xarray as xr
 from fastapi.testclient import TestClient
 from shapely.geometry import box
 
-from floodsim.api.app import app
 from floodsim.api import routes_results, routes_runs
+from floodsim.api.app import app
 from floodsim.domain.geometry import AnalysisArea, GeoBounds, LonLat
+from floodsim.domain.manifest import Limitations
 from floodsim.domain.rainfall import ConstantRainfall
 from floodsim.domain.run_config import AccuracyMode, RunConfig
 from floodsim.domain.run_state import RunState
@@ -100,14 +101,17 @@ def test_full_grid_sets_building_boundary_and_manning() -> None:
     boundary = np.zeros((4, 4), dtype=bool)
     boundary[[0, -1], :] = True
     boundary[:, [0, -1]] = True
-    assert np.all(np.isin(grid.sfincs_mask[boundary & ~grid.building_mask], [3]))
-    assert np.any(grid.manning_n == pytest.approx(ROAD_MANNING))
-    assert np.any(grid.manning_n == pytest.approx(GENERAL_MANNING))
+    assert np.all(grid.sfincs_mask[boundary & ~grid.building_mask] == 3)
+    assert np.any(np.isclose(grid.manning_n, ROAD_MANNING))
+    assert np.any(np.isclose(grid.manning_n, GENERAL_MANNING))
     assert grid.roof_allocation.relative_mass_error <= 1e-9
 
 
 def _write_synthetic_result(path: Path, *, nonfinite: bool = False) -> None:
-    h = np.asarray([[[0.0, 0.01], [0.02, 0.03]], [[0.0, 0.02], [0.04, 0.05]]], dtype=np.float32)
+    h = np.asarray(
+        [[[0.0, 0.01], [0.02, 0.03]], [[0.0, 0.02], [0.04, 0.05]]],
+        dtype=np.float32,
+    )
     if nonfinite:
         h[0, 0, 0] = np.nan
     hmax = np.nanmax(h, axis=0, keepdims=True)
@@ -133,9 +137,7 @@ def test_output_reader_and_normalizer_expose_max_depth(tmp_path: Path) -> None:
         result,
         area=_area(2),
         results_dir=tmp_path / "normalized",
-        limitations=routes_runs.coordinator.get.__self__.__class__.__mro__[0].__module__ and __import__(
-            "floodsim.domain.manifest", fromlist=["Limitations"]
-        ).Limitations(),
+        limitations=Limitations(),
     )
     assert normalized.metadata["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.05)
     assert normalized.arrays_path.is_file()
@@ -168,12 +170,18 @@ class _FakeModelBuilder:
         return ModelBuildResult(model_dir=model_dir, report_path=report, report={})
 
 
-@dataclass
 class _FakeRunner:
     def cancel(self) -> None:
         return None
 
-    def run(self, model_dir: Path, *, logs_dir: Path, engine: ResolvedEngine, cancel_event: object) -> SfincsRunResult:
+    def run(
+        self,
+        model_dir: Path,
+        *,
+        logs_dir: Path,
+        engine: ResolvedEngine,
+        cancel_event: object,
+    ) -> SfincsRunResult:
         logs_dir.mkdir(parents=True, exist_ok=True)
         result = model_dir / "sfincs_map.nc"
         _write_synthetic_result(result)
@@ -220,16 +228,18 @@ def test_coordinator_runs_full_1m_to_normalized_result(tmp_path: Path) -> None:
     assert [event.sequence for event in record.events] == list(range(1, len(record.events) + 1))
 
 
-def test_phase3_api_accepts_run_and_exposes_result(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_phase3_api_accepts_run_and_exposes_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     coordinator = _test_coordinator(tmp_path)
     monkeypatch.setattr(routes_runs, "coordinator", coordinator)
     monkeypatch.setattr(routes_results, "coordinator", coordinator)
     client = TestClient(app)
-    payload = _config().model_dump(mode="json")
-    response = client.post("/api/v1/runs", json=payload)
+    response = client.post("/api/v1/runs", json=_config().model_dump(mode="json"))
     assert response.status_code == 202
     run_id = response.json()["run_id"]
-    record = coordinator.get(__import__("uuid").UUID(run_id))
+    record = coordinator.get(UUID(run_id))
     assert record.future is not None
     record.future.result(timeout=10)
     status = client.get(f"/api/v1/runs/{run_id}")
@@ -240,7 +250,10 @@ def test_phase3_api_accepts_run_and_exposes_result(monkeypatch: pytest.MonkeyPat
     assert metadata.json()["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.05)
 
 
-def test_run_mutation_requires_json_content_type(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_run_mutation_requires_json_content_type(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     coordinator = _test_coordinator(tmp_path)
     monkeypatch.setattr(routes_runs, "coordinator", coordinator)
     client = TestClient(app)
