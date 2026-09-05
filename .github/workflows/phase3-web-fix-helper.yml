@@ -1,0 +1,78 @@
+name: Phase 3 Web fix helper
+
+on:
+  push:
+    branches:
+      - codex/persistent-workspace
+
+permissions:
+  contents: write
+
+jobs:
+  apply-guarded-fixes:
+    if: contains(github.event.head_commit.message, '[phase3-web-fix]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout persistent workspace
+        uses: actions/checkout@v4
+        with:
+          ref: codex/persistent-workspace
+
+      - name: Apply exact guarded replacements
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, got {count}: {old!r}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "floodsim/orchestration/run_coordinator.py",
+              "        except Exception as exc:\n",
+              "        # Top-level worker boundary: persist unexpected operational failures as FAILED.\n"
+              "        except Exception as exc:  # noqa: BLE001\n",
+          )
+          replace_once(
+              "floodsim/preprocessing/full_grid.py",
+              "    rounded = int(round(size_m))\n",
+              "    rounded = round(size_m)\n",
+          )
+          replace_once(
+              "scripts/gsi_basic_to_vectors.py",
+              "POSLIST_RE = re.compile(rb\"<gml:posList>\\s*([^<]+?)\\s*</gml:posList>\", re.S)\n",
+              "POSLIST_RE = re.compile(rb\"<gml:posList>\\s*([^<]+?)\\s*</gml:posList>\", re.DOTALL)\n",
+          )
+          replace_once("scripts/gsi_dem1a_to_npz.py", "import math\n", "")
+          replace_once(
+              "scripts/gsi_dem1a_to_npz.py",
+              "    n = int(round((2.0 * half) / dx)) + 1\n",
+              "    n = round((2.0 * half) / dx) + 1\n",
+          )
+          replace_once(
+              "scripts/gsi_dem1a_to_npz.py",
+              "    blend_cells = int(round(args.blend_width_m / dx))\n",
+              "    blend_cells = round(args.blend_width_m / dx)\n",
+          )
+          replace_once(
+              "scripts/sfincs_phase0_spike.py",
+              "        \"cells\": int(len(model.quadtree_grid.data[\"level\"])),\n",
+              "        \"cells\": len(model.quadtree_grid.data[\"level\"]),\n",
+          )
+
+          Path(".github/workflows/phase3-web-fix-helper.yml").unlink()
+
+      - name: Commit Web-owned fixes and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: resolve Phase 3 static audit findings"
+          git push origin HEAD:codex/persistent-workspace
