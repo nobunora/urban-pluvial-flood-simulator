@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from floodsim.domain.geometry import GeoBounds
+from floodsim.domain.geometry import AnalysisArea, GeoBounds
 from floodsim.domain.run_state import RunState
 
 
@@ -137,8 +137,7 @@ class CancelRunResponse(BaseModel):
 class ResourceEstimateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    width_m: float = Field(gt=0)
-    height_m: float = Field(gt=0)
+    analysis_area: AnalysisArea
     accuracy_mode: Literal["full_1m", "adaptive"]
 
 
