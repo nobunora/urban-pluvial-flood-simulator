@@ -152,13 +152,16 @@ class SfincsRunner:
                 with self._lock:
                     self._process = None
 
-        if process.returncode != 0:
-            raise SfincsRunError(f"SFINCS exited with code {process.returncode}")
+        return_code = process.returncode
+        if return_code is None:
+            raise SfincsRunError("SFINCS process did not terminate")
+        if return_code != 0:
+            raise SfincsRunError(f"SFINCS exited with code {return_code}")
         result_path = root / "sfincs_map.nc"
         if not result_path.is_file() or result_path.stat().st_size == 0:
             raise SfincsRunError("SFINCS did not produce a readable sfincs_map.nc")
         return SfincsRunResult(
-            return_code=int(process.returncode),
+            return_code=return_code,
             result_path=result_path,
             stdout_log=stdout_path,
             stderr_log=stderr_path,
