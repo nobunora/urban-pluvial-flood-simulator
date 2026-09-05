@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass
 from datetime import timedelta
@@ -61,7 +60,10 @@ def _precipitation(
 ) -> xr.DataArray:
     if len(rainfall.elapsed_seconds) < 2:
         raise ModelBuildError("rainfall time series requires start and stop samples")
-    times = [rainfall.start_time + timedelta(seconds=float(value)) for value in rainfall.elapsed_seconds]
+    times = [
+        rainfall.start_time + timedelta(seconds=float(value))
+        for value in rainfall.elapsed_seconds
+    ]
     rates = np.asarray(rainfall.intensity_mm_per_h, dtype=np.float32)
     values = rates[:, None, None] * grid.rain_weight[None, :, :]
     x = grid.x0_m + 0.5 + np.arange(grid.width_cells, dtype=float)
@@ -70,7 +72,7 @@ def _precipitation(
         values,
         dims=("time", "y", "x"),
         coords={"time": times, "x": x, "y": y},
-        name="precip",
+        name="precip_2d",
         attrs={"units": "mm/hr"},
     )
     data.raster.set_crs(CRS.from_wkt(grid.crs_wkt))
@@ -78,25 +80,24 @@ def _precipitation(
     return data
 
 
-def _configure_precipitation(model: Any, precip: xr.DataArray) -> None:
+def _configure_precipitation(
+    model: Any,
+    precip: xr.DataArray,
+    rainfall: RainfallTimeSeries,
+) -> None:
+    """Set already-normalized gridded rainfall without re-entering DataCatalog."""
     component = getattr(model, "precipitation", None)
-    if component is not None and hasattr(component, "create"):
-        component.create(
-            precip=precip,
-            dst_res=1.0,
-            cumulative_input=False,
-            aggregate=False,
-        )
-        return
-    setup = getattr(model, "setup_precip_forcing_from_grid", None)
-    if callable(setup):  # compatibility seam for older HydroMT-SFINCS APIs
-        setup(precip, dst_res=1.0, cumulative_input=False, aggregate=False)
-        return
-    raise ModelBuildError("HydroMT-SFINCS precipitation component is incompatible")
+    if component is None or not hasattr(component, "set"):
+        raise ModelBuildError("HydroMT-SFINCS precipitation component is incompatible")
+    component.set(precip, name="precip_2d")
+    interval = float(rainfall.elapsed_seconds[1] - rainfall.elapsed_seconds[0])
+    if interval <= 0:
+        raise ModelBuildError("rainfall forcing interval must be positive")
+    model.config.set("dtwnd", min(1800.0, interval))
 
 
 def derive_output_interval_seconds(duration_seconds: float) -> int:
-    """Return a whole-minute output interval yielding at most about 120 frames."""
+    """Return a whole-minute output interval bounded by the v0.1 contract."""
     if duration_seconds <= 0:
         raise ValueError("duration_seconds must be positive")
     raw = max(60.0, duration_seconds / 119.0)
@@ -118,6 +119,13 @@ class SfincsModelBuilder:
         SfincsModel = _load_sfincs_model()
         model = SfincsModel(root=root, mode="w+", write_gis=False)
         try:
+            # rc3's regular-grid create() requires an integer EPSG during
+            # initialization. The normalized providers deliberately use a local
+            # AEQD CRS, which has no EPSG code. Initialize with a valid temporary
+            # EPSG, immediately replace the Dataset CRS with the canonical AEQD
+            # WKT, then clear the config EPSG. With epsg=None, rc3's grid.crs
+            # property uses the Dataset CRS and SFINCS itself does not require a
+            # persisted EPSG code for the hydraulic calculation.
             model.grid.create(
                 x0=grid.x0_m,
                 y0=grid.y0_m,
@@ -126,11 +134,13 @@ class SfincsModelBuilder:
                 nmax=grid.height_cells,
                 mmax=grid.width_cells,
                 rotation=0,
-                epsg=None,
+                epsg=4326,
             )
             crs = CRS.from_wkt(grid.crs_wkt)
-            if hasattr(model.grid, "data") and hasattr(model.grid.data, "raster"):
-                model.grid.data.raster.set_crs(crs)
+            model.grid.data.raster.set_crs(crs)
+            model.config.set("epsg", None)
+            if not model.grid.crs.equals(crs):
+                raise ModelBuildError("HydroMT-SFINCS did not retain the normalized model CRS")
 
             elevation = _raster(grid.elevation_m, grid, "elevtn")
             roughness = _raster(grid.manning_n, grid, "manning")
@@ -154,7 +164,7 @@ class SfincsModelBuilder:
             model.config.set("coriolis", 0)
             model.config.set("storecumprcp", 1)
 
-            _configure_precipitation(model, _precipitation(rainfall, grid))
+            _configure_precipitation(model, _precipitation(rainfall, grid), rainfall)
             model.write()
         except ModelBuildError:
             raise
