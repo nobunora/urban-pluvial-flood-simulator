@@ -6,5 +6,8 @@ shapely
 pyproj
 requests
 Pillow
+xarray
+netCDF4
+platformdirs
 fastapi==0.141.1
 uvicorn==0.52.4
