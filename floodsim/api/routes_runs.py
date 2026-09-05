@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import math
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Coroutine, Iterator
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
+from fastapi.routing import APIRoute
 
 from floodsim.api.errors import ApiContractError
 from floodsim.api.schemas import (
@@ -30,9 +32,6 @@ from floodsim.orchestration.run_coordinator import (
     RunNotFound,
 )
 
-router = APIRouter()
-coordinator = RunCoordinator()
-
 
 def _require_json(request: Request) -> None:
     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
@@ -42,6 +41,24 @@ def _require_json(request: Request) -> None:
             "INPUT_UNSUPPORTED_CONTENT_TYPE",
             "Content-Type は application/json を指定してください。",
         )
+
+
+class _JsonMutationRoute(APIRoute):
+    """Reject non-JSON mutation requests before FastAPI parses their bodies."""
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        original_route_handler = super().get_route_handler()
+
+        async def route_handler(request: Request) -> Response:
+            if request.method == "POST":
+                _require_json(request)
+            return await original_route_handler(request)
+
+        return route_handler
+
+
+router = APIRouter(route_class=_JsonMutationRoute)
+coordinator = RunCoordinator()
 
 
 def _map_coordinator_error(error: RuntimeError) -> ApiContractError:
@@ -68,7 +85,6 @@ def _resource_class(cells: int) -> str:
 
 @router.post("/estimate", response_model=ResourceEstimateResponse)
 def estimate_resources(request: Request, payload: ResourceEstimateRequest) -> ResourceEstimateResponse:
-    _require_json(request)
     cells = int(math.ceil(payload.analysis_area.width_m) * math.ceil(payload.analysis_area.height_m))
     classification = _resource_class(cells)
     warnings: list[str] = []
@@ -89,7 +105,6 @@ def estimate_resources(request: Request, payload: ResourceEstimateRequest) -> Re
 
 @router.post("/runs", response_model=RunCreateResponse, status_code=202)
 def create_run(request: Request, config: RunConfig) -> RunCreateResponse:
-    _require_json(request)
     try:
         record = coordinator.create_run(config)
     except (RunAlreadyActive, AdaptiveNotAvailable) as exc:
@@ -117,7 +132,6 @@ def get_run(run_id: UUID) -> RunStatusResponse:
 
 @router.post("/runs/{run_id}/cancel", response_model=CancelRunResponse)
 def cancel_run(request: Request, run_id: UUID) -> CancelRunResponse:
-    _require_json(request)
     try:
         record = coordinator.cancel(run_id)
     except RunNotFound as exc:
