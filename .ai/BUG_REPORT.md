@@ -2,7 +2,7 @@
 
 ## Current confirmed blocking bugs
 
-None currently known after the latest Web ChatGPT fixes. The fixes are **not accepted yet**; Local Codex must audit and execute them against the exact head named in the latest PR validation comment.
+- Phase 4 quadtree serialization is blocked in pinned HydroMT-SFINCS 2.0.0rc3 when the canonical local AEQD CRS has no EPSG authority. `SfincsQuadtreeGrid.write()` assigns `crs.to_epsg()` (`None`) to a NetCDF `epsg` attribute and fails with `TypeError: Invalid value for attr 'epsg': None`. Adaptive remains disabled while a narrow compatibility seam is designed and validated.
 
 ## Current known risks / non-blocking issues
 

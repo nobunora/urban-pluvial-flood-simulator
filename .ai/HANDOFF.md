@@ -15,7 +15,8 @@
 - Phase 1: `validated`
 - Phase 2A geographic providers: `validated`
 - Phase 2B CSIS/JMA providers and API contracts: `validated`
-- Phase 3: backend implementation substantially complete; Web fixes applied; `exact-head audit/revalidation pending`
+- Phase 3: `validated` at `62dc85fa163587ea73a875c59067bcd5a8dfe79a`; the real-engine Gate D remains externally blocked because no permitted local SFINCS executable exists.
+- Phase 4: `implementation-in-progress`; the deterministic Adaptive classifier/diagnostics foundation is implemented, while quadtree/subgrid execution and the Full-vs-Adaptive benchmark gate remain disabled.
 
 Phase 2B was validated by Local Codex against exact implementation commit:
 
@@ -68,7 +69,13 @@ Web ChatGPT has applied the fixes for all confirmed repository findings:
 - all seven reported Ruff findings were addressed with semantic-preserving changes; the broad worker-boundary exception is locally documented and suppressed only at that boundary;
 - an accidental oversized edit to `run_coordinator.py` made during the Web repair was detected immediately and fully restored to the previous validated blob before applying only the intended two-line lint annotation.
 
-These Web fixes are **not yet accepted**. Local Codex must audit and execute the exact PR head named by the latest PR validation comment and investigate any remaining defect without modifying the repository.
+These Web fixes were accepted by the exact-head audit reported on PR #12: Gates A/B/C/E/F passed, with Gate D blocked only by the absent permitted engine.
+
+## Phase 4 implementation status
+
+The first reviewable Phase 4 slice adds the canonical 1/2/4/8/16/32 m hierarchy, provisional plane-fit thresholds, conservative building/road hard refinement with a 2 m buffer, 2:1 balancing, a grid-resolution layer, refinement reasons, level counts, reduction diagnostics, and a stable threshold identity. `FullGridProduct` now preserves its road mask for exact Adaptive hard-refinement decisions.
+
+Adaptive remains unavailable through the run API. Pinned HydroMT-SFINCS rc3 can hold the normalized local AEQD CRS on its XUGRID topology, but its quadtree writer serializes `crs.to_epsg()` into a NetCDF integer attribute. The required local AEQD has no EPSG authority, so the unmodified writer fails with `TypeError: Invalid value for attr 'epsg': None`. Do not enable Adaptive until a narrow serialization compatibility seam and quadtree result normalization are validated. The Full-vs-Adaptive benchmark gate has not run.
 
 ## Phase 3 validation environment
 
@@ -86,7 +93,7 @@ The runtime `requirements.txt` also declares the same pinned HydroMT-SFINCS sour
 
 ## Current confirmed Phase 3 blockers
 
-No currently known repository defect remains after the Web fixes, but this is not an acceptance claim. Exact-head Codex audit/revalidation is required. A missing permitted SFINCS executable may externally block only the real-engine smoke gate.
+No known Phase 3 repository defect remains. A missing permitted SFINCS executable externally blocks only the real-engine smoke gate.
 
 ## Remaining Phase 3 gates
 

@@ -38,6 +38,7 @@ class FullGridProduct:
     x0_m: float
     y0_m: float
     crs_wkt: str
+    road_mask: np.ndarray | None = None
 
     @property
     def cell_count(self) -> int:
@@ -162,6 +163,7 @@ def build_full_1m_grid(
     return FullGridProduct(
         elevation_m=terrain,
         building_mask=building_mask,
+        road_mask=road_mask,
         sfincs_mask=sfincs_mask,
         manning_n=manning,
         rain_weight=allocation.rain_weight.astype(np.float32),
