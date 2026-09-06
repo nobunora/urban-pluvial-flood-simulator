@@ -1,138 +1,111 @@
 # Persistent Codex Handoff
 
-## Workspace
+## Workspace and role split
 
-- Persistent branch: `codex/persistent-workspace`
-- Communication channel: one long-lived GitHub Draft PR targeting `main`
-- Web ChatGPT owns implementation and repository writes on this branch.
-- Local Codex is audit/validation/execution/diagnostics/reporting only and must not edit, commit, push, create PRs, or merge unless the user explicitly changes that rule.
-- Do not open a new PR for each iteration.
-- Keep the Draft PR open until the user explicitly requests merge or the persistent workspace is intentionally retired.
+- Persistent branch: `codex/persistent-workspace`.
+- Communication channel: one long-lived Draft PR #12 targeting `main`.
+- Keep PR #12 open, Draft, and unmerged unless the user explicitly requests merge.
+- **Web ChatGPT is the primary implementation owner** for substantive source/test/docs/generated-asset changes and repository writes.
+- **Local Codex (Luna) is primarily responsible for audit, execution tests, validation, runtime diagnostics, upstream-contract investigation, and reporting.**
+- Local Codex may make only small, local, non-architectural corrections discovered during validation (for example an obvious typo/import/test-fixture/formatting correction). It must not implement features, algorithms, compatibility adapters, public/API changes, dependency changes, generated API changes, or multi-file behavioral repairs unless the user explicitly expands that permission.
+- Any tiny Codex correction must be isolated and explicitly reported. Web remains the normal coding path.
 
-## Current repository state
+## Validated phases
 
-- Phase 0: `validated`
-- Phase 1: `validated`
-- Phase 2A geographic providers: `validated`
-- Phase 2B CSIS/JMA providers and API contracts: `validated`
-- Phase 3: `validated` at `62dc85fa163587ea73a875c59067bcd5a8dfe79a`; the real-engine Gate D remains externally blocked because no permitted local SFINCS executable exists.
-- Phase 4: `implementation-in-progress`; the deterministic Adaptive classifier/diagnostics foundation is implemented, while quadtree/subgrid execution and the Full-vs-Adaptive benchmark gate remain disabled.
+- Phase 0: `validated`.
+- Phase 1: `validated`.
+- Phase 2A geographic providers: `validated`.
+- Phase 2B CSIS/JMA providers and API contracts: `validated` at `660579bfebb5f1e275004ed0f1d0a0b4db7cb322`.
+- Phase 3: implementation `validated` at `62dc85fa163587ea73a875c59067bcd5a8dfe79a`.
+  - Gates A/B/C/E/F passed in the exact-head audit.
+  - Real SFINCS Gate D remains externally blocked only because no permitted local SFINCS executable is installed.
+  - No known Phase 3 repository defect remains.
 
-Phase 2B was validated by Local Codex against exact implementation commit:
+## Phase 4 status
 
-`660579bfebb5f1e275004ed0f1d0a0b4db7cb322`
+Phase 4 Adaptive is `implementation-in-progress`. Adaptive remains rejected by the existing `GRID_ADAPTIVE_NOT_AVAILABLE` boundary and must not be enabled yet.
 
-Phase 3 includes the Full 1 m grid, roof-rain redistribution, rainfall resolution, filesystem run storage, HydroMT-SFINCS regular-grid model builder, local SFINCS engine resolution/runner, NetCDF result reader, normalized results, run coordinator/API, limitations metadata, and deterministic fake-E2E coverage.
+The first Phase 4 foundation SHA `a17ff7b7f013ff7672e22da419a34e497d30d3d2` added:
 
-## Phase 3 validation history
+- fixed `1, 2, 4, 8, 16, 32 m` hierarchy;
+- provisional canonical RMSE/max-residual thresholds;
+- deterministic plane-fit terrain diagnostics;
+- building/road hard-refinement foundation;
+- 2:1 balancing;
+- resolution/refinement diagnostics and cell-count reduction diagnostics;
+- preservation of the normalized Full 1 m road mask.
 
-The first Phase 3 exact-SHA validation against `473d1e18a485459c75c0c1d64c71480cb989afcc` returned `needs-fix`. Confirmed code-quality findings were addressed by Web ChatGPT, including exception breadth, typing, import ordering, subprocess/return-code handling, and runtime dependency declaration.
+Local Codex audited that SHA and returned `needs-fix`:
 
-A second revalidation against `dee72373a54e7ddfe1c05060523d7e1e785d0ca7` was blocked before the Python gates because `environment.yml` pinned `scipy=1.18.1`, which was not available from conda-forge main on the Windows validation host. That pass also confirmed that `web/openapi.json` and `web/src/api/generated.ts` were stale and omitted the Phase 3 run/result routes. Frontend typecheck/lint/test/build otherwise passed, and no source defect was inferred from the blocked Python environment.
+- Gate A exact SHA/delta: PASS;
+- Gate B tests/static: PASS;
+- Gate C Adaptive classifier audit: FAIL;
+- Gate D independent rc3 quadtree blocker runtime reproduction: BLOCKED in that turn;
+- Gate E compatibility-seam investigation: PASS;
+- Gate F quadtree/subgrid/result reconnaissance: PASS.
 
-Web ChatGPT then:
+## Phase 4 classifier defects repaired by Web
 
-- changed the conda SciPy pin to `scipy=1.18.0` while retaining Python 3.12.10 and the rest of the pinned validation stack;
-- changed `web/scripts/api-types.mjs` so an explicit or active conda/virtual environment is preferred over a stale repository `.venv`;
-- regenerated and committed `web/openapi.json` and `web/src/api/generated.ts` from the current FastAPI application using Python 3.12.10, repository runtime requirements, Node 22, `npm ci`, `npm run api:generate`, and `npm run api:check`;
-- verified that the generated OpenAPI and TypeScript contain `/api/v1/estimate`, `/api/v1/runs`, `/api/v1/runs/{run_id}`, `/api/v1/runs/{run_id}/cancel`, `/api/v1/runs/{run_id}/events`, and `/api/v1/runs/{run_id}/result-metadata`;
-- removed the temporary generation helper after the canonical artifacts were committed.
+Web ChatGPT has now repaired the three confirmed Gate C defects:
 
-Generated artifact SHA-256 values at canonical regeneration:
+1. **Required terrain evidence** — candidate metrics now compute local curvature, strict interior depression/ridge connectivity evidence, and deterministic D8 flow-accumulation concentration in addition to plane RMSE/max residual. The canonical spec defines no numeric gating thresholds for curvature/connectivity/flow, so Web did not invent any.
+2. **Threshold identity** — identity is now a deterministic SHA-256-derived identity over the actual threshold maps, so custom threshold configurations cannot masquerade as the default configuration.
+3. **Feature buffer** — the §12.2 `within 2 m` rule is now evaluated in projected metric space between normalized 1 m source-cell footprints. Building/road source cells remain exactly 1 m; buffer cells may be 1 m or 2 m but never coarser than 2 m.
 
-- `web/openapi.json`: `b9036afa1e1b864e60f4aeb6b2bbb8883c7fc28308fe8e2eb873cdcb970adb79`
-- `web/src/api/generated.ts`: `48b3728d9d8e664f46a5a716c6118732315801707526f42cf0ef8362ed9d0e94`
+Focused Phase 4 regression tests were expanded to cover those repairs. These Web repairs require exact-head Codex validation before acceptance.
 
-The third exact-head acceptance pass against `0c114e4c462bada39a9aaf89bb0448c119d9a29f` used a fresh compliant Python 3.12.10 environment with the pinned HydroMT-SFINCS 2.0.0rc3 source commit. Results were:
+## Quadtree authority-less CRS blocker
 
-- Gate A exact SHA/environment: `PASS`;
-- Gate B pytest/Ruff/mypy: `FAIL`;
-- Gate C real HydroMT-SFINCS build: `FAIL`;
-- Gate D real SFINCS Full1m smoke: `BLOCKED` because no permitted local SFINCS executable was available;
-- Gate E committed OpenAPI/frontend: `PASS`;
-- Gate F invariants: `FAIL` due to the confirmed Gate B/C defects.
+Pinned HydroMT-SFINCS source commit:
 
-The confirmed repository findings from that pass were:
+`82e58ee85136cf5155c92b42bb9a397869ed8035` (`2.0.0rc3`)
 
-1. run mutation `Content-Type: text/plain` returned 400 instead of the intended 415 because FastAPI body parsing occurred before the endpoint-level media-type guard;
-2. two older regression tests used exact OpenAPI path-set equality and therefore rejected legitimate Phase 3 routes;
-3. Ruff reported seven diagnostics, including one intentional broad exception at the top-level background-run boundary;
-4. mypy reported the untyped third-party `hydromt_sfincs` import;
-5. the real rc3 model build retained temporary `grid.epsg=4326`, so `model.grid.crs` resolved to EPSG:4326 even though the Dataset carried the correct local AEQD CRS.
+The pinned rc3 `SfincsQuadtreeGrid.write()` path:
 
-Web ChatGPT has applied the fixes for all confirmed repository findings:
+- converts the UGRID object to a Dataset with full `crs_wkt`;
+- calls `self.crs.to_epsg()`;
+- adds `mesh2d_crs.attrs["epsg"]` and `epsg_code`;
+- writes NetCDF.
 
-- the runs router now performs JSON media-type enforcement in a custom `APIRoute` before FastAPI body parsing;
-- Phase 2 regression tests now assert their required paths are a subset, preserving forward compatibility while still protecting Phase 2 contracts;
-- the HydroMT rc3 builder now synchronizes the normalized AEQD Dataset CRS with `model.grid.epsg=None`, `config.epsg=None`, and the correct `crsgeo` value before asserting `model.grid.crs` and writing the model;
-- the untyped rc3 import has a narrowly scoped mypy ignore;
-- all seven reported Ruff findings were addressed with semantic-preserving changes; the broad worker-boundary exception is locally documented and suppressed only at that boundary;
-- an accidental oversized edit to `run_coordinator.py` made during the Web repair was detected immediately and fully restored to the previous validated blob before applying only the intended two-line lint annotation.
+The canonical local AEQD CRS has no EPSG authority, so `to_epsg()` is `None` and the current writer attempts invalid authority metadata (`epsg=None`, `EPSG:None`). Source evidence indicates this is an upstream rc3 authority-less-CRS limitation, not permission to invent a fake EPSG.
 
-These Web fixes were accepted by the exact-head audit reported on PR #12: Gates A/B/C/E/F passed, with Gate D blocked only by the absent permitted engine.
+The recommended compatibility direction is a **repository-owned, quadtree-only writer adapter** that preserves rc3 Dataset preparation and exact WKT/CF/UGRID metadata while omitting only invalid optional EPSG authority attributes. Do not alter the regular Full 1 m writer and do not globally monkey-patch Xarray.
 
-## Phase 4 implementation status
+Web has deliberately not implemented this private-rc3 adapter yet because the previous Codex audit did not independently complete the runtime reproduction/round-trip probe. The next Codex task must reproduce the exact failure and prove that pinned rc3 reconstructs the authority-less AEQD from `crs_wkt` when the invalid EPSG attributes are absent. After that evidence, Web implements the adapter.
 
-The first reviewable Phase 4 slice adds the canonical 1/2/4/8/16/32 m hierarchy, provisional plane-fit thresholds, conservative building/road hard refinement with a 2 m buffer, 2:1 balancing, a grid-resolution layer, refinement reasons, level counts, reduction diagnostics, and a stable threshold identity. `FullGridProduct` now preserves its road mask for exact Adaptive hard-refinement decisions.
+## Canonical Adaptive constraints to preserve
 
-Adaptive remains unavailable through the run API. Pinned HydroMT-SFINCS rc3 can hold the normalized local AEQD CRS on its XUGRID topology, but its quadtree writer serializes `crs.to_epsg()` into a NetCDF integer attribute. The required local AEQD has no EPSG authority, so the unmodified writer fails with `TypeError: Invalid value for attr 'epsg': None`. Do not enable Adaptive until a narrow serialization compatibility seam and quadtree result normalization are validated. The Full-vs-Adaptive benchmark gate has not run.
+From `docs/specs/v0.1-implementation-spec.md` §12:
 
-## Phase 3 validation environment
+- levels exactly `1, 2, 4, 8, 16, 32 m`;
+- building intersection: 1 m;
+- within 2 m of building: <=2 m;
+- road surface: 1 m;
+- within 2 m of road: <=2 m;
+- narrow channel/major concentrated flow path, when identified: <=2 m;
+- plane residual thresholds remain the canonical provisional table;
+- curvature, local depression/ridge connectivity, and flow-accumulation concentration evidence must be computed;
+- best available high-resolution terrain must remain available for subgrid generation;
+- diagnostics include cell counts, total/equivalent cells, reduction ratio, refinement reasons, resolution layer, and threshold configuration identity;
+- no fake permanent EPSG may replace the canonical local AEQD.
 
-Do not reuse an arbitrary or stale `.venv` for Phase 3 acceptance.
+Canonical Full-vs-Adaptive benchmark thresholds include flooded-area IoU at depth >=0.05 m >=0.90, wet-cell median max-depth error <=0.03 m, p95 <=0.10 m, final surface-water-volume relative difference <=2%, unchanged important-flow-path connectivity class, and fewer Adaptive cells in the open-area class. No numeric runtime/memory threshold is fixed.
 
-The repository-pinned validation environment is `environment.yml`, which specifies Python 3.12.10, SciPy 1.18.0, and the pinned HydroMT-SFINCS source commit corresponding to `2.0.0rc3`, plus Xarray, NetCDF, platformdirs, Ruff, mypy, pytest, and the required geospatial dependencies.
+## Next required Codex validation/execution pass
 
-For validation, create or verify an isolated environment from `environment.yml` and run all Python/static/OpenAPI checks through that environment. Verify the installed HydroMT-SFINCS version/source commit before claiming Gate A/C PASS.
+Use the exact SHA named by the latest PR comment. In a disposable/clean worktree and the pinned Python 3.12.10 / HydroMT-SFINCS rc3 environment:
 
-When invoking frontend API tooling, keep the compliant environment active or set `FLOODSIM_PYTHON` explicitly to that environment's Python executable. The generator must not silently fall back to an unrelated stale `.venv`.
+1. verify exact SHA, clean status, and Web-only delta;
+2. run focused Phase 4 tests, Phase 4+3 tests, full pytest, Ruff, mypy, and `git diff --check`;
+3. adversarially validate the repaired classifier, especially custom threshold identity, projected-metric <=2 m buffer, candidate connectivity/flow evidence, odd dimensions, partial blocks, isolated/checkerboard features, and 2:1 balance;
+4. independently reproduce the pinned rc3 quadtree authority-less AEQD write failure at runtime;
+5. in a disposable diagnostic only, remove the invalid optional EPSG authority attrs while retaining exact `crs_wkt`, write the NetCDF, and prove pinned rc3/xugrid can read the exact AEQD CRS back;
+6. report whether that WKT-only round trip is sufficient evidence for Web to implement the quadtree-only adapter;
+7. continue reconnaissance for actual refinement geometry, mask/Manning faces, area-conservative roof-rain aggregation, subgrid creation, and face-based result normalization;
+8. do not implement the compatibility adapter or other substantive Phase 4 features. Only tiny local validation corrections are allowed under the current role split, and any such correction must be isolated and explicitly reported.
 
-The runtime `requirements.txt` also declares the same pinned HydroMT-SFINCS source dependency so a normal runtime install does not silently omit the model builder dependency.
+## External engine rule
 
-`SFINCS_BIN` remains an external local-engine requirement. Automatic SFINCS download/redistribution is intentionally prohibited while licensing/bootstrap is unresolved. If no permitted SFINCS 2.4.0 Galibier executable is available, the real-engine gate is `BLOCKED`, not `PASS`, and it must not prevent the other gates from running.
+Do not automatically download SFINCS. If no permitted `SFINCS_BIN`, PATH executable, or managed-local executable exists, report the real-engine gate as `BLOCKED` and continue all non-engine validation.
 
-## Current confirmed Phase 3 blockers
-
-No known Phase 3 repository defect remains. A missing permitted SFINCS executable externally blocks only the real-engine smoke gate.
-
-## Remaining Phase 3 gates
-
-1. Exact-SHA clean-worktree audit against the SHA in the latest PR validation comment.
-2. Verify the pinned Python 3.12.10 environment and package/source versions.
-3. Focused Phase 3 pytest and full pytest.
-4. Ruff across `floodsim tests scripts` and mypy for `floodsim`.
-5. Audit the Web changes for unintended semantic regressions, especially the pre-body JSON route guard and the HydroMT rc3 CRS ownership fix.
-6. Real `hydromt_sfincs==2.0.0rc3` regular 1 m model build using normalized AEQD CRS and `precip_2d`; verify Dataset CRS, `grid.epsg`, config EPSG/`crsgeo`, generated SFINCS input, model write, mask/Manning, rainfall mass conservation, and build report.
-7. If a permitted `SFINCS_BIN` exists, execute tiny Full1m through real `sfincs_map.nc` read and normalized max-depth output; otherwise report only that gate as `BLOCKED`.
-8. Prove committed OpenAPI/generated TypeScript remain synchronized with `npm run api:check`, then frontend typecheck/lint/test/build.
-9. Investigate every failure to root cause and report exact command, file/line/symbol, minimal reproduction, logs, and whether it is a confirmed repository defect, external blocker, or hypothesis. Do not fix it locally.
-10. Final Phase 3 implementation report and durable disposition only after Web ChatGPT reviews the exact-head audit evidence.
-
-## Workflow correction
-
-The earlier temporary instruction `Workflow Override — Codex Owns Implementation` is superseded.
-
-The user identified the actual cause of the unexpectedly high token consumption: Local Codex had been running the Sol model. Local Codex has now been changed to Luna, so the repository uses the workflow in which Web ChatGPT performs all source changes and Local Codex performs audit/validation/execution/diagnostics only.
-
-## Role protocol
-
-### Web ChatGPT
-
-1. Read this handoff and the latest relevant PR discussion.
-2. Read the canonical specification for the active phase and inspect only directly relevant repository state.
-3. Implement required source/test/generated-asset/documentation changes directly on `codex/persistent-workspace`.
-4. Commit and push the implementation.
-5. Post an exact-SHA audit/validation request naming the required checks and runtime investigation scope.
-6. Review Local Codex's report and decide `validated`, `needs-fix`, `blocked`, or `spec-change-required`.
-7. If validation finds defects, Web ChatGPT implements the correction and requests another audit pass.
-
-### Local Codex
-
-1. Read `.ai/HANDOFF.md`, `.ai/BUG_REPORT.md`, `.ai/DECISIONS.md`, `AGENTS.md`, and the latest applicable PR audit comment.
-2. Fetch/checkout exactly the commit named by Web ChatGPT, preferably in a clean/disposable validation worktree.
-3. Audit source changes, execute the requested focused/regression/static/frontend/live checks, and investigate failures to root cause.
-4. Report exact commands and `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN` with useful diagnostics.
-5. Separate confirmed defects, external/environment blockers, warnings, and hypotheses.
-6. Make no repository changes, commits, pushes, branches, PRs, or merges. Temporary generated files in a disposable validation worktree are allowed only when explicitly requested and must be discarded before completion.
-
-Do not infer completion from commit messages alone. Completion requires the active acceptance criteria and requested audit/validation to pass.
+Do not infer completion from commit messages. Completion requires exact-head evidence reviewed by Web ChatGPT.
