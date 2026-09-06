@@ -2,32 +2,34 @@
 
 ## Current confirmed blocking bugs
 
-- Phase 4 quadtree serialization is blocked in pinned HydroMT-SFINCS 2.0.0rc3 when the canonical local AEQD CRS has no EPSG authority. `SfincsQuadtreeGrid.write()` assigns `crs.to_epsg()` (`None`) to a NetCDF `epsg` attribute and fails with `TypeError: Invalid value for attr 'epsg': None`. Adaptive remains disabled while a narrow compatibility seam is designed and validated.
+- Phase 4 quadtree serialization remains blocked in pinned HydroMT-SFINCS 2.0.0rc3 when the canonical local AEQD CRS has no EPSG authority. `SfincsQuadtreeGrid.write()` assigns `crs.to_epsg()` (`None`) to `mesh2d_crs.attrs["epsg"]` and constructs `epsg_code="EPSG:None"`; the final NetCDF write rejects the `None` attribute. Adaptive remains disabled. The recommended direction is a repository-owned quadtree-only compatibility adapter that preserves `crs_wkt` and omits only invalid authority metadata, but independent runtime reproduction/round-trip evidence is still required before Web implements that private-rc3 compatibility seam.
+
+## Phase 4 classifier findings repaired by Web; awaiting exact-head validation
+
+The exact-SHA audit of `a17ff7b7f013ff7672e22da419a34e497d30d3d2` found three repository defects in the Adaptive foundation. Web ChatGPT has corrected them and added focused regression coverage:
+
+1. Candidate terrain evidence omitted required local depression/ridge connectivity and flow-accumulation concentration indicators. Candidate metrics now compute those indicators, while curvature/connectivity/flow evidence remains diagnostic because the canonical specification does not define numeric gating thresholds for them.
+2. Threshold identity was a static algorithm label even for caller-supplied threshold maps. Identity is now a deterministic SHA-256-derived value over the actual RMSE/max-residual configuration.
+3. The `within 2 m` building/road buffer used a Chebyshev two-cell approximation and forced the entire buffer to 1 m. It now uses projected Euclidean distance between normalized 1 m source-cell footprints; feature cells remain exactly 1 m and buffer cells are constrained to at most 2 m as required by §12.2.
+
+These repairs are not accepted until Local Codex validates the exact head named in the latest PR audit comment.
 
 ## Current known risks / non-blocking issues
 
+- No permitted SFINCS executable is currently available on the validation host, so real-engine Phase 3/4 execution remains externally blocked. This is not a repository defect.
+- Real SFINCS acceptance of an authority-less WKT-only quadtree NetCDF remains unverified until a permitted engine is available.
 - External provider availability may change independently of the repository.
 - OSM completeness varies by area and must remain disclosed as fallback data.
 - SFINCS executable redistribution/bootstrap licensing remains unresolved for later packaging phases.
-- A real Phase 3 SFINCS smoke remains blocked when no permitted `SFINCS_BIN` or managed-local engine is present; this is an external validation prerequisite, not a source defect.
-- CodebaseMemory has intermittently returned `Transport closed`; source code and deterministic repository tests remain authoritative.
-
-## Recently repaired / awaiting exact-head revalidation
-
-The Local Codex acceptance pass for `0c114e4c462bada39a9aaf89bb0448c119d9a29f` confirmed the following repository defects. Web ChatGPT owns and has applied the corrections; Local Codex must verify them without editing:
-
-- Run-mutation `Content-Type` checking occurred after FastAPI body parsing, so `text/plain` could return 400 before the intended 415 contract. The runs router now uses a custom `APIRoute` boundary that rejects non-JSON POST requests before body parsing.
-- Two Phase 1/2 regression tests incorrectly required the OpenAPI path set to equal the Phase 2 path set exactly, rejecting legitimate Phase 3 routes. They now require the validated Phase 2 paths as a subset.
-- HydroMT-SFINCS rc3 kept the temporary initialization EPSG in `model.grid.epsg` even after `config.epsg` was cleared, causing `model.grid.crs` to resolve to EPSG:4326 instead of the normalized local AEQD Dataset CRS. The builder now synchronizes Dataset CRS, `grid.epsg=None`, `config.epsg=None`, and `crsgeo` before the CRS assertion and model write.
-- The rc3 package lacks a `py.typed` marker; the targeted import is now explicitly marked `# type: ignore[import-untyped]` rather than disabling mypy more broadly.
-- The seven reported Ruff diagnostics were addressed with semantic-preserving simplifications, and the intentional broad exception at the top-level run-worker boundary is locally documented and suppressed only at that boundary.
+- CodebaseMemory may be stale or unavailable; exact-SHA source, specification, and deterministic tests remain authoritative.
 
 ## Previously repaired validation/tooling defects
 
-- The conda validation environment previously pinned `scipy=1.18.1`, which was not available from conda-forge main for the Windows validation host. It now pins `scipy=1.18.0`, for which a Python 3.12 win-64 build is available.
-- `web/scripts/api-types.mjs` previously preferred a stale repository `.venv` even when a compliant conda/virtual environment was active. It now prefers an explicit `FLOODSIM_PYTHON`/`PYTHON`, then the active conda or virtual environment, before falling back to the repository `.venv` and PATH.
-- Phase 3 generated API artifacts were stale. Web ChatGPT regenerated them using Python 3.12.10, the repository runtime requirements, Node 22, `npm ci`, `npm run api:generate`, and `npm run api:check`. The committed artifacts contain the Phase 3 estimate/run/cancel/events/result-metadata routes. Generated SHA-256 values at regeneration were `b9036afa1e1b864e60f4aeb6b2bbb8883c7fc28308fe8e2eb873cdcb970adb79` for `web/openapi.json` and `48b3728d9d8e664f46a5a716c6118732315801707526f42cf0ef8362ed9d0e94` for `web/src/api/generated.ts`.
+- Phase 3 run-mutation Content-Type handling, stale exact-path regression tests, HydroMT regular-grid CRS ownership, Ruff diagnostics, and mypy third-party import handling were repaired and accepted.
+- The conda validation environment now pins Windows-available `scipy=1.18.0` with Python 3.12.10.
+- Frontend OpenAPI generation prefers the explicit/active compliant Python environment instead of a stale repository `.venv`.
+- Phase 3 generated OpenAPI/TypeScript artifacts were canonically regenerated and synchronized.
 
 ## Reporting rule
 
-Only confirmed defects belong in the blocking-bug section. Hypotheses must be clearly labelled and must not be treated as confirmed until reproduced or supported by the current diff/source/tests.
+Only confirmed defects belong in the blocking-bug section. Hypotheses must be labelled and must not be treated as confirmed until reproduced or supported by the current exact-SHA source/tests/runtime evidence.
