@@ -192,8 +192,6 @@ def fit_plane_metrics(elevation_m: np.ndarray) -> PlaneFitMetrics:
     if not np.isfinite(values).all():
         raise ValueError("plane-fit input contains non-finite elevation")
     yy, xx = np.indices(values.shape, dtype=float)
-    # Centered two-variable least squares avoids a BLAS-backed generic solve;
-    # this keeps the small classifier reliable in the pinned Windows runtime.
     xc = xx - xx.mean()
     yc = yy - yy.mean()
     zc = values - values.mean()
@@ -255,8 +253,8 @@ def _metric_feature_buffer(
     source = np.asarray(mask, dtype=bool)
     if dx_m <= 0 or dy_m <= 0 or distance_m < 0:
         raise ValueError("Adaptive feature-buffer spacing and distance must be valid")
-    max_dx = int(math.ceil(distance_m / dx_m)) + 1
-    max_dy = int(math.ceil(distance_m / dy_m)) + 1
+    max_dx = math.ceil(distance_m / dx_m) + 1
+    max_dy = math.ceil(distance_m / dy_m) + 1
     result = source.copy()
     tolerance = 1e-12
     for offset_y in range(-max_dy, max_dy + 1):
@@ -384,28 +382,21 @@ def build_adaptive_grid(
     for size in reversed(ADAPTIVE_LEVELS_M[1:]):
         for row in range(0, elevation.shape[0] - size + 1, size):
             for col in range(0, elevation.shape[1] - size + 1, size):
-                block_slice = np.s_[row : row + size, col : col + size]
-                metric = fit_plane_metrics(elevation[block_slice])
+                block = elevation[row : row + size, col : col + size]
+                metric = fit_plane_metrics(block)
                 metrics[_block_key(size, row, col)] = metric
-                if not np.all(resolution[block_slice] == 1):
+                if not np.all(resolution[row : row + size, col : col + size] == 1):
                     continue
-                if direct_features[block_slice].any():
+                if direct_features[row : row + size, col : col + size].any():
                     continue
-                # Canonical hard constraint: within 2 m of a building/road is
-                # allowed at 2 m, but never coarser than 2 m.
-                if size > 2 and feature_buffer[block_slice].any():
+                if feature_buffer[row : row + size, col : col + size].any() and size > 2:
                     continue
                 if (
                     metric.rmse_m <= thresholds.rmse_by_level_m[size]
-                    and metric.max_abs_residual_m
-                    <= thresholds.max_abs_residual_by_level_m[size]
+                    and metric.max_abs_residual_m <= thresholds.max_abs_residual_by_level_m[size]
                 ):
-                    resolution[block_slice] = size
-                    reason[block_slice] = (
-                        "near_hard_feature"
-                        if size == 2 and feature_buffer[block_slice].any()
-                        else "terrain_coarsened"
-                    )
+                    resolution[row : row + size, col : col + size] = size
+                    reason[row : row + size, col : col + size] = "terrain_coarsened"
 
     _balance_two_to_one(resolution, reason)
     counts = _count_cells(resolution)
