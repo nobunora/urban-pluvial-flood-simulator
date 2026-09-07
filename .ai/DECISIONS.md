@@ -10,14 +10,14 @@
 
 ## Implementation / validation role split
 
-- **Web ChatGPT is the primary implementation owner** for source, tests, generated assets, documentation, handoff files, commits, and pushes to `codex/persistent-workspace`.
-- **Local Codex (Luna) is primarily an audit / execution / validation / defect-investigation agent.** It should spend most of its work on reproducing runtime behavior, running focused/full checks, inspecting upstream contracts, and reporting root causes.
-- Local Codex may make only **small, local, non-architectural corrections** discovered while validating, such as an obvious typo/import/test-fixture/formatting correction that does not change a public contract, algorithm, dependency choice, generated API surface, or phase scope.
-- Any substantive feature implementation, algorithm change, compatibility adapter, public/API contract change, dependency change, generated-asset regeneration, or multi-file behavioral repair remains Web ChatGPT-owned.
-- If a tiny Codex correction is made, it must be isolated, explicitly reported, and independently reviewable; Codex must not use that allowance to take over implementation.
-- Local Codex must not create a new PR, merge, or broaden scope unless the user explicitly authorizes it.
-- After Web ChatGPT pushes a substantive commit, Local Codex runs the requested checks against the exact named commit and reports `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN` with useful diagnostics.
-- This decision supersedes the earlier stricter validation-only rule and the much older `Workflow Override — Codex Owns Implementation` rule. Web ChatGPT remains the normal coding path; the user explicitly allowed only minor Codex fixes while keeping validation/execution as Codex's main role.
+- Web ChatGPT is the primary implementation owner for substantive source, tests, generated assets, documentation, handoff files, commits, and pushes to `codex/persistent-workspace`.
+- Local Codex (Luna) is primarily responsible for validation, execution tests, runtime diagnostics, upstream-contract investigation, and defect reporting.
+- Local Codex may make only very small, isolated, non-architectural corrections discovered during validation, such as an obvious typo/import/test-fixture/formatting correction.
+- Local Codex must not implement or redesign algorithms, compatibility adapters, public/API behavior, dependencies, generated assets, or multi-file behavioral fixes unless the user explicitly expands that permission.
+- Any tiny Codex correction must be isolated in a minimal commit and reported with exact diff/reason.
+- After Web ChatGPT pushes a substantive implementation commit, Local Codex runs the requested checks against the exact named commit and reports `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN` with useful diagnostics.
+- Confirmed defects requiring substantive changes return to Web ChatGPT for implementation.
+- This decision supersedes earlier workflow text assigning primary implementation to Local Codex.
 
 ## Specification precedence
 
@@ -30,23 +30,15 @@
 ## Implementation status decisions
 
 - SFINCS v2.4.0 Galibier remains the v0.1 hydraulic engine.
-- HydroMT-SFINCS 2.0.0rc3 remains exactly pinned for v0.1 compatibility work.
-- Phase 1 application skeleton/domain/API is validated.
-- Phase 2 is split for reviewability:
-  - Phase 2A: GSI / PLATEAU / OSM geographic providers — validated.
-  - Phase 2B: CSIS geocoder + packaged JMA rainfall catalog/APIs — validated.
-- Phase 3 implementation is validated at `62dc85fa163587ea73a875c59067bcd5a8dfe79a`; only the external real-SFINCS executable smoke remains blocked when no permitted engine is installed.
-- Phase 4 Adaptive implementation is in progress. Adaptive must remain disabled until classifier, quadtree/subgrid, result normalization, and Full-vs-Adaptive acceptance gates are validated.
-
-## Adaptive implementation interpretations
-
-- The §12.2 `within 2 m` building/road buffer is evaluated in projected metric space against the normalized 1 m source-cell footprints. Direct feature cells remain 1 m; buffer cells may be 1 m or 2 m but must never be coarser than 2 m.
-- §12.3 requires curvature, local depression/ridge connectivity evidence, and flow-accumulation concentration evidence to be computed for candidate blocks. The specification does not define numeric coarsening thresholds for those three indicators, so the implementation must not invent new gating thresholds without a specification decision.
-- Threshold configuration identity must identify the actual threshold values, not only the algorithm family name.
-- Authority-less local AEQD CRS semantics must be preserved for Adaptive. A fake permanent EPSG is prohibited.
+- HydroMT-SFINCS 2.0.0rc3 remains pinned to source commit `82e58ee85136cf5155c92b42bb9a397869ed8035`.
+- Phase 0, Phase 1, Phase 2A, and Phase 2B are validated.
+- Phase 3 implementation is validated at `62dc85fa163587ea73a875c59067bcd5a8dfe79a`; real SFINCS execution remains externally blocked if no permitted executable is available.
+- Phase 4 is implementation-in-progress. Adaptive stays disabled until quadtree/subgrid construction, result normalization, benchmark acceptance, and required engine validation are complete.
+- The authority-less local AEQD CRS is canonical. Do not substitute a fake permanent EPSG.
+- Runtime evidence supports a repository-owned, quadtree-only compatibility seam for pinned rc3 that preserves full WKT/CF/UGRID metadata and omits only invalid optional `epsg=None` / `epsg_code="EPSG:None"` metadata.
 
 ## Preservation constraints
 
 - Preserve validated Phase 0/1/2A/2B/3 behavior unless the active task explicitly requires change.
 - Do not silently substitute providers, hydraulic engines, data semantics, CRS semantics, or product assumptions.
-- Do not add functionality beyond the active canonical phase without an explicit specification decision.
+- Do not enable Adaptive before its canonical acceptance gates are met.
