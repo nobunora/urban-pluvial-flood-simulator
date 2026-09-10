@@ -3,100 +3,96 @@
 ## Workspace and role split
 
 - Persistent branch: `codex/persistent-workspace`.
-- Communication channel: one long-lived Draft PR #12 targeting `main`.
+- Communication channel: long-lived Draft PR #12 targeting `main`.
 - Keep PR #12 open, Draft, and unmerged unless the user explicitly requests merge.
-- **Web ChatGPT is the primary implementation owner** for substantive source/test/docs/generated-asset changes and repository writes.
-- **Local Codex (Luna) is primarily responsible for audit, execution tests, validation, runtime diagnostics, upstream-contract investigation, and reporting.**
-- Local Codex may make only small, local, non-architectural corrections discovered during validation (for example an obvious typo/import/test-fixture/formatting correction). It must not implement features, algorithms, compatibility adapters, public/API changes, dependency changes, generated API changes, or multi-file behavioral repairs unless the user explicitly expands that permission.
-- Any tiny Codex correction must be isolated and explicitly reported. Web remains the normal coding path.
+- **Web ChatGPT owns substantive implementation**: source, algorithms, tests, docs, generated assets, compatibility adapters, public/API contracts, dependency changes and multi-file behavioral fixes.
+- **Local Codex/Luna primarily owns validation and execution**: exact-SHA tests, runtime probes, static checks, upstream-contract investigation, root-cause analysis and reporting.
+- Codex may make only a tiny isolated non-architectural correction if genuinely necessary to finish validation (obvious typo/import/test-fixture/formatting class). It must not implement features, algorithms, adapters, API changes, dependency changes or multi-file behavioral repairs.
+- Any tiny Codex correction must be isolated and explicitly reported.
 
-## Validated phases
+## Validated history
 
-- Phase 0: `validated`.
-- Phase 1: `validated`.
-- Phase 2A geographic providers: `validated`.
-- Phase 2B CSIS/JMA providers and API contracts: `validated` at `660579bfebb5f1e275004ed0f1d0a0b4db7cb322`.
-- Phase 3: implementation `validated` at `62dc85fa163587ea73a875c59067bcd5a8dfe79a`.
-  - Gates A/B/C/E/F passed in the exact-head audit.
-  - Real SFINCS Gate D remains externally blocked only because no permitted local SFINCS executable is installed.
-  - No known Phase 3 repository defect remains.
+- Phase 0: validated.
+- Phase 1: validated.
+- Phase 2A: validated.
+- Phase 2B: validated at `660579bfebb5f1e275004ed0f1d0a0b4db7cb322`.
+- Phase 3: validated at `62dc85fa163587ea73a875c59067bcd5a8dfe79a`; real SFINCS execution remains externally blocked only because no permitted executable is installed.
+- Phase 4 classifier repairs at `1d189e358bef2cd0363213feff61d7ed5ef1e813`: semantic audit PASS.
+- Phase 4 quadtree writer seam at `1c585d6b8e5dda63d116526779d7098f97bd03f5`: **validated-seam** in a fresh canonical environment.
+  - Python 3.12.10 / pinned HydroMT-SFINCS 2.0.0rc3 commit `82e58ee85136cf5155c92b42bb9a397869ed8035`.
+  - mypy PASS: no issues in 40 source files.
+  - focused Phase 3/4 tests PASS: 20 passed.
+  - Ruff PASS and `git diff --check` PASS.
+  - authority-less AEQD WKT-only writer round trip, mask/Manning preservation and authority-backed delegation all passed in prior execution probes.
+  - real SFINCS remains externally BLOCKED because no permitted engine executable is available.
 
-## Phase 4 status
+## Phase 4 current Web-owned slice
 
-Phase 4 Adaptive is `implementation-in-progress / exact-head validation pending`. Adaptive remains rejected by the existing `GRID_ADAPTIVE_NOT_AVAILABLE` boundary and must not be enabled yet.
+Adaptive remains disabled by `GRID_ADAPTIVE_NOT_AVAILABLE`.
 
-The first Phase 4 foundation SHA `a17ff7b7f013ff7672e22da419a34e497d30d3d2` introduced the fixed 1/2/4/8/16/32 m classifier hierarchy, terrain-fit thresholds, hard-feature refinement foundation, 2:1 balancing, diagnostics, and Full 1 m road-mask preservation.
+Web has now added:
 
-Local Codex audited that foundation and found three classifier defects. Web repaired them at `1d189e358bef2cd0363213feff61d7ed5ef1e813`:
+- `floodsim/sfincs/adaptive_quadtree.py`
+- `tests/test_phase4_adaptive_quadtree.py`
 
-1. required candidate curvature / depression-ridge connectivity / flow-accumulation evidence is now computed without inventing unspecified gating thresholds;
-2. threshold identity now hashes the actual threshold configuration;
-3. the `within 2 m` building/road rule now uses projected Euclidean source-cell footprint distance, keeps direct features at 1 m, and constrains the buffer to <=2 m rather than forcing it all to 1 m.
+This slice converts the validated classifier to actual pinned-rc3 quadtree geometry and normalized face fields:
 
-## Latest Codex validation at `1d189e...`
+1. **Classifier -> rc3 refinement geometry**
+   - 32 m base grid.
+   - `refinement_level = log2(32 / target_size)` for target sizes 16/8/4/2/1 m.
+   - classifier masks are polygonized in projected coordinates.
+   - polygons are contracted by `1e-7 m` only to avoid rc3's boundary-touch `intersects()` rule spuriously refining the neighbouring cell; this is a compatibility/numerical seam, not a hydraulic threshold.
+   - rc3 may refine additional sibling/transition faces where required by quadtree topology; it must never leave a face coarser than the validated classifier target over the source area.
 
-- Gate A exact SHA/delta: PASS.
-- Gate B tests/static/performance diagnostic: FAIL only because of two Ruff `RUF046` diagnostics.
-- Gate C repaired classifier audit: PASS.
-- Gate D independent unmodified rc3 authority-less quadtree failure reproduction: PASS.
-- Gate E WKT-only round-trip probe: PASS.
-- Gate F next-slice reconnaissance: PASS.
-- Compatibility decision: `SEAM_SUPPORTED`.
-- Real SFINCS execution: BLOCKED because no permitted local executable is available.
+2. **Actual rc3 quadtree creation**
+   - uses the rc3-required temporary integer EPSG only during `create()`.
+   - immediately replaces topology CRS with the canonical local authority-less CRS.
+   - keeps config `epsg=None` and true `crsgeo`.
+   - base dimensions use ceil-to-32 m padding; padding faces are inactive and excluded from source-area/rainfall mass.
 
-Deterministic tests otherwise passed: 7 Phase 4 tests, 18 Phase 4+3 tests, 79 full tests, and mypy. Codex made no source correction.
+3. **Face mask / Manning mapping**
+   - maps each actual rc3 face back to exact aligned Full-1 m source indices using rc3 `level`, `n`, and `m` fields.
+   - rejects any face that is coarser than any validated classifier target cell it covers.
+   - outside padding -> mask 0.
+   - active/outflow source semantics are preserved on represented faces.
+   - Manning is aggregated over active source cells; direct road cells remain 1 m under the validated hard-refinement rule.
 
-## Web repairs after that audit
+4. **Area-conservative roof-rain aggregation**
+   - face rain weight = sum of source 1 m rain weights covered by the face / full quadtree face area.
+   - padding contributes zero.
+   - total `sum(face_weight * face_area)` must equal the Full-1 m weighted source area within strict deterministic tolerance.
+   - the rain-weight field is returned as model-building data but is not yet wired into Adaptive precipitation forcing in this slice.
 
-Web ChatGPT has now:
+5. **Tests added**
+   - flat 64x64 -> exactly four 32 m base faces.
+   - actual rc3 hard building/road mapping -> 1 m faces, building mask 0, road Manning 0.020.
+   - every source-overlapping rc3 face must be no coarser than the classifier target beneath it.
+   - odd 33x35 domain -> 64x64 padded base extent, zero-overlap padding inactive, edge source cells remain 1 m, rain mass conserved.
 
-- removed the two redundant `int(math.ceil(...))` calls reported by Ruff;
-- added `floodsim/sfincs/quadtree_writer.py` as a repository-owned, quadtree-only compatibility seam for the pinned HydroMT-SFINCS 2.0.0rc3 authority-less CRS bug;
-- added `tests/test_phase4_quadtree_writer.py` with both authority-backed delegation coverage and a real pinned-rc3 authority-less AEQD WKT-only round-trip test.
-
-The compatibility writer behavior is intentionally narrow:
-
-- if `crs.to_epsg()` returns an integer, delegate to the ordinary rc3 `SfincsQuadtreeGrid.write(..., data_vars=[])` path;
-- if the true quadtree CRS is authority-less, preserve full `crs_wkt`, CF/UGRID metadata, topology, conventions, coordinate units/grid mapping and rc3 integer casting;
-- omit only invalid optional `epsg=None` / `epsg_code="EPSG:None"` authority metadata;
-- keep model config `epsg=None` and the true projected `crsgeo` state;
-- do not alter the regular Full 1 m writer and do not globally monkey-patch Xarray.
-
-This new source is not accepted until Local Codex executes the latest exact head named in the newest PR comment.
-
-## Canonical Adaptive constraints to preserve
+## Canonical constraints that still apply
 
 From `docs/specs/v0.1-implementation-spec.md` §12:
 
 - levels exactly `1, 2, 4, 8, 16, 32 m`;
-- building intersection: 1 m;
-- within 2 m of building: <=2 m;
-- road surface: 1 m;
-- within 2 m of road: <=2 m;
-- narrow channel/major concentrated flow path, when identified: <=2 m;
-- plane residual thresholds remain the canonical provisional table;
-- curvature, local depression/ridge connectivity, and flow-accumulation concentration evidence must be computed;
-- best available high-resolution terrain must remain available for subgrid generation;
-- diagnostics include cell counts, total/equivalent cells, reduction ratio, refinement reasons, resolution layer, and threshold configuration identity;
-- no fake permanent EPSG may replace the canonical local AEQD.
+- building footprint 1 m; within 2 m <=2 m;
+- road surface 1 m; within 2 m <=2 m;
+- no fake permanent EPSG;
+- best high-resolution terrain must remain available for subgrid generation;
+- Adaptive is accuracy-first and must later pass Full-vs-Adaptive benchmark thresholds before enablement.
 
-Canonical Full-vs-Adaptive benchmark thresholds include flooded-area IoU at depth >=0.05 m >=0.90, wet-cell median max-depth error <=0.03 m, p95 <=0.10 m, final surface-water-volume relative difference <=2%, unchanged important-flow-path connectivity class, and fewer Adaptive cells in the open-area class. No numeric runtime/memory threshold is fixed.
+## Next Codex task
 
-## Next required Codex validation/execution pass
+The newest PR comment names the exact SHA to validate. Codex should:
 
-Use the exact SHA named by the latest PR comment. In a disposable/clean worktree and the pinned Python 3.12.10 / HydroMT-SFINCS rc3 environment:
+- use a clean disposable worktree and the now-working fresh canonical environment policy;
+- verify exact Web delta and no unrelated files;
+- run new Adaptive-quadtree tests plus prior Phase 4/3 tests, full pytest, Ruff, mypy and `git diff --check`;
+- independently inspect refinement geometry and actual rc3 face mapping;
+- adversarially check flat, hard-feature, odd-dimension/padding, transition and mass-conservation cases;
+- verify actual face resolution never exceeds the classifier target over source cells;
+- verify direct building/road semantics and padded inactive faces;
+- verify roof-rain area conservation numerically from actual rc3 faces;
+- keep Adaptive disabled and do not implement subgrid/forcing/result/API work;
+- do not download SFINCS; if no permitted engine exists, report the engine gate as externally BLOCKED.
 
-1. verify exact SHA, clean status, and the Web delta after `1d189e...`;
-2. run `tests/test_phase4.py`, `tests/test_phase4_quadtree_writer.py`, Phase 4+3 focused tests, full pytest, Ruff, mypy, and `git diff --check`;
-3. prove the two previous Ruff diagnostics are gone;
-4. execute the real pinned-rc3 authority-less AEQD round-trip test and independently inspect the written NetCDF for exact/equivalent WKT, absent false EPSG metadata, topology/face count/refinement-level preservation, node coordinate units/grid mapping, and `qtrfile`/config semantics;
-5. verify authority-backed CRS delegates to the ordinary rc3 writer path;
-6. confirm the compatibility adapter does not affect Phase 3 regular-grid behavior and Adaptive remains disabled;
-7. if any permitted SFINCS executable exists, run the strongest safe tiny quadtree acceptance possible; otherwise report the real-engine gate as BLOCKED and do not download anything;
-8. investigate failures to root cause. Substantive fixes stay Web-owned; only tiny isolated corrections are allowed under the current role split.
-
-## External engine rule
-
-Do not automatically download SFINCS. If no permitted `SFINCS_BIN`, PATH executable, or managed-local executable exists, report the real-engine gate as `BLOCKED` and continue all non-engine validation.
-
-Do not infer completion from commit messages. Completion requires exact-head evidence reviewed by Web ChatGPT.
+Substantive fixes remain Web-owned. After this slice validates, Web will implement high-resolution terrain/subgrid creation, Adaptive precipitation forcing and then face-based result normalization/benchmarking.
