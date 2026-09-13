@@ -162,14 +162,17 @@ export default function SmokeApp() {
       <header>
         <div>
           <h1>Urban Pluvial Flood Simulator</h1>
-          <p className="smoke-kicker">開発用 Full 1 m 動作確認</p>
+          <p className="smoke-kicker">ローカルレビュー版 — Full 1 m</p>
+          <p>
+            まず操作フローと実行経路をレビューするための縦切り版です。Adaptiveと結果地図はまだ未実装です。
+          </p>
         </div>
         <div className="smoke-health">Backend: {backend}</div>
       </header>
 
       <section className="smoke-grid">
         <div className="smoke-card">
-          <h2>1. 入力</h2>
+          <h2>1. 条件</h2>
           <label>緯度<input value={lat} onChange={(event) => setLat(event.target.value)} /></label>
           <label>経度<input value={lon} onChange={(event) => setLon(event.target.value)} /></label>
           <label>範囲
@@ -182,7 +185,7 @@ export default function SmokeApp() {
           </label>
           <label>雨量強度 (mm/h)<input value={intensity} onChange={(event) => setIntensity(event.target.value)} /></label>
           <label>継続時間 (min)<input value={duration} onChange={(event) => setDuration(event.target.value)} /></label>
-          <p>精度: <strong>Full 1 m</strong>（Adaptiveはまだ無効）</p>
+          <p>精度: <strong>Full 1 m</strong>（Adaptiveはレビュー版では無効）</p>
           <div className="smoke-actions">
             <button disabled={!area || busy} onClick={() => void handleEstimate()}>負荷を見積る</button>
             <button disabled={!area || busy || (status !== null && !TERMINAL.has(status.state))} onClick={() => void handleRun()}>
@@ -192,7 +195,7 @@ export default function SmokeApp() {
         </div>
 
         <div className="smoke-card">
-          <h2>2. 状態</h2>
+          <h2>2. 実行状態</h2>
           {area ? (
             <dl>
               <dt>範囲</dt><dd>{area.width_m} × {area.height_m} m</dd>
@@ -222,7 +225,7 @@ export default function SmokeApp() {
       </section>
 
       <footer>
-        下水・浸透は未考慮 / 雨は解析範囲内で一様 / 公的な洪水予報・避難情報ではありません
+        レビュー対象: 条件入力・負荷見積り・Full 1 m実行・進捗・キャンセル / 下水・浸透は未考慮 / 雨は解析範囲内で一様 / 公的な洪水予報・避難情報ではありません
       </footer>
     </main>
   );
