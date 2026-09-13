@@ -2,27 +2,32 @@
 
 ## Current confirmed blocking bugs
 
-None currently known after the latest Web ChatGPT staged-refinement repair. The new exact head still requires independent Codex validation/execution before acceptance.
+None currently known after the latest Web ChatGPT empty-leading-level repair. The new exact head still requires independent Codex validation/execution before acceptance.
 
-## Latest confirmed Phase 4 defect and Web repair
+## Latest confirmed Phase 4 defects and Web repairs
 
-Codex validation of `1aeebc4037882a44a9f04898f2528a09b8d4f342` reproduced a deterministic Adaptive geometry failure in two committed tests:
+### 1. Multi-polygon rc3 intermediate-level failure
 
-- hard building/road actual-quadtree mapping;
-- odd 33x35 padded-domain mapping.
+Codex validation of `1aeebc4037882a44a9f04898f2528a09b8d4f342` reproduced deterministic Adaptive geometry failures in hard building/road and odd 33x35 cases. The repository passed multiple exact-target polygons at different refinement depths to pinned HydroMT-SFINCS 2.0.0rc3. rc3 restarts every polygon at level zero; an earlier polygon can consume an intermediate level that a later polygon then indexes, causing `IndexError`.
 
-Both failed inside pinned HydroMT-SFINCS 2.0.0rc3 `QuadtreeGrid.refine_in_polygon()` because classifier-derived polygons with different refinement levels are processed independently and each polygon restarts at level zero. Earlier polygons can consume every cell at an intermediate level, after which a later polygon indexes an empty/nonexistent level and raises `IndexError`.
+Web removed polygon-driven production refinement and moved actual geometry to staged rc3 `refine_cells()` calls. Classifier polygonization remains diagnostic-only.
 
-Web ChatGPT repaired this integration path by:
+### 2. Empty immediately-coarser level in staged refinement
 
-- keeping classifier polygonization only as an inspectable diagnostic artifact;
-- building the actual rc3 quadtree with the pinned rc3 `QuadtreeGrid` engine;
-- refining existing rc3 cells explicitly and monotonically by level `32 -> 16 -> 8 -> 4 -> 2 -> 1 m` using `refine_cells()`;
-- selecting each parent for refinement only when its overlapping Full-1 m source block contains a validated classifier target finer than that parent;
-- preserving rc3 neighbour/topology finalization, authority-less AEQD replacement, mask/Manning mapping and rain-mass conservation guards;
-- adding asymmetric-domain and exact source-coverage regression checks.
+Codex then validated exact head `0e5cbefb80da104bb7d55c3aed18fe92c14cd88d` and reproduced a second deterministic failure in hard building/road, odd 33x35, and asymmetric 65x34 cases. `refine_cells()` calls rc3 `find_lower_level_neighbors()` whenever `ilev > 0`. If the whole domain has already been refined past the immediately coarser level, that level is empty; rc3 passes an empty `nm_level` into its `binary_search()` helper and raises `IndexError`.
 
-This is a substantive Web-owned repair and is pending exact-head Codex execution. Adaptive remains disabled at `GRID_ADAPTIVE_NOT_AVAILABLE`.
+This is not a hydraulic ambiguity: when all cells at the coarser level have disappeared globally, there can be no neighbor at that level.
+
+Web ChatGPT repaired the integration without monkey-patching rc3:
+
+- actual refinement remains staged and uses pinned rc3 `QuadtreeGrid.refine_cells()`;
+- before each physical refinement size, if every globally coarser level has disappeared, the first populated level is promoted to level zero;
+- the equivalent transform divides builder `dx/dy` by `2**leading_level`, multiplies `nmax/mmax` by the same factor, and subtracts the leading level from all cell levels;
+- `n/m` indices and physical cell coordinates remain unchanged by this transform;
+- internal level gaps are rejected before rc3 neighbor/UGRID finalization;
+- face resolution is now derived from the rc3 Dataset's actual base `dx`, so rebased hierarchies still map exactly to the canonical `1/2/4/8/16/32 m` sizes.
+
+The committed hard-feature, odd/padded, and asymmetric tests are the primary regression for both rc3 failures. Adaptive remains disabled at `GRID_ADAPTIVE_NOT_AVAILABLE` pending exact-head validation.
 
 ## Validated authority-less CRS writer limitation
 
@@ -32,8 +37,8 @@ Codex independently reproduced that failure and demonstrated that removing only 
 
 ## Current known risks / external dependencies
 
-- A permitted managed-local SFINCS 2.4.0 Galibier executable was discovered by Codex at `SFINCS_2026_01_release/SFINCS_v2.4.0_Galibier_release_exe/sfincs.exe`. Real-engine execution is therefore no longer blocked by executable absence, but the newly repaired exact head has not yet been exercised against it.
-- The Adaptive classifier diagnostic timing was about 20.6 s on a flat 512x512 probe in the Codex environment. The specification defines no runtime acceptance threshold, so this is a performance warning rather than a correctness failure.
+- A permitted managed-local SFINCS 2.4.0 Galibier executable was discovered by Codex at `SFINCS_2026_01_release/SFINCS_v2.4.0_Galibier_release_exe/sfincs.exe`. No download or installation was performed. Real-engine smoke is pending deterministic exact-head gates.
+- The Adaptive classifier diagnostic timing was about 20.6 s on a flat 512x512 probe in the Codex environment. The specification defines no runtime acceptance threshold, so this remains a performance warning rather than a correctness failure.
 - External provider availability may change independently of the repository.
 - OSM completeness varies by area and must remain disclosed as fallback data.
 - SFINCS executable redistribution/bootstrap licensing remains unresolved for later packaging phases even though a validation-host executable exists.
