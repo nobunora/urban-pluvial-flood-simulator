@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<results>
+  <query>駅</query><geodetic>wgs1984</geodetic><iConf>2</iConf>
+  <candidate><address>一番目</address><longitude>139.0</longitude><latitude>35.0</latitude><iLvl>1</iLvl></candidate>
+  <candidate><address>二番目</address><longitude>140.0</longitude><latitude>36.0</latitude><iLvl>2</iLvl></candidate>
+</results>

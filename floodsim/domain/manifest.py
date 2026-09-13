@@ -1,9 +1,10 @@
 """Persisted run manifest contract."""
 
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.domain.run_config import AccuracyMode
@@ -32,8 +33,28 @@ class RunManifest(BaseModel):
     created_at_utc: datetime
     analysis_area: AnalysisArea
     requested_accuracy_mode: AccuracyMode
+    projected_crs: str | None = None
+    final_grid_level_counts: dict[str, int] = Field(default_factory=dict)
+    elevation_provider_counts: dict[str, int] = Field(default_factory=dict)
+    elevation_source_summary: dict[str, Any] = Field(default_factory=dict)
+    building_provider: str | None = None
+    road_provider: str | None = None
+    provider_warnings: list[str] = Field(default_factory=list)
+    rainfall_source: dict[str, Any] = Field(default_factory=dict)
+    sfincs_version: str | None = None
+    sfincs_build_sha256: str | None = None
+    sfincs_engine_source: str | None = None
+    hydromt_sfincs_version: str | None = None
+    manning_defaults: dict[str, float] = Field(
+        default_factory=lambda: {"general": 0.030, "road": 0.020}
+    )
+    boundary_policy: str = "outer eligible cells use SFINCS outflow mask msk=3"
+    roof_rain_mass_diagnostic: dict[str, float | int] = Field(default_factory=dict)
     limitations: Limitations = Limitations()
     run_status: RunState
+    failing_stage: str | None = None
+    failure_code: str | None = None
+    output_files: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("created_at_utc")
     @classmethod
