@@ -4,6 +4,38 @@ Use this workflow when specification work can be separated from repository execu
 
 The purpose is to keep architecture and requirements explicit in GitHub while reserving repository-agent capacity for source inspection, implementation, and verification.
 
+## Persistent Draft PR Mode
+
+When the repository is operating under the persistent Draft PR workflow
+defined in `docs/current/agent/persistent-draft-pr-workflow.md`, that workflow
+overrides this document's normal recommendation to create a separate
+implementation branch and pull request for each iteration.
+
+For persistent-workspace mechanics, the precedence is:
+
+```text
+AGENTS.md
+    ↓
+docs/current/agent/persistent-draft-pr-workflow.md
+    ↓
+latest applicable "## Codex Task" PR conversation comment
+```
+
+In persistent mode:
+
+- use the existing persistent working branch;
+- use the existing long-lived Draft PR;
+- Web ChatGPT provides active implementation and review instructions through PR comments;
+- Local Codex pushes commits to the same persistent branch;
+- do not create a new PR merely to communicate or implement the next iteration;
+- keep the Draft PR open until the assigned body of work is complete and validated.
+
+The specification, repository-review, implementation, verification, and review
+gates in this document still apply. Only the branch/PR transport mechanism is
+different. Committed specifications and durable decisions remain authoritative
+for stable product behavior; a conflicting PR comment must be reported as
+`spec-change-required` rather than silently overriding them.
+
 ## Responsibility Split
 
 ### Specification / adjudication role
@@ -153,11 +185,14 @@ Implementation rules:
 - record exact commands and outcomes;
 - surface any requirement conflict rather than improvising a new requirement.
 
-Implementation should normally use a separate branch and PR from the specification PR.
+Outside persistent Draft PR mode, implementation should normally use a separate
+branch and PR from the specification PR. When persistent Draft PR mode is
+active, continue using the designated persistent branch and Draft PR instead.
 
 ## Phase 5 - Review and Convergence
 
-The implementation PR must contain evidence for:
+The implementation PR, or the persistent Draft PR when that mode is active,
+must contain evidence for:
 
 - specification path and revision/commit used;
 - affected execution paths;
@@ -181,7 +216,7 @@ spec file changed
     -> human or adjudicator decision
     -> implementation job
     -> project checks
-    -> implementation PR
+    -> implementation PR, or persistent Draft PR when active
 ```
 
 Keep model invocation and write permissions explicit.
@@ -191,7 +226,8 @@ Recommended safeguards:
 - no model execution on untrusted fork PRs with write-capable secrets;
 - least-privilege GitHub permissions;
 - review-only repository pass before write-enabled implementation;
-- separate specification and implementation branches;
+- separate specification and implementation branches outside persistent mode;
+- designated persistent branch and Draft PR when persistent mode is active;
 - require deterministic test/static-analysis gates before merge;
 - never expose repository or API secrets in prompts or logs.
 
@@ -215,4 +251,3 @@ See also:
 - `16_blind_review_protocol.md`;
 - `17_repo_index_and_query.md`;
 - `18_static_analysis.md`.
-

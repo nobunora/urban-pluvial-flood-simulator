@@ -6,9 +6,9 @@ import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.colors import ListedColormap, LogNorm
 from matplotlib.patches import Patch
-import numpy as np
 
 
 def main():
