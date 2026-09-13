@@ -20,12 +20,12 @@ from typing import Any, Final
 
 import geopandas as gpd  # type: ignore[import-untyped]
 import numpy as np
-import xarray as xr
-import xugrid as xu  # type: ignore[import-untyped]
 from pyproj import CRS
 from rasterio.features import shapes  # type: ignore[import-untyped]
 from rasterio.transform import from_origin  # type: ignore[import-untyped]
 from shapely.geometry import MultiPolygon, Polygon, shape  # type: ignore[import-untyped]
+import xarray as xr
+import xugrid as xu  # type: ignore[import-untyped]
 
 from floodsim.preprocessing.adaptive_grid import ADAPTIVE_LEVELS_M, AdaptiveGridProduct
 from floodsim.preprocessing.full_grid import GENERAL_MANNING, FullGridProduct
@@ -77,7 +77,7 @@ def _validate_inputs(full_grid: FullGridProduct, adaptive: AdaptiveGridProduct) 
         raise AdaptiveQuadtreeError("Full 1 m terrain shape is inconsistent")
     if not math.isclose(full_grid.dx_m, 1.0) or not math.isclose(full_grid.dy_m, 1.0):
         raise AdaptiveQuadtreeError("Adaptive quadtree requires the canonical Full 1 m source grid")
-    values = set(int(value) for value in np.unique(adaptive.resolution_m))
+    values = {int(value) for value in np.unique(adaptive.resolution_m)}
     if not values.issubset(set(ADAPTIVE_LEVELS_M)):
         raise AdaptiveQuadtreeError("Adaptive resolution raster contains an unsupported level")
     if full_grid.width_cells <= 0 or full_grid.height_cells <= 0:
@@ -120,7 +120,7 @@ def build_refinement_polygons(
         if not np.any(mask):
             continue
         north_to_south = np.flipud(mask).astype(np.uint8)
-        refinement_level = int(round(math.log2(_BASE_CELL_M / target_size)))
+        refinement_level = round(math.log2(_BASE_CELL_M / target_size))
         for mapping, value in shapes(
             north_to_south,
             mask=north_to_south.astype(bool),
@@ -200,7 +200,7 @@ def _level_for_physical_size(builder: Any, size_m: int) -> int | None:
     if size_m > base_dx + 1e-12:
         return None
     ratio = base_dx / float(size_m)
-    ilev = int(round(math.log2(ratio)))
+    ilev = round(math.log2(ratio))
     if ilev < 0 or not math.isclose(ratio, float(2**ilev), rel_tol=0.0, abs_tol=1e-12):
         raise AdaptiveQuadtreeError("rc3 staged base is not aligned to the Adaptive hierarchy")
     return ilev
@@ -243,7 +243,7 @@ def _assert_contiguous_populated_levels(builder: Any) -> None:
     levels = np.asarray(builder.level, dtype=np.int64)
     if levels.size == 0:
         raise AdaptiveQuadtreeError("rc3 staged quadtree contains no cells")
-    present = set(int(value) for value in np.unique(levels))
+    present = {int(value) for value in np.unique(levels)}
     expected = set(range(int(levels.max()) + 1))
     if present != expected:
         raise AdaptiveQuadtreeError("rc3 staged refinement produced an internal empty level")
@@ -333,10 +333,10 @@ def _install_builder_dataset(model: Any, component: Any, builder: Any) -> None:
     if quadtree_mask is not None and hasattr(quadtree_mask, "clear_overlay"):
         quadtree_mask.clear_overlay()
 
-    setattr(model, "_grid_type", "quadtree")
+    model._grid_type = "quadtree"
     dataset = xu.UgridDataset(builder.data.ugrid.to_dataset())
     dataset.grid.set_crs(CRS.from_epsg(_TEMPORARY_CREATION_EPSG), allow_override=True)
-    setattr(component, "_data", dataset)
+    component._data = dataset
 
 
 def _face_layout(component: Any) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -365,9 +365,7 @@ def _face_layout(component: Any) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     resolution = np.rint(resolution_float).astype(np.int16)
     if not np.allclose(resolution_float, resolution, rtol=0.0, atol=1e-12):
         raise AdaptiveQuadtreeError("rc3 quadtree face resolution is not integral metres")
-    if not set(int(value) for value in np.unique(resolution)).issubset(
-        set(ADAPTIVE_LEVELS_M)
-    ):
+    if not {int(value) for value in np.unique(resolution)}.issubset(set(ADAPTIVE_LEVELS_M)):
         raise AdaptiveQuadtreeError("rc3 quadtree face resolution is outside the Adaptive hierarchy")
     return resolution, rows, cols
 
