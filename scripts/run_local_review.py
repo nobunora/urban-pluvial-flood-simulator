@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import threading
 import webbrowser
+from pathlib import Path
 
 import uvicorn
 
