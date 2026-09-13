@@ -19,6 +19,16 @@
 - Confirmed defects requiring substantive changes return to Web ChatGPT for implementation.
 - This decision supersedes earlier workflow text assigning primary implementation to Local Codex.
 
+## Review-first delivery decision
+
+- A runnable local user-review slice takes priority over completing the entire v0.1 implementation before user feedback.
+- The current review slice is **Full 1 m only** and must be launchable from a fresh checkout with `python -m scripts.run_local_review`.
+- The review gate covers the real user flow: condition input, resource estimate, Full 1 m run creation, visible run stages, cancellation, and explicit limitations.
+- The normal frontend build must leave both `/` and the build-free `/smoke.html` fallback usable.
+- A real SFINCS Full 1 m smoke should be attempted with an already-permitted local executable before more Adaptive work is prioritized.
+- Adaptive, subgrid integration, Adaptive forcing, face-result normalization, benchmark acceptance, final result-map UX, and packaging remain deferred until the local review slice is usable and the product direction has been reviewed.
+- A provider or engine outage must be reported as the real stopping stage; the review build must never fake successful completion.
+
 ## Specification precedence
 
 1. `docs/PRODUCT_SPEC_DRAFT.md`
@@ -32,7 +42,7 @@
 - SFINCS v2.4.0 Galibier remains the v0.1 hydraulic engine.
 - HydroMT-SFINCS 2.0.0rc3 remains pinned to source commit `82e58ee85136cf5155c92b42bb9a397869ed8035`.
 - Phase 0, Phase 1, Phase 2A, and Phase 2B are validated.
-- Phase 3 implementation is validated at `62dc85fa163587ea73a875c59067bcd5a8dfe79a`; real SFINCS execution remains externally blocked if no permitted executable is available.
+- Phase 3 implementation is validated at `62dc85fa163587ea73a875c59067bcd5a8dfe79a`; real SFINCS execution should use an already-permitted executable when available.
 - Phase 4 is implementation-in-progress. Adaptive stays disabled until quadtree/subgrid construction, result normalization, benchmark acceptance, and required engine validation are complete.
 - The authority-less local AEQD CRS is canonical. Do not substitute a fake permanent EPSG.
 - Runtime evidence supports a repository-owned, quadtree-only compatibility seam for pinned rc3 that preserves full WKT/CF/UGRID metadata and omits only invalid optional `epsg=None` / `epsg_code="EPSG:None"` metadata.
