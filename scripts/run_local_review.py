@@ -12,7 +12,6 @@ from pathlib import Path
 
 import uvicorn
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEB_DIR = REPO_ROOT / "web"
 STATIC_DIR = REPO_ROOT / "floodsim" / "static"
