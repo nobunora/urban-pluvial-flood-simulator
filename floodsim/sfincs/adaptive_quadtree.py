@@ -33,7 +33,6 @@ from floodsim.preprocessing.full_grid import GENERAL_MANNING, FullGridProduct
 _BASE_CELL_M: Final[int] = 32
 _TEMPORARY_CREATION_EPSG: Final[int] = 3857
 _BOUNDARY_SHRINK_M: Final[float] = 1e-7
-_MAX_REFINEMENT_LEVEL: Final[int] = 5
 
 
 class AdaptiveQuadtreeError(RuntimeError):
@@ -157,16 +156,66 @@ def _load_rc3_quadtree_grid_class() -> Any:
     return QuadtreeGrid
 
 
+def _normalize_empty_leading_levels(builder: Any) -> int:
+    """Rebase the rc3 hierarchy after all globally coarser levels disappear.
+
+    rc3's ``refine_cells`` asks the immediately coarser level for 2:1-neighbor
+    candidates whenever ``ilev > 0``. If the entire domain has already been
+    refined past that level, rc3's binary search receives an empty array and
+    raises ``IndexError`` even though no coarser neighbor can exist. The
+    quadtree is physically unchanged if the first populated level is promoted
+    to level zero while ``dx/dy`` and ``nmax/mmax`` are scaled by the matching
+    power of two. ``n/m`` indices and all cell coordinates remain identical.
+    """
+
+    levels = np.asarray(builder.level, dtype=np.int64)
+    if levels.size == 0:
+        raise AdaptiveQuadtreeError("rc3 staged quadtree contains no cells")
+    leading = int(levels.min())
+    if leading <= 0:
+        return 0
+
+    factor = 2**leading
+    builder.dx = float(builder.dx) / factor
+    builder.dy = float(builder.dy) / factor
+    builder.nmax = int(builder.nmax) * factor
+    builder.mmax = int(builder.mmax) * factor
+    builder.level = levels - leading
+    builder.nr_refinement_levels = int(builder.nr_refinement_levels) - leading
+    if builder.nr_refinement_levels <= 0:
+        raise AdaptiveQuadtreeError("rc3 staged quadtree lost its refinement hierarchy")
+    builder.reorder()
+    builder.find_first_cells_in_level()
+    builder.compute_cell_center_coordinates()
+    return leading
+
+
+def _level_for_physical_size(builder: Any, size_m: int) -> int | None:
+    """Return the current rc3 level corresponding to one physical cell size."""
+
+    base_dx = float(builder.dx)
+    base_dy = float(builder.dy)
+    if not math.isclose(base_dx, base_dy, rel_tol=0.0, abs_tol=1e-12):
+        raise AdaptiveQuadtreeError("Adaptive rc3 quadtree requires square cells")
+    if size_m > base_dx + 1e-12:
+        return None
+    ratio = base_dx / float(size_m)
+    ilev = int(round(math.log2(ratio)))
+    if ilev < 0 or not math.isclose(ratio, float(2**ilev), rel_tol=0.0, abs_tol=1e-12):
+        raise AdaptiveQuadtreeError("rc3 staged base is not aligned to the Adaptive hierarchy")
+    return ilev
+
+
 def _cells_needing_refinement(
     builder: Any,
     *,
     ilev: int,
+    size_m: int,
     full_grid: FullGridProduct,
     adaptive: AdaptiveGridProduct,
 ) -> np.ndarray:
     """Return existing rc3 cells at ``ilev`` that are coarser than source targets."""
 
-    size = _BASE_CELL_M // (2**ilev)
     desired = np.asarray(adaptive.resolution_m, dtype=np.int16)
     indices = np.flatnonzero(np.asarray(builder.level, dtype=np.int64) == ilev)
     if indices.size == 0:
@@ -175,17 +224,29 @@ def _cells_needing_refinement(
     selected: list[int] = []
     for raw_index in indices:
         index = int(raw_index)
-        row0 = int(builder.n[index]) * size
-        col0 = int(builder.m[index]) * size
-        row1 = min(row0 + size, full_grid.height_cells)
-        col1 = min(col0 + size, full_grid.width_cells)
+        row0 = int(builder.n[index]) * size_m
+        col0 = int(builder.m[index]) * size_m
+        row1 = min(row0 + size_m, full_grid.height_cells)
+        col1 = min(col0 + size_m, full_grid.width_cells)
         if row0 >= full_grid.height_cells or col0 >= full_grid.width_cells:
             continue
         if row1 <= row0 or col1 <= col0:
             continue
-        if np.any(desired[row0:row1, col0:col1] < size):
+        if np.any(desired[row0:row1, col0:col1] < size_m):
             selected.append(index)
     return np.asarray(selected, dtype=np.int64)
+
+
+def _assert_contiguous_populated_levels(builder: Any) -> None:
+    """Reject an internal level gap that would violate rc3's 2:1 topology contract."""
+
+    levels = np.asarray(builder.level, dtype=np.int64)
+    if levels.size == 0:
+        raise AdaptiveQuadtreeError("rc3 staged quadtree contains no cells")
+    present = set(int(value) for value in np.unique(levels))
+    expected = set(range(int(levels.max()) + 1))
+    if present != expected:
+        raise AdaptiveQuadtreeError("rc3 staged refinement produced an internal empty level")
 
 
 def _build_staged_rc3_quadtree(
@@ -195,13 +256,13 @@ def _build_staged_rc3_quadtree(
     base_nmax: int,
     base_mmax: int,
 ) -> tuple[Any, int]:
-    """Build through rc3 internals while refining one existing level at a time.
+    """Build through rc3 internals while preserving its adjacent-level contract.
 
-    ``QuadtreeGrid.refine_in_polygon`` loops from level zero for each polygon.
-    Multiple classifier-derived polygons can therefore encounter an empty or
-    nonexistent intermediate level after earlier polygons have consumed it.
-    Staging directly over the actual rc3 cells avoids that upstream failure and
-    preserves the validated classifier target at source-cell resolution.
+    Production never calls rc3 ``refine_in_polygon``. Each physical parent size
+    is refined monotonically. Whenever all globally coarser cells disappear,
+    the hierarchy is rebased to the first populated level before the next
+    ``refine_cells`` call. This is a geometry-preserving equivalence transform
+    that prevents rc3 from searching an empty immediately-coarser level.
     """
 
     QuadtreeGrid = _load_rc3_quadtree_grid_class()
@@ -221,11 +282,21 @@ def _build_staged_rc3_quadtree(
     )
 
     refined_parent_count = 0
-    for ilev in range(_MAX_REFINEMENT_LEVEL):
+    for parent_size in (32, 16, 8, 4, 2):
         while True:
+            _normalize_empty_leading_levels(builder)
+            ilev = _level_for_physical_size(builder, parent_size)
+            if ilev is None or ilev >= int(builder.nr_refinement_levels):
+                break
+            levels = np.asarray(builder.level, dtype=np.int64)
+            if ilev > 0 and not np.any(levels == ilev - 1):
+                raise AdaptiveQuadtreeError(
+                    "rc3 staged refinement encountered a non-contiguous coarser level"
+                )
             indices = _cells_needing_refinement(
                 builder,
                 ilev=ilev,
+                size_m=parent_size,
                 full_grid=full_grid,
                 adaptive=adaptive,
             )
@@ -237,6 +308,12 @@ def _build_staged_rc3_quadtree(
             if int(builder.nr_cells) <= before_cells:
                 raise AdaptiveQuadtreeError("rc3 staged refinement made no forward progress")
 
+    _normalize_empty_leading_levels(builder)
+    _assert_contiguous_populated_levels(builder)
+    builder.nr_refinement_levels = int(np.max(builder.level)) + 1
+    builder.reorder()
+    builder.find_first_cells_in_level()
+    builder.compute_cell_center_coordinates()
     builder.initialize_data_arrays()
     builder.get_neighbors()
     builder.get_uv_points()
@@ -273,9 +350,25 @@ def _face_layout(component: Any) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     cols = np.asarray(data["m"].values, dtype=np.int64) - 1
     if levels.ndim != 1 or rows.shape != levels.shape or cols.shape != levels.shape:
         raise AdaptiveQuadtreeError("rc3 quadtree face indexing has an unexpected shape")
-    if np.any(levels < 1) or np.any(levels > 6):
-        raise AdaptiveQuadtreeError("rc3 quadtree refinement level is outside the 32 m to 1 m hierarchy")
-    resolution = (_BASE_CELL_M // (2 ** (levels - 1))).astype(np.int16)
+    if np.any(levels < 1):
+        raise AdaptiveQuadtreeError("rc3 quadtree refinement level is invalid")
+
+    try:
+        base_dx = float(data.attrs["dx"])
+        base_dy = float(data.attrs["dy"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise AdaptiveQuadtreeError("rc3 quadtree is missing valid base spacing") from exc
+    if not math.isclose(base_dx, base_dy, rel_tol=0.0, abs_tol=1e-12):
+        raise AdaptiveQuadtreeError("rc3 quadtree base spacing is not square")
+
+    resolution_float = base_dx / (2.0 ** (levels - 1))
+    resolution = np.rint(resolution_float).astype(np.int16)
+    if not np.allclose(resolution_float, resolution, rtol=0.0, atol=1e-12):
+        raise AdaptiveQuadtreeError("rc3 quadtree face resolution is not integral metres")
+    if not set(int(value) for value in np.unique(resolution)).issubset(
+        set(ADAPTIVE_LEVELS_M)
+    ):
+        raise AdaptiveQuadtreeError("rc3 quadtree face resolution is outside the Adaptive hierarchy")
     return resolution, rows, cols
 
 
