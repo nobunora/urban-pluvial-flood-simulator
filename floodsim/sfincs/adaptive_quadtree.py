@@ -20,12 +20,16 @@ from typing import Any, Final
 
 import geopandas as gpd  # type: ignore[import-untyped]
 import numpy as np
+import xarray as xr
+import xugrid as xu  # type: ignore[import-untyped]
 from pyproj import CRS
 from rasterio.features import shapes  # type: ignore[import-untyped]
 from rasterio.transform import from_origin  # type: ignore[import-untyped]
-from shapely.geometry import MultiPolygon, Polygon, shape  # type: ignore[import-untyped]
-import xarray as xr
-import xugrid as xu  # type: ignore[import-untyped]
+from shapely.geometry import (  # type: ignore[import-untyped]
+    MultiPolygon,
+    Polygon,
+    shape,
+)
 
 from floodsim.preprocessing.adaptive_grid import ADAPTIVE_LEVELS_M, AdaptiveGridProduct
 from floodsim.preprocessing.full_grid import GENERAL_MANNING, FullGridProduct
