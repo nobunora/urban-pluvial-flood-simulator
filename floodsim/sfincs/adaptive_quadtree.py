@@ -2,8 +2,8 @@
 
 This module owns the first model-facing Adaptive slice only:
 
-- convert the 1/2/4/8/16/32 m classifier raster into rc3 refinement polygons;
-- create the actual quadtree from a 32 m base grid;
+- retain polygonized classifier geometry for diagnostics;
+- create the actual quadtree from a 32 m base with pinned-rc3 staged refinement;
 - replace the temporary creation CRS with the canonical authority-less local CRS;
 - map Full 1 m mask/Manning values to quadtree faces;
 - aggregate roof-rain weights by face area while preserving total rainfall mass.
@@ -33,6 +33,7 @@ from floodsim.preprocessing.full_grid import GENERAL_MANNING, FullGridProduct
 _BASE_CELL_M: Final[int] = 32
 _TEMPORARY_CREATION_EPSG: Final[int] = 3857
 _BOUNDARY_SHRINK_M: Final[float] = 1e-7
+_MAX_REFINEMENT_LEVEL: Final[int] = 5
 
 
 class AdaptiveQuadtreeError(RuntimeError):
@@ -66,6 +67,7 @@ class AdaptiveQuadtreeBuild:
     refinement_polygon_count: int
     face_count: int
     face_fields: AdaptiveFaceFields
+    refined_parent_count: int = 0
 
 
 def _validate_inputs(full_grid: FullGridProduct, adaptive: AdaptiveGridProduct) -> None:
@@ -95,11 +97,14 @@ def build_refinement_polygons(
     full_grid: FullGridProduct,
     adaptive: AdaptiveGridProduct,
 ) -> gpd.GeoDataFrame | None:
-    """Translate exact classifier target cells to pinned-rc3 refinement polygons.
+    """Polygonize exact classifier targets for diagnostics and audit output.
 
-    rc3 uses polygon/cell *intersection* rather than centre containment. Polygons are
-    therefore contracted by an insignificant projected epsilon so a boundary shared
-    with a neighbouring coarse cell does not spuriously refine that neighbour.
+    The pinned rc3 ``refine_in_polygon`` implementation restarts at level zero
+    for every polygon. With several target levels this can reference a level
+    whose cells were completely consumed by an earlier polygon. The production
+    quadtree therefore uses the staged cell refinement path below instead of
+    passing these polygons back into rc3. Keeping the polygonization here makes
+    the classifier geometry independently inspectable.
     """
 
     _validate_inputs(full_grid, adaptive)
@@ -117,7 +122,11 @@ def build_refinement_polygons(
             continue
         north_to_south = np.flipud(mask).astype(np.uint8)
         refinement_level = int(round(math.log2(_BASE_CELL_M / target_size)))
-        for mapping, value in shapes(north_to_south, mask=north_to_south.astype(bool), transform=transform):
+        for mapping, value in shapes(
+            north_to_south,
+            mask=north_to_south.astype(bool),
+            transform=transform,
+        ):
             if int(value) != 1:
                 continue
             geometry = shape(mapping).buffer(-_BOUNDARY_SHRINK_M)
@@ -136,6 +145,121 @@ def build_refinement_polygons(
         return None
     crs = CRS.from_wkt(full_grid.crs_wkt)
     return gpd.GeoDataFrame(records, geometry="geometry", crs=crs)
+
+
+def _load_rc3_quadtree_grid_class() -> Any:
+    try:
+        from hydromt_sfincs.components.quadtree.quadtree_builder import (  # type: ignore[import-untyped]
+            QuadtreeGrid,
+        )
+    except Exception as exc:  # pragma: no cover - environment dependent
+        raise AdaptiveQuadtreeError("pinned rc3 quadtree builder is unavailable") from exc
+    return QuadtreeGrid
+
+
+def _cells_needing_refinement(
+    builder: Any,
+    *,
+    ilev: int,
+    full_grid: FullGridProduct,
+    adaptive: AdaptiveGridProduct,
+) -> np.ndarray:
+    """Return existing rc3 cells at ``ilev`` that are coarser than source targets."""
+
+    size = _BASE_CELL_M // (2**ilev)
+    desired = np.asarray(adaptive.resolution_m, dtype=np.int16)
+    indices = np.flatnonzero(np.asarray(builder.level, dtype=np.int64) == ilev)
+    if indices.size == 0:
+        return np.empty(0, dtype=np.int64)
+
+    selected: list[int] = []
+    for raw_index in indices:
+        index = int(raw_index)
+        row0 = int(builder.n[index]) * size
+        col0 = int(builder.m[index]) * size
+        row1 = min(row0 + size, full_grid.height_cells)
+        col1 = min(col0 + size, full_grid.width_cells)
+        if row0 >= full_grid.height_cells or col0 >= full_grid.width_cells:
+            continue
+        if row1 <= row0 or col1 <= col0:
+            continue
+        if np.any(desired[row0:row1, col0:col1] < size):
+            selected.append(index)
+    return np.asarray(selected, dtype=np.int64)
+
+
+def _build_staged_rc3_quadtree(
+    full_grid: FullGridProduct,
+    adaptive: AdaptiveGridProduct,
+    *,
+    base_nmax: int,
+    base_mmax: int,
+) -> tuple[Any, int]:
+    """Build through rc3 internals while refining one existing level at a time.
+
+    ``QuadtreeGrid.refine_in_polygon`` loops from level zero for each polygon.
+    Multiple classifier-derived polygons can therefore encounter an empty or
+    nonexistent intermediate level after earlier polygons have consumed it.
+    Staging directly over the actual rc3 cells avoids that upstream failure and
+    preserves the validated classifier target at source-cell resolution.
+    """
+
+    QuadtreeGrid = _load_rc3_quadtree_grid_class()
+    builder = QuadtreeGrid()
+    builder.build(
+        full_grid.x0_m,
+        full_grid.y0_m,
+        base_nmax,
+        base_mmax,
+        float(_BASE_CELL_M),
+        float(_BASE_CELL_M),
+        0.0,
+        CRS.from_epsg(_TEMPORARY_CREATION_EPSG),
+        None,
+        elevation_list=[],
+        bathymetry_database=None,
+    )
+
+    refined_parent_count = 0
+    for ilev in range(_MAX_REFINEMENT_LEVEL):
+        while True:
+            indices = _cells_needing_refinement(
+                builder,
+                ilev=ilev,
+                full_grid=full_grid,
+                adaptive=adaptive,
+            )
+            if indices.size == 0:
+                break
+            before_cells = int(builder.nr_cells)
+            builder.refine_cells(indices, ilev)
+            refined_parent_count += int(indices.size)
+            if int(builder.nr_cells) <= before_cells:
+                raise AdaptiveQuadtreeError("rc3 staged refinement made no forward progress")
+
+    builder.initialize_data_arrays()
+    builder.get_neighbors()
+    builder.get_uv_points()
+    builder.to_xugrid()
+    if builder.data is None:
+        raise AdaptiveQuadtreeError("rc3 staged builder did not produce a UGRID Dataset")
+    return builder, refined_parent_count
+
+
+def _install_builder_dataset(model: Any, component: Any, builder: Any) -> None:
+    """Install staged rc3 builder output using rc3 create() post-processing semantics."""
+
+    overlay = getattr(component, "_overlay", None)
+    if overlay is not None and hasattr(overlay, "invalidate"):
+        overlay.invalidate()
+    quadtree_mask = getattr(model, "quadtree_mask", None)
+    if quadtree_mask is not None and hasattr(quadtree_mask, "clear_overlay"):
+        quadtree_mask.clear_overlay()
+
+    setattr(model, "_grid_type", "quadtree")
+    dataset = xu.UgridDataset(builder.data.ugrid.to_dataset())
+    dataset.grid.set_crs(CRS.from_epsg(_TEMPORARY_CREATION_EPSG), allow_override=True)
+    setattr(component, "_data", dataset)
 
 
 def _face_layout(component: Any) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -254,22 +378,18 @@ def create_adaptive_quadtree(
     """Create the actual pinned-rc3 quadtree and map normalized face fields."""
 
     _validate_inputs(full_grid, adaptive)
-    refinement_polygons = build_refinement_polygons(full_grid, adaptive)
+    diagnostic_polygons = build_refinement_polygons(full_grid, adaptive)
     base_nmax = math.ceil(full_grid.height_cells / _BASE_CELL_M)
     base_mmax = math.ceil(full_grid.width_cells / _BASE_CELL_M)
 
     component = model.quadtree_grid
-    component.create(
-        x0=full_grid.x0_m,
-        y0=full_grid.y0_m,
-        nmax=base_nmax,
-        mmax=base_mmax,
-        dx=float(_BASE_CELL_M),
-        dy=float(_BASE_CELL_M),
-        rotation=0.0,
-        epsg=_TEMPORARY_CREATION_EPSG,
-        refinement_polygons=refinement_polygons,
+    builder, refined_parent_count = _build_staged_rc3_quadtree(
+        full_grid,
+        adaptive,
+        base_nmax=base_nmax,
+        base_mmax=base_mmax,
     )
+    _install_builder_dataset(model, component, builder)
 
     crs = CRS.from_wkt(full_grid.crs_wkt)
     component.data.grid.set_crs(crs, allow_override=True)
@@ -285,7 +405,8 @@ def create_adaptive_quadtree(
         base_mmax=base_mmax,
         padded_width_m=float(base_mmax * _BASE_CELL_M),
         padded_height_m=float(base_nmax * _BASE_CELL_M),
-        refinement_polygon_count=0 if refinement_polygons is None else len(refinement_polygons),
+        refinement_polygon_count=0 if diagnostic_polygons is None else len(diagnostic_polygons),
         face_count=len(fields.resolution_m),
         face_fields=fields,
+        refined_parent_count=refined_parent_count,
     )
