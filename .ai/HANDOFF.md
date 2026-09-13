@@ -16,58 +16,66 @@
 - Phase 1: validated.
 - Phase 2A: validated.
 - Phase 2B: validated at `660579bfebb5f1e275004ed0f1d0a0b4db7cb322`.
-- Phase 3: validated at `62dc85fa163587ea73a875c59067bcd5a8dfe79a`; real SFINCS execution remains externally blocked only because no permitted executable is installed.
+- Phase 3 Full 1 m implementation: validated at `62dc85fa163587ea73a875c59067bcd5a8dfe79a` except that prior audits had no permitted engine available for real execution.
 - Phase 4 classifier repairs at `1d189e358bef2cd0363213feff61d7ed5ef1e813`: semantic audit PASS.
-- Phase 4 quadtree writer seam at `1c585d6b8e5dda63d116526779d7098f97bd03f5`: **validated-seam** in a fresh canonical environment.
-  - Python 3.12.10 / pinned HydroMT-SFINCS 2.0.0rc3 commit `82e58ee85136cf5155c92b42bb9a397869ed8035`.
-  - mypy PASS: no issues in 40 source files.
-  - focused Phase 3/4 tests PASS: 20 passed.
-  - Ruff PASS and `git diff --check` PASS.
-  - authority-less AEQD WKT-only writer round trip, mask/Manning preservation and authority-backed delegation all passed in prior execution probes.
-  - real SFINCS remains externally BLOCKED because no permitted engine executable is available.
+- Phase 4 quadtree writer seam at `1c585d6b8e5dda63d116526779d7098f97bd03f5`: `validated-seam` in the canonical Python 3.12.10 / HydroMT-SFINCS 2.0.0rc3 environment.
 
-## Phase 4 current Web-owned slice
+## Newly available real SFINCS engine
+
+Latest Codex execution discovered a permitted managed-local SFINCS 2.4.0 Galibier executable at:
+
+`SFINCS_2026_01_release/SFINCS_v2.4.0_Galibier_release_exe/sfincs.exe`
+
+It was not downloaded or installed by Codex. The next exact-head task may use this existing managed-local executable for the strongest safe tiny smoke after deterministic gates pass.
+
+## Phase 4 latest failure and Web repair
+
+Codex tested exact head `1aeebc4037882a44a9f04898f2528a09b8d4f342` and stopped on a substantive Gate B failure:
+
+- flat 64x64 Adaptive case passed;
+- hard building/road case failed;
+- odd 33x35 padded case failed;
+- both failures were deterministic `IndexError` exceptions inside pinned rc3 `refine_in_polygon()` / intermediate-level lookup;
+- no Codex source correction was made.
+
+Root cause: the repository passed multiple exact-target polygons at different refinement levels to rc3. rc3 restarts each polygon at level zero. An earlier polygon can consume every cell at a lower/intermediate level, causing a later polygon to index a level that is empty or absent.
+
+Web ChatGPT has replaced the production polygon-driven refinement path with a staged rc3 cell-refinement path:
+
+1. Start from the actual pinned-rc3 32 m base quadtree.
+2. For each existing rc3 level in order, select a parent face only when its overlapping Full-1 m source block contains a validated classifier target finer than the parent.
+3. Call pinned rc3 `QuadtreeGrid.refine_cells()` for that existing level.
+4. Continue monotonically through 32 -> 16 -> 8 -> 4 -> 2 -> 1 m.
+5. Re-run rc3 neighbour/UV/UGRID finalization after the staged refinement.
+6. Install the resulting rc3 UGRID Dataset on the model component, then restore canonical authority-less AEQD and config `epsg=None` / correct `crsgeo`.
+7. Keep classifier polygonization only as inspectable diagnostic output; do not feed those multi-level polygons into `refine_in_polygon()`.
+
+The existing safety guard remains: no source-overlapping actual face may be coarser than any validated classifier target cell it covers.
+
+## Current Adaptive geometry/field scope
 
 Adaptive remains disabled by `GRID_ADAPTIVE_NOT_AVAILABLE`.
 
-Web has now added:
+Implemented:
 
-- `floodsim/sfincs/adaptive_quadtree.py`
-- `tests/test_phase4_adaptive_quadtree.py`
+- fixed 1/2/4/8/16/32 m classifier hierarchy;
+- hard building/road refinement and <=2 m feature buffers;
+- actual pinned-rc3 quadtree geometry from a 32 m base;
+- ceil-to-32 m padding with inactive outside-domain faces;
+- actual `level/n/m` face mapping back to Full-1 m source indices;
+- face mask/Manning aggregation;
+- area-conservative face roof-rain weights;
+- authority-less AEQD quadtree serialization compatibility;
+- build-free `/smoke.html` Full 1 m diagnostic surface;
+- source-coverage regression checks for hard-feature, odd-dimension and asymmetric domains.
 
-This slice converts the validated classifier to actual pinned-rc3 quadtree geometry and normalized face fields:
+Not yet implemented/enabled:
 
-1. **Classifier -> rc3 refinement geometry**
-   - 32 m base grid.
-   - `refinement_level = log2(32 / target_size)` for target sizes 16/8/4/2/1 m.
-   - classifier masks are polygonized in projected coordinates.
-   - polygons are contracted by `1e-7 m` only to avoid rc3's boundary-touch `intersects()` rule spuriously refining the neighbouring cell; this is a compatibility/numerical seam, not a hydraulic threshold.
-   - rc3 may refine additional sibling/transition faces where required by quadtree topology; it must never leave a face coarser than the validated classifier target over the source area.
-
-2. **Actual rc3 quadtree creation**
-   - uses the rc3-required temporary integer EPSG only during `create()`.
-   - immediately replaces topology CRS with the canonical local authority-less CRS.
-   - keeps config `epsg=None` and true `crsgeo`.
-   - base dimensions use ceil-to-32 m padding; padding faces are inactive and excluded from source-area/rainfall mass.
-
-3. **Face mask / Manning mapping**
-   - maps each actual rc3 face back to exact aligned Full-1 m source indices using rc3 `level`, `n`, and `m` fields.
-   - rejects any face that is coarser than any validated classifier target cell it covers.
-   - outside padding -> mask 0.
-   - active/outflow source semantics are preserved on represented faces.
-   - Manning is aggregated over active source cells; direct road cells remain 1 m under the validated hard-refinement rule.
-
-4. **Area-conservative roof-rain aggregation**
-   - face rain weight = sum of source 1 m rain weights covered by the face / full quadtree face area.
-   - padding contributes zero.
-   - total `sum(face_weight * face_area)` must equal the Full-1 m weighted source area within strict deterministic tolerance.
-   - the rain-weight field is returned as model-building data but is not yet wired into Adaptive precipitation forcing in this slice.
-
-5. **Tests added**
-   - flat 64x64 -> exactly four 32 m base faces.
-   - actual rc3 hard building/road mapping -> 1 m faces, building mask 0, road Manning 0.020.
-   - every source-overlapping rc3 face must be no coarser than the classifier target beneath it.
-   - odd 33x35 domain -> 64x64 padded base extent, zero-overlap padding inactive, edge source cells remain 1 m, rain mass conserved.
+- high-resolution terrain/subgrid integration for Adaptive;
+- Adaptive precipitation forcing;
+- Adaptive face-result reader/normalizer;
+- Full-vs-Adaptive benchmark acceptance;
+- Adaptive run API enablement.
 
 ## Canonical constraints that still apply
 
@@ -82,17 +90,17 @@ From `docs/specs/v0.1-implementation-spec.md` §12:
 
 ## Next Codex task
 
-The newest PR comment names the exact SHA to validate. Codex should:
+Validate the exact SHA named by the newest PR comment. Use a clean disposable worktree and the canonical environment.
 
-- use a clean disposable worktree and the now-working fresh canonical environment policy;
-- verify exact Web delta and no unrelated files;
-- run new Adaptive-quadtree tests plus prior Phase 4/3 tests, full pytest, Ruff, mypy and `git diff --check`;
-- independently inspect refinement geometry and actual rc3 face mapping;
-- adversarially check flat, hard-feature, odd-dimension/padding, transition and mass-conservation cases;
-- verify actual face resolution never exceeds the classifier target over source cells;
-- verify direct building/road semantics and padded inactive faces;
-- verify roof-rain area conservation numerically from actual rc3 faces;
-- keep Adaptive disabled and do not implement subgrid/forcing/result/API work;
-- do not download SFINCS; if no permitted engine exists, report the engine gate as externally BLOCKED.
+Priority:
 
-Substantive fixes remain Web-owned. After this slice validates, Web will implement high-resolution terrain/subgrid creation, Adaptive precipitation forcing and then face-based result normalization/benchmarking.
+1. Re-run the formerly failing committed Adaptive tests first and prove the rc3 `IndexError` is gone.
+2. Run focused Phase 3/4 tests, full pytest, Ruff, mypy and `git diff --check`.
+3. Run frontend `api:check`, typecheck, tests and build.
+4. Exercise `/smoke.html` through the real FastAPI HTTP routes.
+5. Independently probe flat, hard-feature, odd/padded, asymmetric, thin-road, isolated-1m and checkerboard cases.
+6. Prove exact one-face source coverage, actual face size <= target, padding mask 0, road Manning 0.020, building mask 0 and roof-rain mass conservation.
+7. Write/reload one actual Adaptive grid with the validated authority-less writer.
+8. If deterministic gates pass, use the already-present managed-local SFINCS executable for the strongest safe tiny real-engine smoke. Do not download or install anything.
+
+Substantive failures remain Web-owned. Codex should stop at diagnosis and minimal repro rather than implementing any algorithmic or multi-file repair.
