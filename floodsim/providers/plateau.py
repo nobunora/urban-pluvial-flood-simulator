@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,7 @@ from floodsim.providers.common import (
     NetworkPolicy,
     ProviderParseError,
     ProviderProvenance,
+    ProviderTimeoutError,
     ProviderUnavailableError,
     area_lonlat_bounds,
     local_crs,
@@ -202,7 +204,15 @@ def _normalize_cities(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
-def _download(session, url: str, cache_dir: Path, *, policy: NetworkPolicy, sleeper=None) -> bytes:
+def _download(
+    session,
+    url: str,
+    cache_dir: Path,
+    *,
+    policy: NetworkPolicy,
+    sleeper=None,
+    deadline_monotonic: float | None = None,
+) -> bytes:
     name = url.rsplit("/", 1)[-1].split("?", 1)[0] or "citygml.gml"
     digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
     path = cache_dir / "plateau" / f"{digest}_{name}"
@@ -211,15 +221,37 @@ def _download(session, url: str, cache_dir: Path, *, policy: NetworkPolicy, slee
         if not data:
             raise ProviderParseError("cached PLATEAU CityGML is empty")
         return data
-    if sleeper is None:
-        response = request_with_retry(session, "GET", url, policy=policy)
+
+    request_kwargs = {
+        "policy": policy,
+        "deadline_monotonic": deadline_monotonic,
+        "stream": True,
+    }
+    if sleeper is not None:
+        request_kwargs["sleeper"] = sleeper
+    response = request_with_retry(session, "GET", url, **request_kwargs)
+
+    chunks: list[bytes] = []
+    if hasattr(response, "iter_content"):
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+                close = getattr(response, "close", None)
+                if callable(close):
+                    close()
+                raise ProviderTimeoutError("PLATEAU CityGML download exceeded provider time budget")
+            if chunk:
+                chunks.append(chunk)
+        data = b"".join(chunks)
     else:
-        response = request_with_retry(session, "GET", url, policy=policy, sleeper=sleeper)
-    if not response.content:
+        data = response.content
+        if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+            raise ProviderTimeoutError("PLATEAU CityGML download exceeded provider time budget")
+
+    if not data:
         raise ProviderParseError("PLATEAU CityGML response is empty")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(response.content)
-    return response.content
+    path.write_bytes(data)
+    return data
 
 
 class PlateauProvider:
@@ -237,7 +269,11 @@ class PlateauProvider:
         out_dir: str | Path | None = None,
         margin_m: float = 50.0,
         acquired_at_utc: str | None = None,
+        time_budget_s: float | None = None,
     ) -> PlateauVectors:
+        if time_budget_s is not None and time_budget_s <= 0:
+            raise ValueError("time_budget_s must be positive")
+        deadline = None if time_budget_s is None else time.monotonic() + time_budget_s
         lon1, lat1, lon2, lat2 = area_lonlat_bounds(area, margin_m)
         condition = f"r:{lon1:.9f},{lat1:.9f},{lon2:.9f},{lat2:.9f}"
         url = f"{API_BASE}/datacatalog/citygml/{condition}"
@@ -245,11 +281,13 @@ class PlateauProvider:
             response = request_with_retry(
                 self.session, "GET", url, policy=self.policy,
                 params={"types": "bldg,tran"}, accepted_statuses=frozenset({404}),
+                deadline_monotonic=deadline,
             )
         else:
             response = request_with_retry(
                 self.session, "GET", url, policy=self.policy, sleeper=self.sleeper,
                 params={"types": "bldg,tran"}, accepted_statuses=frozenset({404}),
+                deadline_monotonic=deadline,
             )
         if response.status_code == 404:
             raise ProviderUnavailableError("PLATEAU has no CityGML dataset for this area")
@@ -273,10 +311,14 @@ class PlateauProvider:
         road_polygons: list[np.ndarray] = []
         cache = Path(cache_dir)
         for file_url in building_urls:
-            parsed_buildings, _, _ = extract_citygml(self._download(file_url, cache), area, margin_m)
+            parsed_buildings, _, _ = extract_citygml(
+                self._download(file_url, cache, deadline_monotonic=deadline), area, margin_m
+            )
             buildings.extend(parsed_buildings)
         for file_url in transport_urls:
-            _, parsed_lines, parsed_polygons = extract_citygml(self._download(file_url, cache), area, margin_m)
+            _, parsed_lines, parsed_polygons = extract_citygml(
+                self._download(file_url, cache, deadline_monotonic=deadline), area, margin_m
+            )
             roads.extend(parsed_lines)
             road_polygons.extend(parsed_polygons)
         if not buildings:
@@ -306,8 +348,21 @@ class PlateauProvider:
             self._write_legacy(result, Path(out_dir))
         return result
 
-    def _download(self, url: str, cache_dir: Path) -> bytes:
-        return _download(self.session, url, cache_dir, policy=self.policy, sleeper=self.sleeper)
+    def _download(
+        self,
+        url: str,
+        cache_dir: Path,
+        *,
+        deadline_monotonic: float | None = None,
+    ) -> bytes:
+        return _download(
+            self.session,
+            url,
+            cache_dir,
+            policy=self.policy,
+            sleeper=self.sleeper,
+            deadline_monotonic=deadline_monotonic,
+        )
 
     @staticmethod
     def _write_legacy(result: PlateauVectors, out: Path) -> None:
