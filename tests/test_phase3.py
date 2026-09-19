@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
@@ -211,6 +212,17 @@ class _FakeElevationProvider:
         return _elevation(area)
 
 
+class _BlockingElevationProvider:
+    def __init__(self) -> None:
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def acquire(self, area: AnalysisArea, **_: object) -> ElevationProduct:
+        self.entered.set()
+        assert self.release.wait(timeout=10)
+        return _elevation(area)
+
+
 class _FakeModelBuilder:
     def build(self, model_dir: Path, grid: object, rainfall: object) -> ModelBuildResult:
         model_dir.mkdir(parents=True, exist_ok=True)
@@ -275,6 +287,26 @@ def test_coordinator_runs_full_1m_to_normalized_result(tmp_path: Path) -> None:
     assert manifest["limitations"]["sewer_network_modelled"] is False
     assert manifest["roof_rain_mass_diagnostic"]["relative_error"] <= 1e-9
     assert [event.sequence for event in record.events] == list(range(1, len(record.events) + 1))
+
+
+def test_coordinator_cancels_while_provider_is_blocked(tmp_path: Path) -> None:
+    elevation_provider = _BlockingElevationProvider()
+    coordinator = _test_coordinator(tmp_path)
+    coordinator.elevation_provider = elevation_provider
+    record = coordinator.create_run(_config())
+    assert record.future is not None
+    assert elevation_provider.entered.wait(timeout=5)
+
+    coordinator.cancel(record.run_id)
+
+    assert record.machine.state is RunState.CANCELLED
+    manifest = coordinator.store.read_manifest(record.run_id)
+    assert manifest is not None
+    assert manifest["run_status"] == "CANCELLED"
+
+    elevation_provider.release.set()
+    record.future.result(timeout=5)
+    assert record.machine.state is RunState.CANCELLED
 
 
 def test_phase3_api_accepts_run_and_exposes_result(

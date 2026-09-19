@@ -180,18 +180,23 @@ class RunCoordinator:
             self._append_event(record, state, message)
             self._persist_manifest(record)
 
-    def _check_cancel(self, record: RunRecord) -> None:
-        if not record.cancel_event.is_set():
-            return
+    def _mark_cancelled(self, record: RunRecord, message: str) -> None:
         with record.lock:
+            if record.machine.state is RunState.CANCELLED:
+                return
             if record.machine.state is not RunState.CANCELLING:
                 record.machine.transition(RunState.CANCELLING)
                 record.manifest = record.manifest.model_copy(update={"run_status": RunState.CANCELLING})
-                self._append_event(record, RunState.CANCELLING, "キャンセル要求を処理しています。")
+                self._append_event(record, RunState.CANCELLING, message)
             record.machine.transition(RunState.CANCELLED)
             record.manifest = record.manifest.model_copy(update={"run_status": RunState.CANCELLED})
             self._append_event(record, RunState.CANCELLED, "計算をキャンセルしました。")
             self._persist_manifest(record)
+
+    def _check_cancel(self, record: RunRecord) -> None:
+        if not record.cancel_event.is_set():
+            return
+        self._mark_cancelled(record, "キャンセル要求を処理しています。")
         raise SfincsRunCancelled("run cancelled")
 
     def create_run(self, config: RunConfig) -> RunRecord:
@@ -237,12 +242,8 @@ class RunCoordinator:
             if record.machine.state in {RunState.COMPLETE, RunState.FAILED, RunState.CANCELLED}:
                 return record
             record.cancel_event.set()
-            if record.machine.state is not RunState.CANCELLING:
-                record.machine.transition(RunState.CANCELLING)
-                record.manifest = record.manifest.model_copy(update={"run_status": RunState.CANCELLING})
-                self._append_event(record, RunState.CANCELLING, "キャンセルを要求しました。")
-                self._persist_manifest(record)
             runner = record.runner
+        self._mark_cancelled(record, "キャンセルを要求しました。")
         if runner is not None:
             runner.cancel()
         return record
@@ -371,22 +372,12 @@ class RunCoordinator:
             self._persist_manifest(record)
             self._set_state(record, RunState.COMPLETE, "Full 1 m計算が完了しました。")
         except SfincsRunCancelled:
-            with record.lock:
-                if record.machine.state is RunState.CANCELLING:
-                    record.machine.transition(RunState.CANCELLED)
-                    record.manifest = record.manifest.model_copy(update={"run_status": RunState.CANCELLED})
-                    self._append_event(record, RunState.CANCELLED, "計算をキャンセルしました。")
-                    self._persist_manifest(record)
+            self._mark_cancelled(record, "キャンセル要求を処理しています。")
         # Top-level worker boundary: persist unexpected operational failures as FAILED.
         except Exception as exc:  # noqa: BLE001
             with record.lock:
                 if record.cancel_event.is_set():
-                    if record.machine.state is not RunState.CANCELLING:
-                        record.machine.transition(RunState.CANCELLING)
-                        self._append_event(record, RunState.CANCELLING, "キャンセル要求を処理しています。")
-                    record.machine.transition(RunState.CANCELLED)
-                    record.manifest = record.manifest.model_copy(update={"run_status": RunState.CANCELLED})
-                    self._append_event(record, RunState.CANCELLED, "計算をキャンセルしました。")
+                    self._mark_cancelled(record, "キャンセル要求を処理しています。")
                 else:
                     failing_state = record.machine.state
                     record.machine.transition(RunState.FAILED)
