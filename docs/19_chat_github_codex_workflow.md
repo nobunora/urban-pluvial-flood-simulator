@@ -25,9 +25,9 @@ In persistent mode:
 
 - use the existing persistent working branch;
 - use the existing long-lived Draft PR;
-- Web ChatGPT provides active implementation and review instructions through PR comments;
-- Local Codex pushes commits to the same persistent branch;
-- do not create a new PR merely to communicate or implement the next iteration;
+- Web ChatGPT owns implementation and all repository writes on the persistent branch;
+- Local Codex is validation/execution-only and must not commit or push;
+- do not create a new PR merely to communicate or validate the next iteration;
 - keep the Draft PR open until the assigned body of work is complete and validated.
 
 The specification, repository-review, implementation, verification, and review
@@ -66,16 +66,17 @@ Do not rely on chat history as the only source of requirements.
 
 ### Repository agent / Codex role
 
+In the current persistent Draft PR mode, Local Codex is **validation/execution-only**.
+
 Responsible for:
 
-- inspecting the actual source tree;
-- comparing repository reality with the specification;
+- inspecting only the source/diff needed to interpret a requested validation;
+- comparing observed repository/runtime behavior with the specification;
 - identifying conflicts, missing constraints, and affected paths;
-- implementing only the approved contract;
-- running build, tests, lint, type checks, static analysis, and project-specific checks;
-- reporting evidence, risks, and unresolved questions.
+- running only the host-local checks explicitly requested by the newest authoritative PR comment;
+- reporting evidence, risks, minimal repros, and unresolved questions.
 
-Repository review must not silently redefine the specification.
+Local Codex must not implement, edit, commit, push, or repair repository files. Web ChatGPT owns implementation. Repository review must not silently redefine the specification.
 
 ## Default State Flow
 
@@ -173,7 +174,7 @@ Do not start implementation while a material specification conflict is unresolve
 
 ## Phase 4 - Implementation
 
-After repository review validates the contract, use `.codex/implementation.md`.
+In the current persistent Draft PR mode, **Web ChatGPT performs implementation**. The generic `.codex/implementation.md` path applies only outside this repository's active validation-only Codex override.
 
 Implementation rules:
 
