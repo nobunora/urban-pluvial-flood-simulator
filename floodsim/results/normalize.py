@@ -53,13 +53,18 @@ def normalize_regular_result(
         "max_depth_summary": {
             "global_max_depth_m": result.global_max_depth_m,
             "hmax_reconstructed_cells": result.hmax_reconstructed_cells,
+            "negative_depth_clipped_values": result.negative_depth_clipped_values,
+            "negative_max_depth_clipped_cells": result.negative_max_depth_clipped_cells,
+            "min_raw_active_depth_m": result.min_raw_active_depth_m,
         },
         "grid_level_summary": {
             "1m": int(np.count_nonzero(result.active_mask)),
         },
         "no_data_policy": (
             "inactive/blocked SFINCS cells are NaN in normalized arrays; "
-            "active cells with missing hmax are reconstructed from finite h time output"
+            "active cells with missing hmax are reconstructed from finite h time output; "
+            "finite negative depth excursions within the SFINCS 0.01 m default wet-cell "
+            "threshold are clipped to zero and reported in metadata"
         ),
         "limitations": limitations.model_dump(),
     }
