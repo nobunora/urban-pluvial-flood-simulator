@@ -52,11 +52,15 @@ def normalize_regular_result(
         "time_values": list(result.time_values),
         "max_depth_summary": {
             "global_max_depth_m": result.global_max_depth_m,
+            "hmax_reconstructed_cells": result.hmax_reconstructed_cells,
         },
         "grid_level_summary": {
             "1m": int(np.count_nonzero(result.active_mask)),
         },
-        "no_data_policy": "inactive/blocked SFINCS cells are NaN in normalized arrays",
+        "no_data_policy": (
+            "inactive/blocked SFINCS cells are NaN in normalized arrays; "
+            "active cells with missing hmax are reconstructed from finite h time output"
+        ),
         "limitations": limitations.model_dump(),
     }
     metadata_path = root / "result_metadata.json"
