@@ -42,7 +42,11 @@ from floodsim.sfincs.model_builder import (
     SfincsModelBuilder,
     derive_output_interval_seconds,
 )
-from floodsim.sfincs.output_reader import SfincsResultError, read_regular_result
+from floodsim.sfincs.output_reader import (
+    SFINCS_DRY_DEPTH_TOLERANCE_M,
+    SfincsResultError,
+    read_regular_result,
+)
 from floodsim.sfincs.runner import ResolvedEngine, SfincsRunResult
 
 
@@ -234,8 +238,21 @@ def test_output_reader_clips_tiny_negative_depth_but_rejects_material_negative_d
 
     result = read_regular_result(path)
     assert result.depth_time_m[0, 0, 0] == 0.0
+    assert result.negative_depth_clipped_values == 1
+    assert result.negative_max_depth_clipped_cells == 0
+    assert result.min_raw_active_depth_m == pytest.approx(-0.001)
 
-    rewritten["h"].values[0, 0, 0] = -0.02
+    normalized = normalize_regular_result(
+        result,
+        area=_area(2),
+        results_dir=tmp_path / "normalized_tiny_negative",
+        limitations=Limitations(),
+    )
+    summary = normalized.metadata["max_depth_summary"]
+    assert summary["negative_depth_clipped_values"] == 1
+    assert summary["min_raw_active_depth_m"] == pytest.approx(-0.001)
+
+    rewritten["h"].values[0, 0, 0] = -(SFINCS_DRY_DEPTH_TOLERANCE_M + 0.001)
     rewritten.to_netcdf(path, mode="w")
     with pytest.raises(SfincsResultError, match="materially negative"):
         read_regular_result(path)
