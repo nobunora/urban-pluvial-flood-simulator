@@ -4,30 +4,42 @@
 
 - Use one long-lived Draft PR as the Web ChatGPT ↔ Local Codex communication channel.
 - Do not create a new PR for each iteration.
-- Web ChatGPT may post implementation/review/validation instructions as PR conversation comments.
-- Review the latest relevant diff instead of re-reading the whole repository.
 - Merge only when the user explicitly requests it and the intended body of work is complete and validated.
+- The newest top-level PR comment explicitly marked authoritative is the only active exact-SHA Codex instruction. Older task comments are historical evidence only.
 
 ## Implementation / validation role split
 
-- Web ChatGPT is the primary implementation owner for substantive source, tests, generated assets, documentation, handoff files, commits, and pushes to `codex/persistent-workspace`.
-- Local Codex (Luna) is primarily responsible for validation, execution tests, runtime diagnostics, upstream-contract investigation, and defect reporting.
-- Local Codex may make only very small, isolated, non-architectural corrections discovered during validation, such as an obvious typo/import/test-fixture/formatting correction.
-- Local Codex must not implement or redesign algorithms, compatibility adapters, public/API behavior, dependencies, generated assets, or multi-file behavioral fixes unless the user explicitly expands that permission.
-- Any tiny Codex correction must be isolated in a minimal commit and reported with exact diff/reason.
-- After Web ChatGPT pushes a substantive implementation commit, Local Codex runs the requested checks against the exact named commit and reports `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN` with useful diagnostics.
-- Confirmed defects requiring substantive changes return to Web ChatGPT for implementation.
-- This decision supersedes earlier workflow text assigning primary implementation to Local Codex.
+- **Web ChatGPT owns every repository modification**: source, tests, docs, configuration, workflows, generated assets, dependencies, API/UI contracts, formatting and commits/pushes.
+- **Local Codex/Luna is execution-only** for evidence that depends on the user's local Windows host, existing SFINCS executable, real processes, local filesystem, or external-provider access.
+- Codex must not edit, commit, push, format, or repair repository files, even for tiny issues.
+- On a repository defect, Codex stops the affected gate at diagnosis/minimal repro and returns it to Web ChatGPT.
+- This supersedes all earlier text permitting tiny Codex corrections.
 
 ## Review-first delivery decision
 
 - A runnable local user-review slice takes priority over completing the entire v0.1 implementation before user feedback.
-- The current review slice is **Full 1 m only** and must be launchable from a fresh checkout with `python -m scripts.run_local_review`.
-- The review gate covers the real user flow: condition input, resource estimate, Full 1 m run creation, visible run stages, cancellation, and explicit limitations.
-- The normal frontend build must leave both `/` and the build-free `/smoke.html` fallback usable.
-- A real SFINCS Full 1 m smoke should be attempted with an already-permitted local executable before more Adaptive work is prioritized.
-- Adaptive, subgrid integration, Adaptive forcing, face-result normalization, benchmark acceptance, final result-map UX, and packaging remain deferred until the local review slice is usable and the product direction has been reviewed.
-- A provider or engine outage must be reported as the real stopping stage; the review build must never fake successful completion.
+- The current review slice is **Full 1 m only**.
+- Adaptive remains disabled until later acceptance work.
+- The review gate covers condition input, resource estimate, Full 1 m run creation, visible run stages, cancellation and explicit limitations.
+- A real SFINCS Full 1 m smoke must use only an already-permitted local executable.
+- Provider or engine outages must be reported at the real stopping stage; the UI must never fake completion.
+
+## Canonical environment decision
+
+- `environment.yml` is the sole canonical Python environment for local review and validation.
+- The required interpreter is Python 3.12.10 with the versions pinned in that file.
+- `requirements.txt` remains useful for legacy/reference workflows but is **not** sufficient evidence that the review environment is canonical.
+- `scripts/bootstrap_local_review.py` is the supported helper to create/update the canonical conda-compatible environment.
+- `scripts/run_local_review.py --check-env` is the required preflight.
+- The launcher must fail clearly before application imports/startup when the canonical environment is not active.
+- Node.js 22 is required for a normal frontend rebuild.
+
+## Deterministic validation ownership
+
+- GitHub Actions owns deterministic checks that do not require the user's private/local executable or live provider state.
+- `.github/workflows/local-review-ci.yml` is the review-slice deterministic gate.
+- Codex should not repeat deterministic checks solely because the local host is missing dependencies; first rely on exact-head CI evidence.
+- Local Codex remains necessary for the already-present Windows SFINCS binary, local process behavior, live-provider execution, and real-engine Full 1 m smoke.
 
 ## Specification precedence
 
@@ -41,14 +53,13 @@
 
 - SFINCS v2.4.0 Galibier remains the v0.1 hydraulic engine.
 - HydroMT-SFINCS 2.0.0rc3 remains pinned to source commit `82e58ee85136cf5155c92b42bb9a397869ed8035`.
-- Phase 0, Phase 1, Phase 2A, and Phase 2B are validated.
-- Phase 3 implementation is validated at `62dc85fa163587ea73a875c59067bcd5a8dfe79a`; real SFINCS execution should use an already-permitted executable when available.
-- Phase 4 is implementation-in-progress. Adaptive stays disabled until quadtree/subgrid construction, result normalization, benchmark acceptance, and required engine validation are complete.
+- Phase 0, Phase 1, Phase 2A and Phase 2B are validated.
+- Phase 3 Full 1 m implementation is validated at `62dc85fa163587ea73a875c59067bcd5a8dfe79a`.
+- Phase 4 is implementation-in-progress. Adaptive stays disabled until its later canonical gates pass.
 - The authority-less local AEQD CRS is canonical. Do not substitute a fake permanent EPSG.
-- Runtime evidence supports a repository-owned, quadtree-only compatibility seam for pinned rc3 that preserves full WKT/CF/UGRID metadata and omits only invalid optional `epsg=None` / `epsg_code="EPSG:None"` metadata.
 
 ## Preservation constraints
 
 - Preserve validated Phase 0/1/2A/2B/3 behavior unless the active task explicitly requires change.
-- Do not silently substitute providers, hydraulic engines, data semantics, CRS semantics, or product assumptions.
+- Do not silently substitute providers, hydraulic engines, data semantics, CRS semantics or product assumptions.
 - Do not enable Adaptive before its canonical acceptance gates are met.
