@@ -128,6 +128,17 @@ A successful SFINCS run may leave `hmax` missing (NaN) on active cells while the
 
 This prevents a completed engine run from being rejected solely because SFINCS omitted `hmax` for otherwise valid active cells, while keeping corrupt output rejection strict.
 
+## Near-zero negative SFINCS depth
+
+SFINCS 2.4.0 defines a default `twet_threshold` of 0.01 m for deciding whether a cell counts as flooded/wet. The local-review reader uses the same magnitude as a transparent dry-output normalization band:
+
+- finite active depth values from -0.01 m up to (but not including) 0 m are normalized to 0 m;
+- values below -0.01 m are rejected as materially negative;
+- the raw `sfincs_map.nc` is never changed;
+- normalized metadata records `negative_depth_clipped_values`, `negative_max_depth_clipped_cells`, and `min_raw_active_depth_m`.
+
+This is intentionally separate from SFINCS `huthresh` (the flow-depth limiter) and keeps the original engine output available for audit.
+
 ## Working-tree safety
 
 Before user review, run:
