@@ -15,7 +15,6 @@ import platform
 import shutil
 import stat
 import subprocess
-import sys
 import tarfile
 import tempfile
 import urllib.request
@@ -245,7 +244,7 @@ def main() -> None:
     print("[review] Verifying canonical environment...")
     _run_in_environment(
         manager,
-        [sys.executable if False else "python", "-m", "scripts.run_local_review", "--check-env"],
+        ["python", "-m", "scripts.run_local_review", "--check-env"],
     )
     print("[review] Canonical environment ready.")
 
