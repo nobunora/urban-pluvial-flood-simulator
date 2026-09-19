@@ -298,7 +298,7 @@ def test_plateau_citygml_parsing_honors_total_deadline(monkeypatch):
 def test_osm_geometry_processing_honors_total_deadline(monkeypatch, tmp_path):
     import floodsim.providers.osm as osm_module
 
-    ticks = iter([0.0, 0.0, 2.0])
+    ticks = iter([0.0, 0.0, 0.0, 2.0])
     monkeypatch.setattr(osm_module.time, "monotonic", lambda: next(ticks))
     provider = OsmProvider(
         session=Session([Response(payload={"elements": [{}]})]),
