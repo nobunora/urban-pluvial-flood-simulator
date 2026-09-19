@@ -161,7 +161,12 @@ def test_real_sfincs_builder_writes_with_host_debug(
         assert float(values.isel(time=1).sum()) == 0.0
 
 
-def _write_synthetic_result(path: Path, *, nonfinite: bool = False) -> None:
+def _write_synthetic_result(
+    path: Path,
+    *,
+    nonfinite: bool = False,
+    missing_hmax: bool = False,
+) -> None:
     h = np.asarray(
         [[[0.0, 0.01], [0.02, 0.03]], [[0.0, 0.02], [0.04, 0.05]]],
         dtype=np.float32,
@@ -169,6 +174,8 @@ def _write_synthetic_result(path: Path, *, nonfinite: bool = False) -> None:
     if nonfinite:
         h[0, 0, 0] = np.nan
     hmax = np.nanmax(h, axis=0, keepdims=True)
+    if missing_hmax:
+        hmax[:, 1, 1] = np.nan
     dataset = xr.Dataset(
         {
             "h": (("time", "n", "m"), h),
@@ -195,6 +202,24 @@ def test_output_reader_and_normalizer_expose_max_depth(tmp_path: Path) -> None:
     )
     assert normalized.metadata["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.05)
     assert normalized.arrays_path.is_file()
+
+
+def test_output_reader_reconstructs_missing_active_hmax_from_depth(tmp_path: Path) -> None:
+    path = tmp_path / "sparse_hmax.nc"
+    _write_synthetic_result(path, missing_hmax=True)
+
+    result = read_regular_result(path)
+
+    assert result.hmax_reconstructed_cells == 1
+    assert result.max_depth_m[1, 1] == pytest.approx(0.05)
+    normalized = normalize_regular_result(
+        result,
+        area=_area(2),
+        results_dir=tmp_path / "normalized_sparse_hmax",
+        limitations=Limitations(),
+    )
+    assert normalized.metadata["max_depth_summary"]["hmax_reconstructed_cells"] == 1
+    assert normalized.metadata["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.05)
 
 
 def test_output_reader_rejects_nonfinite_active_depth(tmp_path: Path) -> None:
