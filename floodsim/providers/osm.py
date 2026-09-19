@@ -19,6 +19,7 @@ from floodsim.providers.common import (
     NetworkPolicy,
     ProviderParseError,
     ProviderProvenance,
+    ProviderTimeoutError,
     ProviderUnavailableError,
     area_lonlat_bounds,
     local_crs,
@@ -31,6 +32,11 @@ from floodsim.providers.common import (
 OVERPASS = "https://overpass-api.de/api/interpreter"
 TERMS_URL = "https://www.openstreetmap.org/copyright"
 OVERPASS_QUERY_TIMEOUT_S = 90
+
+
+def _check_deadline(deadline_monotonic: float | None, operation: str) -> None:
+    if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+        raise ProviderTimeoutError(f"{operation} exceeded provider time budget")
 
 
 @dataclass
@@ -104,10 +110,12 @@ class OsmProvider:
 out geom;'''
         cache_file = _cache_path(Path(cache_dir), area, margin_m)
         if cache_file.exists():
+            _check_deadline(deadline, "OSM cache read")
             try:
                 payload = json.loads(cache_file.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 raise ProviderParseError("cached OSM response is invalid") from exc
+            _check_deadline(deadline, "OSM cache parse")
         else:
             if self.sleeper is None:
                 response = request_with_retry(
@@ -129,6 +137,7 @@ out geom;'''
                     deadline_monotonic=deadline,
                 )
             payload = read_json(response, "OSM Overpass")
+            _check_deadline(deadline, "OSM response parse")
             cache_file.parent.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True), encoding="utf-8")
         if not isinstance(payload, dict) or not isinstance(payload.get("elements"), list):
@@ -138,7 +147,9 @@ out geom;'''
                    area.width_m / 2.0 + 20.0, area.height_m / 2.0 + 20.0)
         buildings: list[np.ndarray] = []
         roads: list[np.ndarray] = []
-        for element in payload["elements"]:
+        for element_index, element in enumerate(payload["elements"]):
+            if element_index % 128 == 0:
+                _check_deadline(deadline, "OSM geometry processing")
             if not isinstance(element, dict):
                 continue
             geometry = element.get("geometry") or []
@@ -169,6 +180,7 @@ out geom;'''
                     roads.append(np.asarray(line.coords, dtype=float))
                 elif line.geom_type == "MultiLineString":
                     roads.extend(np.asarray(item.coords, dtype=float) for item in line.geoms)
+        _check_deadline(deadline, "OSM geometry processing")
         if not buildings:
             raise ProviderUnavailableError("OSM fallback returned no building ways for requested area")
         provenance = ProviderProvenance.create(
@@ -188,8 +200,10 @@ out geom;'''
             acquired_at_utc=acquired_at_utc,
         )
         result = OsmVectors(buildings, roads, provenance)
+        _check_deadline(deadline, "OSM acquisition")
         if out_dir is not None:
             self._write_legacy(result, Path(out_dir))
+        _check_deadline(deadline, "OSM acquisition")
         return result
 
     @staticmethod
