@@ -69,6 +69,11 @@ def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+def _check_deadline(deadline_monotonic: float | None, operation: str) -> None:
+    if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+        raise ProviderTimeoutError(f"{operation} exceeded provider time budget")
+
+
 def _dimension(data: bytes) -> int:
     head = data[:20000].decode("utf-8", errors="ignore")
     return 2 if 'srsDimension="2"' in head else 3
@@ -87,22 +92,34 @@ def _parse_poslist(text: str | None, dim: int, transformer: Transformer) -> np.n
     return np.column_stack((x, y))
 
 
-def _ring_from_container(container: ET.Element, dim: int, transformer: Transformer) -> np.ndarray | None:
-    for element in container.iter():
+def _ring_from_container(
+    container: ET.Element,
+    dim: int,
+    transformer: Transformer,
+    deadline_monotonic: float | None = None,
+) -> np.ndarray | None:
+    for index, element in enumerate(container.iter()):
+        if index % 128 == 0:
+            _check_deadline(deadline_monotonic, "PLATEAU CityGML parsing")
         if _local(element.tag) == "posList":
             return _parse_poslist(element.text, dim, transformer)
     return None
 
 
-def _polygon_from_element(poly: ET.Element, dim: int, transformer: Transformer) -> Polygon | None:
+def _polygon_from_element(
+    poly: ET.Element,
+    dim: int,
+    transformer: Transformer,
+    deadline_monotonic: float | None = None,
+) -> Polygon | None:
     shell = None
     holes: list[np.ndarray] = []
     for child in poly:
         name = _local(child.tag)
         if name == "exterior":
-            shell = _ring_from_container(child, dim, transformer)
+            shell = _ring_from_container(child, dim, transformer, deadline_monotonic)
         elif name == "interior":
-            ring = _ring_from_container(child, dim, transformer)
+            ring = _ring_from_container(child, dim, transformer, deadline_monotonic)
             if ring is not None and len(ring) >= 4:
                 holes.append(ring)
     if shell is None or len(shell) < 4:
@@ -113,18 +130,35 @@ def _polygon_from_element(poly: ET.Element, dim: int, transformer: Transformer) 
     return polygon if not polygon.is_empty else None
 
 
-def _polygons_under(parent: ET.Element, dim: int, transformer: Transformer) -> list[Polygon]:
+def _polygons_under(
+    parent: ET.Element,
+    dim: int,
+    transformer: Transformer,
+    deadline_monotonic: float | None = None,
+) -> list[Polygon]:
     polygons: list[Polygon] = []
-    for element in parent.iter():
+    for index, element in enumerate(parent.iter()):
+        if index % 128 == 0:
+            _check_deadline(deadline_monotonic, "PLATEAU CityGML parsing")
         if _local(element.tag) == "Polygon":
-            polygon = _polygon_from_element(element, dim, transformer)
+            polygon = _polygon_from_element(element, dim, transformer, deadline_monotonic)
             if polygon is not None:
                 polygons.append(polygon)
     return polygons
 
 
-def _find_named_descendants(parent: ET.Element, names: tuple[str, ...]) -> list[ET.Element]:
-    return [element for element in parent.iter() if _local(element.tag) in names]
+def _find_named_descendants(
+    parent: ET.Element,
+    names: tuple[str, ...],
+    deadline_monotonic: float | None = None,
+) -> list[ET.Element]:
+    matches: list[ET.Element] = []
+    for index, element in enumerate(parent.iter()):
+        if index % 128 == 0:
+            _check_deadline(deadline_monotonic, "PLATEAU CityGML parsing")
+        if _local(element.tag) in names:
+            matches.append(element)
+    return matches
 
 
 def _geometry_exteriors(geometry) -> list[np.ndarray]:
@@ -142,12 +176,20 @@ def _geometry_exteriors(geometry) -> list[np.ndarray]:
     return []
 
 
-def extract_citygml(data: bytes, area: AnalysisArea, margin_m: float = 30.0) -> tuple[list[np.ndarray], list[np.ndarray], list[np.ndarray]]:
+def extract_citygml(
+    data: bytes,
+    area: AnalysisArea,
+    margin_m: float = 30.0,
+    *,
+    deadline_monotonic: float | None = None,
+) -> tuple[list[np.ndarray], list[np.ndarray], list[np.ndarray]]:
     """Extract buildings, road lines, and road polygons in local x/y."""
+    _check_deadline(deadline_monotonic, "PLATEAU CityGML parsing")
     try:
         root = ET.fromstring(data)
     except ET.ParseError as exc:
         raise ProviderParseError("PLATEAU CityGML XML is invalid") from exc
+    _check_deadline(deadline_monotonic, "PLATEAU CityGML parsing")
     transformer = Transformer.from_crs(CRS.from_epsg(6697), local_crs(area), always_xy=True)
     xmin, ymin, xmax, ymax = (-area.width_m / 2.0 - margin_m, -area.height_m / 2.0 - margin_m,
                               area.width_m / 2.0 + margin_m, area.height_m / 2.0 + margin_m)
@@ -156,25 +198,31 @@ def extract_citygml(data: bytes, area: AnalysisArea, margin_m: float = 30.0) -> 
     buildings: list[np.ndarray] = []
     road_lines: list[np.ndarray] = []
     road_polygons: list[np.ndarray] = []
-    for element in root.iter():
+    for element_index, element in enumerate(root.iter()):
+        if element_index % 128 == 0:
+            _check_deadline(deadline_monotonic, "PLATEAU CityGML parsing")
         kind = _local(element.tag)
         if kind == "Building":
             surfaces: list[Polygon] = []
             for preferred in (("lod0FootPrint",), ("lod0RoofEdge",), ("GroundSurface",)):
-                groups = _find_named_descendants(element, preferred)
+                groups = _find_named_descendants(element, preferred, deadline_monotonic)
                 for group in groups:
-                    surfaces.extend(_polygons_under(group, dim, transformer))
+                    surfaces.extend(
+                        _polygons_under(group, dim, transformer, deadline_monotonic)
+                    )
                 if surfaces:
                     break
             if not surfaces:
-                surfaces = _polygons_under(element, dim, transformer)
+                surfaces = _polygons_under(element, dim, transformer, deadline_monotonic)
             if surfaces:
                 buildings.extend(_geometry_exteriors(unary_union(surfaces).intersection(clip)))
         elif kind == "Road":
             surfaces = []
             for child in element.iter():
                 if _local(child.tag) == "Polygon":
-                    polygon = _polygon_from_element(child, dim, transformer)
+                    polygon = _polygon_from_element(
+                        child, dim, transformer, deadline_monotonic
+                    )
                     if polygon is not None:
                         surfaces.append(polygon)
             if surfaces:
@@ -183,6 +231,7 @@ def extract_citygml(data: bytes, area: AnalysisArea, margin_m: float = 30.0) -> 
                 for child in element.iter():
                     if _local(child.tag) != "posList":
                         continue
+                    _check_deadline(deadline_monotonic, "PLATEAU CityGML parsing")
                     points = _parse_poslist(child.text, dim, transformer)
                     if points is None or len(points) < 2:
                         continue
@@ -191,6 +240,7 @@ def extract_citygml(data: bytes, area: AnalysisArea, margin_m: float = 30.0) -> 
                         road_lines.append(np.asarray(line.coords, dtype=np.float64))
                     elif line.geom_type == "MultiLineString":
                         road_lines.extend(np.asarray(item.coords, dtype=np.float64) for item in line.geoms)
+    _check_deadline(deadline_monotonic, "PLATEAU CityGML parsing")
     return buildings, road_lines, road_polygons
 
 
@@ -217,7 +267,9 @@ def _download(
     digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
     path = cache_dir / "plateau" / f"{digest}_{name}"
     if path.exists():
+        _check_deadline(deadline_monotonic, "PLATEAU CityGML cache read")
         data = path.read_bytes()
+        _check_deadline(deadline_monotonic, "PLATEAU CityGML cache read")
         if not data:
             raise ProviderParseError("cached PLATEAU CityGML is empty")
         return data
@@ -323,15 +375,22 @@ class PlateauProvider:
         cache = Path(cache_dir)
         for file_url in building_urls:
             parsed_buildings, _, _ = extract_citygml(
-                self._download(file_url, cache, deadline_monotonic=deadline), area, margin_m
+                self._download(file_url, cache, deadline_monotonic=deadline),
+                area,
+                margin_m,
+                deadline_monotonic=deadline,
             )
             buildings.extend(parsed_buildings)
         for file_url in transport_urls:
             _, parsed_lines, parsed_polygons = extract_citygml(
-                self._download(file_url, cache, deadline_monotonic=deadline), area, margin_m
+                self._download(file_url, cache, deadline_monotonic=deadline),
+                area,
+                margin_m,
+                deadline_monotonic=deadline,
             )
             roads.extend(parsed_lines)
             road_polygons.extend(parsed_polygons)
+        _check_deadline(deadline, "PLATEAU acquisition")
         if not buildings:
             raise ProviderUnavailableError("PLATEAU building files downloaded but no usable footprints were parsed")
         provenance = ProviderProvenance.create(
