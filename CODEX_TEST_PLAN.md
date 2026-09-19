@@ -16,10 +16,12 @@ Older PR task comments and older versions of this file are historical evidence o
 
 ## Role boundary
 
-- Web ChatGPT owns **all repository changes**.
-- Local Codex/Luna performs host-local validation/execution only.
-- Codex must not edit, format, commit, push, regenerate tracked assets, or repair repository files.
-- On a repository defect, report exact command/output and a minimal repro, then stop that failing gate.
+- Web ChatGPT owns substantive repository implementation and repairs.
+- Local Codex/Luna primarily performs host-local validation/execution.
+- Codex may make one tiny isolated mechanical correction when it clearly avoids a needless round trip: formatting/import/typo/quoting/path/test-fixture/launcher-glue only, normally one file and at most two.
+- No algorithms, hydraulic semantics, API contracts, dependencies, generated assets/contracts, specifications, architecture, multi-file behavioral changes, or Adaptive behavior may be changed under this allowance.
+- Verify the remote persistent branch still equals the task SHA before pushing a tiny fix; then report exact diff/reason/resulting SHA and rerun the affected check.
+- For anything substantive, report exact command/output and a minimal repro and return the repair to Web ChatGPT.
 
 ## Canonical local environment
 
