@@ -1,0 +1,4 @@
+# Cross-platform Ruff policy.
+# The repository's Python CLIs are invoked with `python ...` on Windows as well as
+# Unix. Git executable bits are therefore not part of the application contract.
+lint.extend-ignore = ["EXE001"]
