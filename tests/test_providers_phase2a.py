@@ -10,6 +10,7 @@ from floodsim.providers.common import (
     ProviderParseError,
     ProviderProvenance,
     ProviderRequestError,
+    ProviderTimeoutError,
     ProviderUnavailableError,
     request_with_retry,
 )
@@ -178,9 +179,11 @@ class FakePlateau:
     def __init__(self, outcome):
         self.outcome = outcome
         self.calls = 0
+        self.last_kwargs = {}
 
     def acquire(self, *args, **kwargs):
         self.calls += 1
+        self.last_kwargs = kwargs
         if isinstance(self.outcome, BaseException):
             raise self.outcome
         return self.outcome
@@ -190,9 +193,11 @@ class FakeOsm:
     def __init__(self, outcome):
         self.outcome = outcome
         self.calls = 0
+        self.last_kwargs = {}
 
     def acquire(self, *args, **kwargs):
         self.calls += 1
+        self.last_kwargs = kwargs
         if isinstance(self.outcome, BaseException):
             raise self.outcome
         return self.outcome
@@ -217,3 +222,52 @@ def test_auto_fallback_is_disclosed_and_unexpected_errors_do_not_fallback():
     osm = FakeOsm(ProviderUnavailableError("no buildings"))
     with pytest.raises(ProviderUnavailableError, match="PLATEAU.*OSM"):
         acquire_vectors(rectangle(), "auto", plateau=plateau, osm=osm)
+
+
+
+def test_retry_policy_rejects_expired_deadline_before_network_call():
+    session = Session([Response()])
+    with pytest.raises(ProviderTimeoutError):
+        request_with_retry(
+            session,
+            "GET",
+            "https://example.test",
+            deadline_monotonic=0.0,
+        )
+    assert session.calls == []
+
+
+def test_vector_auto_fallback_preserves_budgets_and_skips_fallback_on_cancel():
+    osm_result = OsmVectors([], [], provenance("osm"))
+    plateau = FakePlateau(ProviderTimeoutError("budget exceeded"))
+    osm = FakeOsm(osm_result)
+
+    result = acquire_vectors(
+        rectangle(),
+        "auto",
+        plateau=plateau,
+        osm=osm,
+        plateau_budget_s=20.0,
+        osm_budget_s=30.0,
+    )
+    assert result is osm_result
+    assert plateau.last_kwargs["time_budget_s"] == 20.0
+    assert osm.last_kwargs["time_budget_s"] == 30.0
+
+    class CancelEvent:
+        def is_set(self):
+            return True
+
+    plateau = FakePlateau(ProviderTimeoutError("budget exceeded"))
+    osm = FakeOsm(osm_result)
+    with pytest.raises(ProviderTimeoutError):
+        acquire_vectors(
+            rectangle(),
+            "auto",
+            plateau=plateau,
+            osm=osm,
+            plateau_budget_s=20.0,
+            osm_budget_s=30.0,
+            cancel_event=CancelEvent(),
+        )
+    assert osm.calls == 0
