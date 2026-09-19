@@ -3,18 +3,72 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import webbrowser
 from pathlib import Path
 
-import uvicorn
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEB_DIR = REPO_ROOT / "web"
 STATIC_DIR = REPO_ROOT / "floodsim" / "static"
+
+EXPECTED_PYTHON = (3, 12, 10)
+EXPECTED_PACKAGES = {
+    "fastapi": "0.141.1",
+    "geopandas": "1.1.4",
+    "hydromt": "1.4.1",
+    "hydromt-sfincs": "2.0.0rc3",
+    "netCDF4": "1.7.4",
+    "numpy": "2.5.2",
+    "platformdirs": "4.4.0",
+    "pyproj": "3.7.2",
+    "rasterio": "1.5.1",
+    "scipy": "1.18.0",
+    "shapely": "2.1.2",
+    "uvicorn": "0.52.4",
+    "xarray": "2026.7.0",
+    "xugrid": "0.15.3",
+}
+
+
+def _canonical_environment_problems() -> list[str]:
+    problems: list[str] = []
+    actual_python = sys.version_info[:3]
+    if actual_python != EXPECTED_PYTHON:
+        problems.append(
+            "Python "
+            + ".".join(map(str, EXPECTED_PYTHON))
+            + " required; found "
+            + ".".join(map(str, actual_python))
+        )
+
+    for distribution, expected in EXPECTED_PACKAGES.items():
+        try:
+            actual = importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            problems.append(f"{distribution} {expected} required; package is not installed")
+            continue
+        if actual != expected:
+            problems.append(f"{distribution} {expected} required; found {actual}")
+    return problems
+
+
+def _require_canonical_environment() -> None:
+    problems = _canonical_environment_problems()
+    if not problems:
+        return
+    details = "\n".join(f"  - {problem}" for problem in problems)
+    raise SystemExit(
+        "Canonical local-review environment is not active:\n"
+        f"{details}\n\n"
+        "Create or restore it with:\n"
+        "  python -m scripts.bootstrap_local_review\n"
+        "Then activate 'urban-pluvial-flood-phase0' and rerun this command."
+    )
 
 
 def _npm_executable() -> str:
@@ -27,7 +81,27 @@ def _npm_executable() -> str:
     return npm
 
 
+def _node_major_version() -> int:
+    node = shutil.which("node.exe") or shutil.which("node")
+    if node is None:
+        raise SystemExit("Node.js was not found. Install Node.js 22.")
+    result = subprocess.run(
+        [node, "--version"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    value = result.stdout.strip().removeprefix("v")
+    try:
+        return int(value.split(".", 1)[0])
+    except ValueError as exc:
+        raise SystemExit(f"Could not parse Node.js version: {result.stdout.strip()}") from exc
+
+
 def _build_frontend() -> None:
+    major = _node_major_version()
+    if major != 22:
+        raise SystemExit(f"Node.js 22 is required for the review build; found major {major}.")
     npm = _npm_executable()
     if not (WEB_DIR / "node_modules").exists():
         print("[review] Installing pinned frontend dependencies with npm ci...")
@@ -56,6 +130,11 @@ def _parse_args() -> argparse.Namespace:
         help="Serve the existing floodsim/static build without running npm.",
     )
     parser.add_argument(
+        "--check-env",
+        action="store_true",
+        help="Validate the exact canonical Python environment and exit.",
+    )
+    parser.add_argument(
         "--no-browser",
         action="store_true",
         help="Do not open the review URL automatically.",
@@ -70,6 +149,11 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
+    _require_canonical_environment()
+    if args.check_env:
+        print("[review] Canonical Python environment: OK")
+        return
+
     os.chdir(REPO_ROOT)
 
     if args.sfincs_bin is not None:
@@ -81,6 +165,8 @@ def main() -> None:
     if not args.skip_build:
         _build_frontend()
     _validate_static_build()
+
+    from uvicorn import run as uvicorn_run
 
     url = f"http://{args.host}:{args.port}/"
     print("[review] Local user-review build")
@@ -96,7 +182,7 @@ def main() -> None:
     if not args.no_browser:
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
 
-    uvicorn.run(
+    uvicorn_run(
         "floodsim.api.app:app",
         host=args.host,
         port=args.port,
