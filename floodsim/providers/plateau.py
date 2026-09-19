@@ -114,7 +114,9 @@ def _polygon_from_element(
 ) -> Polygon | None:
     shell = None
     holes: list[np.ndarray] = []
+    _check_deadline(deadline_monotonic, "PLATEAU CityGML parsing")
     for child in poly:
+        _check_deadline(deadline_monotonic, "PLATEAU CityGML parsing")
         name = _local(child.tag)
         if name == "exterior":
             shell = _ring_from_container(child, dim, transformer, deadline_monotonic)
@@ -355,12 +357,15 @@ class PlateauProvider:
         if response.status_code == 404:
             raise ProviderUnavailableError("PLATEAU has no CityGML dataset for this area")
         cities = _normalize_cities(read_json(response, "PLATEAU catalog"))
+        _check_deadline(deadline, "PLATEAU catalog processing")
         if not cities:
             raise ProviderUnavailableError("PLATEAU API returned no cities for this area")
         building_urls: list[str] = []
         transport_urls: list[str] = []
         city_meta: list[dict[str, Any]] = []
-        for city in cities:
+        for city_index, city in enumerate(cities):
+            if city_index % 32 == 0:
+                _check_deadline(deadline, "PLATEAU catalog processing")
             files = city.get("files") or {}
             building_urls.extend(item["url"] for item in files.get("bldg", []) if isinstance(item, dict) and item.get("url"))
             transport_urls.extend(item["url"] for item in files.get("tran", []) if isinstance(item, dict) and item.get("url"))
@@ -414,8 +419,10 @@ class PlateauProvider:
             acquired_at_utc=acquired_at_utc,
         )
         result = PlateauVectors(buildings, roads, road_polygons, provenance)
+        _check_deadline(deadline, "PLATEAU acquisition")
         if out_dir is not None:
             self._write_legacy(result, Path(out_dir))
+        _check_deadline(deadline, "PLATEAU acquisition")
         return result
 
     def _download(
