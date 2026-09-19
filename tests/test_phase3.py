@@ -222,6 +222,25 @@ def test_output_reader_reconstructs_missing_active_hmax_from_depth(tmp_path: Pat
     assert normalized.metadata["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.05)
 
 
+def test_output_reader_clips_tiny_negative_depth_but_rejects_material_negative_depth(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "tiny_negative_depth.nc"
+    _write_synthetic_result(path)
+    with xr.open_dataset(path) as dataset:
+        rewritten = dataset.load()
+    rewritten["h"].values[0, 0, 0] = -0.001
+    rewritten.to_netcdf(path, mode="w")
+
+    result = read_regular_result(path)
+    assert result.depth_time_m[0, 0, 0] == 0.0
+
+    rewritten["h"].values[0, 0, 0] = -0.02
+    rewritten.to_netcdf(path, mode="w")
+    with pytest.raises(SfincsResultError, match="materially negative"):
+        read_regular_result(path)
+
+
 def test_output_reader_rejects_nonfinite_active_depth(tmp_path: Path) -> None:
     path = tmp_path / "bad.nc"
     _write_synthetic_result(path, nonfinite=True)

@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+NEGATIVE_DEPTH_TOLERANCE_M = 0.01
+
 
 class SfincsResultError(RuntimeError):
     code = "RESULT_INVALID"
@@ -88,8 +90,14 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
                 raise SfincsResultError(
                     "active SFINCS maximum depth could not be reconstructed"
                 )
-            if np.any(depth[:, active] < -1e-6) or np.any(max_depth[active] < -1e-6):
+            if (
+                np.any(depth[:, active] < -NEGATIVE_DEPTH_TOLERANCE_M)
+                or np.any(max_depth[active] < -NEGATIVE_DEPTH_TOLERANCE_M)
+            ):
                 raise SfincsResultError("SFINCS result contains materially negative water depth")
+
+            depth[:, active] = np.maximum(depth[:, active], 0.0)
+            max_depth[active] = np.maximum(max_depth[active], 0.0)
 
             depth[:, ~active] = np.nan
             max_depth[~active] = np.nan
