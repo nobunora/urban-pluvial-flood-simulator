@@ -1,4 +1,4 @@
--r requirements.txt
+# Legacy/reference pip development requirements. Canonical validation uses environment.yml.\n-r requirements.txt
 pytest
 httpx==0.28.1
 ruff==0.16.5
