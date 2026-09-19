@@ -2,24 +2,26 @@
 
 ## Current confirmed repository blockers
 
-None currently confirmed after the Web repair at `6508ac729573c3d0086ae418a09089d32e312ff1`.
+None currently confirmed after the Web repair at `8803df9d86631378018ef36d939ef8bb51605032`.
 
-Two review-path defects were confirmed and repaired in the latest cycle:
+The latest live Windows run exposed and isolated two substantive repository defects, both now repaired by Web:
 
-1. **Cancellation stayed at `CANCELLING` while a provider call was blocked.** Codex applied the permitted small repair at `26c2b1e6abc2db1b20bfb16d5bcc1c82d29d4ba5`, making the persisted/UI lifecycle reach terminal `CANCELLED` immediately and idempotently. Local Windows revalidation passed.
-2. **Vector acquisition had no total wall-clock budget.** The live Tokyo Station review run remained in `ACQUIRING_VECTORS` for more than 90 seconds and never reached SFINCS. Web added monotonic provider deadlines, streaming PLATEAU CityGML download interruption, a 20-second PLATEAU review budget and 30-second OSM fallback budget. Exact-head deterministic CI passes with 101 tests.
+1. **PLATEAU review budget not enforced through CityGML parsing/cache work.** The run spent 89.349 s in `ACQUIRING_VECTORS` despite a 20-second policy. Deadline checks now cover cache reads, catalog processing, CityGML parsing/geometry loops, and output writing; OSM's 30-second budget likewise covers response/cache parsing and geometry processing.
+2. **Completed real SFINCS output rejected at `READING_RESULTS`.** SFINCS returned 0 and produced a readable 500×500 `sfincs_map.nc`, but most active `hmax` values were NaN while active `h` remained finite. The reader now reconstructs only missing active `hmax` cells from finite `h` time output and records the reconstruction count in metadata. Infinite `hmax` and other invalid active fields remain hard failures.
 
-## Current external / host-local blockers
+Exact-head CI passes with 104 tests.
 
-Only genuinely live conditions remain to be proven:
+## Current external / host-local validation remaining
 
-1. current GSI / PLATEAU / OSM network availability on the Windows validation host;
-2. whether the bounded PLATEAU path falls back to OSM successfully for the Tokyo Station review case;
-3. execution of the already-present permitted SFINCS 2.4.0 Galibier binary;
-4. generation/readability of `sfincs_map.nc` and repository result normalization;
-5. later SFINCS redistribution/bootstrap licensing for packaging. Do not download or redistribute SFINCS as part of review validation.
+No external blocker was observed in the last run: GSI, PLATEAU and SFINCS all responded, and SFINCS completed successfully.
 
-Environment-manager absence and Node.js 24 are no longer blockers: the bootstrap helper can obtain user-local portable micromamba, and the launcher supports Node.js >=22.12.
+The only remaining proof needed is a fresh Windows run at the repaired exact SHA to verify:
+
+1. PLATEAU either finishes within budget or exits to OSM rather than spending ~89 s in vector acquisition;
+2. the real SFINCS output proceeds through `READING_RESULTS` and normalization;
+3. final run state becomes `COMPLETE` and result metadata exposes the reconstructed-`hmax` diagnostic when applicable.
+
+SFINCS redistribution/bootstrap licensing remains a later packaging issue. Do not download or redistribute SFINCS during review validation.
 
 ## Local working-tree warning
 
