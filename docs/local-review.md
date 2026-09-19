@@ -117,6 +117,17 @@ The review path is deliberately bounded so a slow provider cannot hold the UI in
 
 These limits are review-path reliability controls; provider provenance and fallback warnings are still recorded so the user can see which vector source was actually used.
 
+## Real SFINCS result handling
+
+A successful SFINCS run may leave `hmax` missing (NaN) on active cells while the regular `h` time series is finite. The review reader handles this explicitly:
+
+- finite SFINCS `hmax` values are preserved;
+- an active cell with no finite `hmax` is reconstructed from the maximum finite `h` value available for that cell;
+- the reconstructed-cell count is recorded in result metadata;
+- infinite `hmax`, non-finite active `h`, non-finite active terrain, inconsistent grid shapes, or materially negative depth still fail the result contract.
+
+This prevents a completed engine run from being rejected solely because SFINCS omitted `hmax` for otherwise valid active cells, while keeping corrupt output rejection strict.
+
 ## Working-tree safety
 
 Before user review, run:
