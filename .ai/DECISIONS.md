@@ -35,6 +35,16 @@
 - The launcher must fail clearly before application imports/startup when the canonical environment is not active.
 - Node.js >=22.12 is required for a normal frontend rebuild; Node.js 24 is supported.
 
+## Review-path provider latency decision
+
+- PLATEAU remains preferred for building/road vectors.
+- A local review run must not wait indefinitely on PLATEAU CityGML acquisition.
+- The review coordinator uses a 20-second total PLATEAU budget, then the existing disclosed OSM fallback.
+- OSM fallback uses a 30-second budget.
+- Provider retry timeouts honor the same monotonic deadline; PLATEAU file streaming is interruptible at the budget boundary.
+- Cancellation must suppress fallback and remain terminal/idempotent.
+- These are review-path reliability limits, not permission to silently change provider provenance or hydraulic semantics.
+
 ## Deterministic validation ownership
 
 - GitHub Actions owns deterministic checks that do not require the user's private/local executable or live provider state.
