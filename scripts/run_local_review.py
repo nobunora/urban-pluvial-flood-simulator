@@ -75,16 +75,16 @@ def _npm_executable() -> str:
     npm = shutil.which("npm.cmd") or shutil.which("npm")
     if npm is None:
         raise SystemExit(
-            "npm was not found. Install Node.js 22, or rerun with --skip-build only if "
+            "npm was not found. Install Node.js >=22.12, or rerun with --skip-build only if "
             "floodsim/static already contains a current frontend build."
         )
     return npm
 
 
-def _node_major_version() -> int:
+def _node_version() -> tuple[int, int, int]:
     node = shutil.which("node.exe") or shutil.which("node")
     if node is None:
-        raise SystemExit("Node.js was not found. Install Node.js 22.")
+        raise SystemExit("Node.js was not found. Install Node.js >=22.12.")
     result = subprocess.run(
         [node, "--version"],
         check=True,
@@ -93,15 +93,21 @@ def _node_major_version() -> int:
     )
     value = result.stdout.strip().removeprefix("v")
     try:
-        return int(value.split(".", 1)[0])
+        parts = value.split(".")
+        if len(parts) < 3:
+            raise ValueError(value)
+        return tuple(int(part) for part in parts[:3])
     except ValueError as exc:
         raise SystemExit(f"Could not parse Node.js version: {result.stdout.strip()}") from exc
 
 
 def _build_frontend() -> None:
-    major = _node_major_version()
-    if major != 22:
-        raise SystemExit(f"Node.js 22 is required for the review build; found major {major}.")
+    version = _node_version()
+    if version < (22, 12, 0):
+        found = ".".join(map(str, version))
+        raise SystemExit(
+            f"Node.js >=22.12 is required for the review build; found {found}."
+        )
     npm = _npm_executable()
     if not (WEB_DIR / "node_modules").exists():
         print("[review] Installing pinned frontend dependencies with npm ci...")
