@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from threading import Event
 
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.providers.common import ProviderError, ProviderUnavailableError
@@ -20,20 +21,44 @@ def acquire_vectors(
     out_dir: str | None = None,
     margin_m: float = 30.0,
     acquired_at_utc: str | None = None,
+    plateau_budget_s: float | None = None,
+    osm_budget_s: float | None = None,
+    cancel_event: Event | None = None,
 ) -> PlateauVectors | OsmVectors:
     if mode not in {"auto", "plateau", "osm"}:
         raise ValueError("mode must be auto, plateau, or osm")
     plateau_provider = plateau or PlateauProvider()
     osm_provider = osm or OsmProvider()
     if mode == "osm":
-        return osm_provider.acquire(area, cache_dir, out_dir, margin_m, acquired_at_utc)
+        return osm_provider.acquire(
+            area,
+            cache_dir,
+            out_dir,
+            margin_m,
+            acquired_at_utc,
+            time_budget_s=osm_budget_s,
+        )
     try:
-        result = plateau_provider.acquire(area, cache_dir, out_dir, margin_m, acquired_at_utc)
+        result = plateau_provider.acquire(
+            area,
+            cache_dir,
+            out_dir,
+            margin_m,
+            acquired_at_utc,
+            time_budget_s=plateau_budget_s,
+        )
     except ProviderError as plateau_error:
-        if mode == "plateau":
+        if mode == "plateau" or (cancel_event is not None and cancel_event.is_set()):
             raise
         try:
-            osm_result = osm_provider.acquire(area, cache_dir, out_dir, margin_m, acquired_at_utc)
+            osm_result = osm_provider.acquire(
+                area,
+                cache_dir,
+                out_dir,
+                margin_m,
+                acquired_at_utc,
+                time_budget_s=osm_budget_s,
+            )
         except ProviderError as osm_error:
             raise ProviderUnavailableError(
                 "PLATEAU and OSM vector acquisition failed: "
