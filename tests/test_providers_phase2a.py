@@ -271,3 +271,43 @@ def test_vector_auto_fallback_preserves_budgets_and_skips_fallback_on_cancel():
             cancel_event=CancelEvent(),
         )
     assert osm.calls == 0
+
+
+
+def test_plateau_citygml_parsing_honors_total_deadline(monkeypatch):
+    import floodsim.providers.plateau as plateau
+
+    citygml = b'''<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0"
+      xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
+      <core:cityObjectMember><bldg:Building><bldg:lod0FootPrint><gml:MultiSurface><gml:surfaceMember>
+      <gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>35.68100 139.76700 0 35.68100 139.76710 0 35.68110 139.76710 0 35.68110 139.76700 0 35.68100 139.76700 0</gml:posList>
+      </gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface></bldg:lod0FootPrint></bldg:Building></core:cityObjectMember>
+      </core:CityModel>'''
+    ticks = iter([0.0, 0.0, 2.0])
+    monkeypatch.setattr(plateau.time, "monotonic", lambda: next(ticks))
+
+    with pytest.raises(ProviderTimeoutError, match="CityGML parsing"):
+        extract_citygml(
+            citygml,
+            rectangle(),
+            margin_m=0.0,
+            deadline_monotonic=1.0,
+        )
+
+
+def test_osm_geometry_processing_honors_total_deadline(monkeypatch, tmp_path):
+    import floodsim.providers.osm as osm_module
+
+    ticks = iter([0.0, 0.0, 2.0])
+    monkeypatch.setattr(osm_module.time, "monotonic", lambda: next(ticks))
+    provider = OsmProvider(
+        session=Session([Response(payload={"elements": [{}]})]),
+        sleeper=lambda _: None,
+    )
+
+    with pytest.raises(ProviderTimeoutError, match="OSM geometry processing"):
+        provider.acquire(
+            rectangle(),
+            cache_dir=tmp_path,
+            time_budget_s=1.0,
+        )
