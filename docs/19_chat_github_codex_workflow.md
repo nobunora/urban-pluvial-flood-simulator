@@ -26,7 +26,7 @@ In persistent mode:
 - use the existing persistent working branch;
 - use the existing long-lived Draft PR;
 - Web ChatGPT owns implementation and all repository writes on the persistent branch;
-- Local Codex is validation/execution-only and must not commit or push;
+- Local Codex is validation/execution-first; only tiny isolated mechanical fixes explicitly allowed by the current workflow may be committed/pushed;
 - do not create a new PR merely to communicate or validate the next iteration;
 - keep the Draft PR open until the assigned body of work is complete and validated.
 
@@ -66,7 +66,7 @@ Do not rely on chat history as the only source of requirements.
 
 ### Repository agent / Codex role
 
-In the current persistent Draft PR mode, Local Codex is **validation/execution-only**.
+In the current persistent Draft PR mode, Local Codex is **validation/execution-first**. A bounded tiny mechanical-fix allowance exists only to avoid needless round trips.
 
 Responsible for:
 
@@ -76,7 +76,7 @@ Responsible for:
 - running only the host-local checks explicitly requested by the newest authoritative PR comment;
 - reporting evidence, risks, minimal repros, and unresolved questions.
 
-Local Codex must not implement, edit, commit, push, or repair repository files. Web ChatGPT owns implementation. Repository review must not silently redefine the specification.
+Local Codex must not perform substantive implementation. It may make only the tiny isolated mechanical correction class defined by the persistent workflow (formatting/import/typo/quoting/path/test-fixture/launcher-glue, normally one file and at most two), with exact diff/reason/new SHA reported. Web ChatGPT owns substantive implementation. Repository review must not silently redefine the specification.
 
 ## Default State Flow
 
