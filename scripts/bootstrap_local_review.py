@@ -248,7 +248,6 @@ def main() -> None:
     )
     print("[review] Canonical environment ready.")
 
-    manager_name = Path(manager.executable).name
     print(
         "[review] No shell activation is required. Run commands through the manager, e.g.:"
     )
