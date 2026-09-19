@@ -53,6 +53,16 @@
 - Infinite active `hmax`, non-finite active `h`, non-finite active terrain, materially negative depth, inconsistent dimensions, or unreadable NetCDF remain hard `RESULT_INVALID` failures.
 - Record the count of reconstructed `hmax` cells in normalized result metadata so the fallback is explicit and auditable.
 
+## SFINCS dry-depth normalization decision
+
+- SFINCS 2.4.0 documents `twet_threshold=0.01 m` as the default water-depth threshold for counting a cell as flooded/wet.
+- Use that same 0.01 m band only as a **dry-output normalization tolerance** for finite negative regular-grid water-depth samples.
+- Finite active `h` or derived max-depth values in `[-0.01, 0)` are clipped to exactly zero before normalized product output.
+- Any value below `-0.01 m` remains a hard `RESULT_INVALID` failure.
+- This policy is not a claim that negative water depth is physically meaningful and is not derived from `huthresh`; it is a boundary normalization aligned with SFINCS's documented default wet-cell reporting threshold.
+- Record the number of clipped time-cell depth values, clipped max-depth cells, and minimum raw active depth in normalized metadata.
+- Preserve the raw `sfincs_map.nc` unchanged so every normalization decision remains auditable.
+
 ## Deterministic validation ownership
 
 - GitHub Actions owns deterministic checks that do not require the user's private/local executable or live provider state.
