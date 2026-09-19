@@ -222,14 +222,25 @@ def _download(
             raise ProviderParseError("cached PLATEAU CityGML is empty")
         return data
 
-    request_kwargs = {
-        "policy": policy,
-        "deadline_monotonic": deadline_monotonic,
-        "stream": True,
-    }
-    if sleeper is not None:
-        request_kwargs["sleeper"] = sleeper
-    response = request_with_retry(session, "GET", url, **request_kwargs)
+    if sleeper is None:
+        response = request_with_retry(
+            session,
+            "GET",
+            url,
+            policy=policy,
+            deadline_monotonic=deadline_monotonic,
+            stream=True,
+        )
+    else:
+        response = request_with_retry(
+            session,
+            "GET",
+            url,
+            policy=policy,
+            sleeper=sleeper,
+            deadline_monotonic=deadline_monotonic,
+            stream=True,
+        )
 
     chunks: list[bytes] = []
     if hasattr(response, "iter_content"):
