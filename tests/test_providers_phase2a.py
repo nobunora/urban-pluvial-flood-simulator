@@ -275,7 +275,7 @@ def test_vector_auto_fallback_preserves_budgets_and_skips_fallback_on_cancel():
 
 
 def test_plateau_citygml_parsing_honors_total_deadline(monkeypatch):
-    import floodsim.providers.plateau as plateau
+    from floodsim.providers import plateau
 
     citygml = b'''<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0"
       xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
