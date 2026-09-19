@@ -91,7 +91,7 @@ Normal frontend rebuild requires Node.js >=22.12. Node.js 24 is supported.
 - mypy;
 - full pytest;
 - `git diff --check`;
-- Node.js 22;
+- Node.js 24 in CI (launcher contract: Node.js >=22.12);
 - `npm ci`;
 - `api:check`;
 - TypeScript typecheck;
@@ -104,11 +104,31 @@ Normal frontend rebuild requires Node.js >=22.12. Node.js 24 is supported.
 
 Codex must not duplicate these checks merely to compensate for missing local dependencies. Use CI evidence first.
 
-## Latest local-host blocker before this cleanup
+## Current local-review status
 
-At exact head `d33e4708b5c91e7ef607fe1fc6ce8be7cb63af9e`, Codex confirmed the Ruff repair but the local host no longer had the canonical Python 3.12.10 environment. Host Python 3.14.3 lacked the pinned GIS/HydroMT dependencies, so mypy/pytest could not collect. This was correctly classified as an environment availability blocker, not a repository behavior failure.
+Latest Windows validation established:
 
-Web has now added environment bootstrap/preflight/documentation and deterministic CI. If no conda-compatible manager exists, the helper can obtain official portable micromamba in user-local application data without administrator rights or shell initialization.
+- environment bootstrap/preflight: PASS;
+- Node.js 24 launcher path: PASS;
+- local `/` and `/smoke.html`: PASS;
+- Full 1 m ±250 m estimate: 250,000 cells;
+- Adaptive rejection: PASS;
+- cancellation during blocked provider acquisition initially failed, then a bounded Codex tiny fix at `26c2b1e6abc2db1b20bfb16d5bcc1c82d29d4ba5` made persisted/UI state reach terminal `CANCELLED`; focused and full regression passed;
+- a fresh real-engine attempt then remained in `ACQUIRING_VECTORS` for more than 90 seconds before SFINCS was reached.
+
+Web has now repaired the remaining review-path weakness rather than classifying it as indefinitely external:
+
+- PLATEAU stays preferred;
+- review-run PLATEAU acquisition has a 20-second total budget;
+- timeout is a typed provider failure and falls back to OSM;
+- OSM fallback has a 30-second budget;
+- provider retry timeouts honor a monotonic deadline;
+- PLATEAU CityGML downloads are streamed so the total budget can interrupt a large download;
+- cancellation suppresses fallback and the provider worker is no longer allowed an unbounded review-path wait.
+
+Exact deterministic CI at `6508ac729573c3d0086ae418a09089d32e312ff1` passed Ruff, mypy, **101 pytest tests**, Node.js 24 frontend build, FastAPI startup, HTTP smoke and the 250,000-cell estimate.
+
+The next Codex cycle should therefore test only the Windows/live path: confirm bounded PLATEAU→OSM behavior, reach the real SFINCS engine if live providers cooperate, and collect engine/result evidence.
 
 ## Preserved validated history
 
