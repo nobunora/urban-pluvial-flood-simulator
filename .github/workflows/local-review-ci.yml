@@ -16,8 +16,16 @@ jobs:
         shell: bash -el {0}
 
     steps:
-      - name: Checkout
+      - name: Checkout exact PR head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Record exact SHA
+        run: |
+          git rev-parse HEAD
+          git status --short
 
       - name: Create canonical Python environment
         uses: mamba-org/setup-micromamba@v2
