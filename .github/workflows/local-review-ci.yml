@@ -35,6 +35,9 @@ jobs:
           cache-environment: true
           init-shell: bash
 
+      - name: Validate repository environment bootstrap
+        run: python -m scripts.bootstrap_local_review --manager micromamba
+
       - name: Verify canonical environment
         run: python -m scripts.run_local_review --check-env
 
@@ -45,10 +48,10 @@ jobs:
           python -m pytest -q
           git diff --check
 
-      - name: Set up Node.js 22
+      - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
 
