@@ -62,3 +62,15 @@ def test_node_version_rejects_unparseable_version(
 
     with pytest.raises(SystemExit, match="Could not parse Node.js version"):
         run_local_review._node_version()
+
+
+@pytest.mark.parametrize(
+    ("version", "supported"),
+    [
+        ((22, 11, 0), False),
+        ((22, 12, 0), True),
+        ((24, 15, 0), True),
+    ],
+)
+def test_node_version_support(version: tuple[int, int, int], supported: bool) -> None:
+    assert run_local_review._node_version_supported(version) is supported
