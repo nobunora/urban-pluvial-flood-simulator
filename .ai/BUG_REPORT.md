@@ -2,32 +2,24 @@
 
 ## Current confirmed repository blockers
 
-None currently confirmed for the Full 1 m local-review slice.
+None currently confirmed after the Web repair at `6508ac729573c3d0086ae418a09089d32e312ff1`.
 
-The latest Codex run at `d33e4708b5c91e7ef607fe1fc6ce8be7cb63af9e` was blocked because the validation host no longer had the canonical Python 3.12.10 environment. Ruff passed; mypy/pytest could not run because host Python 3.14.3 lacked the pinned GIS/HydroMT packages. This is an environment-availability condition, not evidence of a source defect.
+Two review-path defects were confirmed and repaired in the latest cycle:
 
-Web-side mitigation is now committed:
-
-- `environment.yml` is explicitly the sole canonical review environment;
-- `scripts/bootstrap_local_review.py` creates/updates it with conda/mamba/micromamba;
-- `scripts/run_local_review.py` performs exact Python/package preflight before importing Uvicorn;
-- Node.js 22 is checked before frontend builds;
-- `docs/local-review.md` and README use the canonical setup path;
-- deterministic local-review validation runs in GitHub Actions.
+1. **Cancellation stayed at `CANCELLING` while a provider call was blocked.** Codex applied the permitted small repair at `26c2b1e6abc2db1b20bfb16d5bcc1c82d29d4ba5`, making the persisted/UI lifecycle reach terminal `CANCELLED` immediately and idempotently. Local Windows revalidation passed.
+2. **Vector acquisition had no total wall-clock budget.** The live Tokyo Station review run remained in `ACQUIRING_VECTORS` for more than 90 seconds and never reached SFINCS. Web added monotonic provider deadlines, streaming PLATEAU CityGML download interruption, a 20-second PLATEAU review budget and 30-second OSM fallback budget. Exact-head deterministic CI passes with 101 tests.
 
 ## Current external / host-local blockers
 
-The latest host report found no installed conda-compatible manager and Node.js 24 while the launcher previously required Node 22. Web has now removed both avoidable blockers:
+Only genuinely live conditions remain to be proven:
 
-- when no manager is installed, `scripts.bootstrap_local_review` downloads official portable micromamba into user-local application data and creates the canonical environment without administrator rights or shell initialization;
-- the frontend launcher accepts Node.js >=22.12, so the reported Node.js 24.15.0 host is supported.
+1. current GSI / PLATEAU / OSM network availability on the Windows validation host;
+2. whether the bounded PLATEAU path falls back to OSM successfully for the Tokyo Station review case;
+3. execution of the already-present permitted SFINCS 2.4.0 Galibier binary;
+4. generation/readability of `sfincs_map.nc` and repository result normalization;
+5. later SFINCS redistribution/bootstrap licensing for packaging. Do not download or redistribute SFINCS as part of review validation.
 
-Remaining genuinely external/host-local conditions are:
-
-1. network access to the official micromamba/conda-forge/Git dependency sources during first environment creation;
-2. current external provider availability for live GSI/PLATEAU/OSM paths;
-3. the already-present permitted local SFINCS executable remaining accessible;
-4. SFINCS redistribution/bootstrap licensing for later packaging; do not download or redistribute SFINCS as part of review validation.
+Environment-manager absence and Node.js 24 are no longer blockers: the bootstrap helper can obtain user-local portable micromamba, and the launcher supports Node.js >=22.12.
 
 ## Local working-tree warning
 
