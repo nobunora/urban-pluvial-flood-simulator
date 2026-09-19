@@ -55,18 +55,19 @@ GitHub Draft PR. In particular:
 - keep confirmed findings separate from hypotheses;
 - do not merge intermediate work.
 
-### Validation-only role for Local Codex
+### Validation-first role for Local Codex
 
 The repository uses the following role split unless the user explicitly changes it later:
 
-- **Web ChatGPT owns implementation and repository writes.**
-- **Local Codex owns validation, test execution, diagnostics, and reporting only.**
-- Local Codex MUST NOT edit source code, tests, specifications, generated assets, handoff files, workflow files, or other repository files.
-- Local Codex MUST NOT commit, push, create branches/PRs, or merge the persistent PR.
-- After Web ChatGPT pushes an implementation commit, Local Codex validates exactly the commit named by the latest validation request and reports `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN` for each requested check.
-- When validation fails, Local Codex reports confirmed failures, relevant logs, affected files/functions, and clearly labelled hypotheses. Web ChatGPT implements the correction.
-- The latest applicable PR comment may narrow validation scope, but it may not silently restore implementation authority to Local Codex.
-- This validation-only role supersedes the earlier `Workflow Override — Codex Owns Implementation` instruction and any repository text that assigned coding/commit/push work to Local Codex.
+- **Web ChatGPT is the primary implementation owner.**
+- **Local Codex primarily owns host-local validation, execution, diagnostics, and reporting.**
+- Local Codex MAY make a tiny isolated mechanical correction found during validation when behavior is already unambiguous and doing so avoids a needless round trip: formatting/import/typo/quoting/path/test-fixture/launcher-glue only, normally one file and at most two.
+- Local Codex MUST NOT use that allowance for algorithms, hydraulic semantics, public APIs, dependencies, generated contracts/assets, specifications, architecture, multi-file behavioral changes, or Adaptive behavior.
+- Before pushing a tiny correction, confirm the remote persistent branch still equals the exact requested SHA. Use a normal non-force push, report exact diff/reason/new SHA, and rerun the affected check.
+- For substantive failures, Local Codex reports confirmed failures, logs, affected files/functions and clearly labelled hypotheses; Web ChatGPT implements the correction.
+- Local Codex MUST NOT create extra PRs or merge PR #12.
+- The latest applicable authoritative PR comment may further narrow this allowance.
+- This validation-first role supersedes the earlier `Workflow Override — Codex Owns Implementation` instruction.
 
 ## Working Rules
 
