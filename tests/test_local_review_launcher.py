@@ -39,18 +39,18 @@ def test_canonical_environment_problems_accepts_exact_environment(
     assert run_local_review._canonical_environment_problems() == []
 
 
-def test_node_major_version_parses_node_22(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_node_version_parses_node_24(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(run_local_review.shutil, "which", lambda name: "node" if "node" in name else None)
     monkeypatch.setattr(
         run_local_review.subprocess,
         "run",
-        lambda *args, **kwargs: SimpleNamespace(stdout="v22.19.0\n"),
+        lambda *args, **kwargs: SimpleNamespace(stdout="v24.15.0\n"),
     )
 
-    assert run_local_review._node_major_version() == 22
+    assert run_local_review._node_version() == (24, 15, 0)
 
 
-def test_node_major_version_rejects_unparseable_version(
+def test_node_version_rejects_unparseable_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(run_local_review.shutil, "which", lambda name: "node" if "node" in name else None)
@@ -61,4 +61,4 @@ def test_node_major_version_rejects_unparseable_version(
     )
 
     with pytest.raises(SystemExit, match="Could not parse Node.js version"):
-        run_local_review._node_major_version()
+        run_local_review._node_version()
