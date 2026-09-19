@@ -55,6 +55,10 @@ class ResultNotReady(RunCoordinatorError):
     code = "RESULT_NOT_READY"
 
 
+DEFAULT_PLATEAU_REVIEW_BUDGET_S = 20.0
+DEFAULT_OSM_REVIEW_BUDGET_S = 30.0
+
+
 STAGE_LABELS = {
     RunState.CREATED: "実行待機",
     RunState.VALIDATING: "入力を確認中",
@@ -122,6 +126,8 @@ class RunCoordinator:
         runs_root: str | Path | None = None,
         elevation_provider: Any | None = None,
         vector_acquirer: Callable[..., Any] = acquire_vectors,
+        plateau_vector_budget_s: float = DEFAULT_PLATEAU_REVIEW_BUDGET_S,
+        osm_vector_budget_s: float = DEFAULT_OSM_REVIEW_BUDGET_S,
         rainfall_resolver: Callable[..., Any] = resolve_rainfall,
         catalog_provider: JmaCatalogProvider | None = None,
         grid_builder: Callable[..., Any] = build_full_1m_grid,
@@ -134,7 +140,11 @@ class RunCoordinator:
         default_root = user_data_path("urban-pluvial-flood-simulator", appauthor=False) / "runs"
         self.store = RunStore(runs_root or default_root)
         self.elevation_provider = elevation_provider or GsiElevationProvider()
+        if plateau_vector_budget_s <= 0 or osm_vector_budget_s <= 0:
+            raise ValueError("vector acquisition budgets must be positive")
         self.vector_acquirer = vector_acquirer
+        self.plateau_vector_budget_s = plateau_vector_budget_s
+        self.osm_vector_budget_s = osm_vector_budget_s
         self.rainfall_resolver = rainfall_resolver
         self.catalog_provider = catalog_provider or JmaCatalogProvider()
         self.grid_builder = grid_builder
@@ -280,6 +290,9 @@ class RunCoordinator:
                 mode="auto",
                 cache_dir=str(run_root.parent.parent / "cache"),
                 out_dir=str(run_root / "source_refs"),
+                plateau_budget_s=self.plateau_vector_budget_s,
+                osm_budget_s=self.osm_vector_budget_s,
+                cancel_event=record.cancel_event,
             )
             self._check_cancel(record)
 
