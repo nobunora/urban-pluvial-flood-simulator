@@ -106,29 +106,26 @@ Codex must not duplicate these checks merely to compensate for missing local dep
 
 ## Current local-review status
 
-Latest Windows validation established:
+Latest Windows validation established substantially more than the earlier provider-only checks:
 
-- environment bootstrap/preflight: PASS;
-- Node.js 24 launcher path: PASS;
-- local `/` and `/smoke.html`: PASS;
-- Full 1 m ±250 m estimate: 250,000 cells;
-- Adaptive rejection: PASS;
-- cancellation during blocked provider acquisition initially failed, then a bounded Codex tiny fix at `26c2b1e6abc2db1b20bfb16d5bcc1c82d29d4ba5` made persisted/UI state reach terminal `CANCELLED`; focused and full regression passed;
-- a fresh real-engine attempt then remained in `ACQUIRING_VECTORS` for more than 90 seconds before SFINCS was reached.
+- environment/bootstrap, Node.js 24, local UI, estimate and Adaptive rejection: PASS;
+- cancellation during provider acquisition: repaired and Windows-revalidated to terminal persisted/UI `CANCELLED`;
+- the real Tokyo Station ±250 m Full 1 m run reached **SFINCS 2.4.0 Galibier**, return code **0**, with `Simulation finished` and empty stderr;
+- `sfincs_map.nc` was produced and is structurally readable by xarray with `time=2`, `timemax=1`, `n=500`, `m=500`, and the required regular-grid variables;
+- two remaining repository defects were exposed by that run:
+  1. PLATEAU's 20-second budget was not enforced while parsing already-downloaded/cached CityGML, so vector acquisition still took 89.349 s;
+  2. the result reader rejected a completed SFINCS file because most active `hmax` cells were NaN even though the corresponding `h` time series was finite.
 
-Web has now repaired the remaining review-path weakness rather than classifying it as indefinitely external:
+Web has now repaired both:
 
-- PLATEAU stays preferred;
-- review-run PLATEAU acquisition has a 20-second total budget;
-- timeout is a typed provider failure and falls back to OSM;
-- OSM fallback has a 30-second budget;
-- provider retry timeouts honor a monotonic deadline;
-- PLATEAU CityGML downloads are streamed so the total budget can interrupt a large download;
-- cancellation suppresses fallback and the provider worker is no longer allowed an unbounded review-path wait.
+- PLATEAU and OSM budgets cover cache/response parsing and geometry processing, with repeated monotonic deadline checks;
+- PLATEAU CityGML parsing accepts the same deadline and aborts with typed `ProviderTimeoutError` so the existing OSM fallback can run;
+- active cells with missing `hmax` are reconstructed from finite `h` time output, while infinite `hmax`, non-finite active `h`, non-finite terrain, and materially negative depths remain rejected;
+- the number of reconstructed `hmax` cells is recorded in normalized result metadata.
 
-Exact deterministic CI at `6508ac729573c3d0086ae418a09089d32e312ff1` passed Ruff, mypy, **101 pytest tests**, Node.js 24 frontend build, FastAPI startup, HTTP smoke and the 250,000-cell estimate.
+Exact deterministic CI at `8803df9d86631378018ef36d939ef8bb51605032` passed Ruff, mypy, **104 pytest tests**, Node.js 24 frontend build, FastAPI startup, HTTP smoke and the 250,000-cell estimate.
 
-The next Codex cycle should therefore test only the Windows/live path: confirm bounded PLATEAU→OSM behavior, reach the real SFINCS engine if live providers cooperate, and collect engine/result evidence.
+The next Codex cycle is now narrowly host-local: rerun the same real Windows case, verify vector-stage budget/fallback behavior, then confirm the already-proven SFINCS engine result now passes repository reading/normalization to `COMPLETE`.
 
 ## Preserved validated history
 
