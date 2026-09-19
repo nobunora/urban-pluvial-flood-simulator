@@ -8,7 +8,10 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-NEGATIVE_DEPTH_TOLERANCE_M = 0.01
+# SFINCS 2.4.0 uses twet_threshold=0.01 m by default when classifying a cell
+# as flooded/wet. Treat finite output excursions within that dry-cell band as
+# zero-depth normalization noise, but expose diagnostics instead of hiding them.
+SFINCS_DRY_DEPTH_TOLERANCE_M = 0.01
 
 
 class SfincsResultError(RuntimeError):
@@ -24,6 +27,9 @@ class SfincsRegularResult:
     active_mask: np.ndarray
     time_values: tuple[str, ...]
     hmax_reconstructed_cells: int = 0
+    negative_depth_clipped_values: int = 0
+    negative_max_depth_clipped_cells: int = 0
+    min_raw_active_depth_m: float = 0.0
 
     @property
     def global_max_depth_m(self) -> float:
@@ -90,14 +96,25 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
                 raise SfincsResultError(
                     "active SFINCS maximum depth could not be reconstructed"
                 )
+            active_depth_values = depth[:, active]
+            active_max_depth_values = max_depth[active]
+            min_raw_active_depth = (
+                float(np.min(active_depth_values)) if active_depth_values.size else 0.0
+            )
             if (
-                np.any(depth[:, active] < -NEGATIVE_DEPTH_TOLERANCE_M)
-                or np.any(max_depth[active] < -NEGATIVE_DEPTH_TOLERANCE_M)
+                np.any(active_depth_values < -SFINCS_DRY_DEPTH_TOLERANCE_M)
+                or np.any(active_max_depth_values < -SFINCS_DRY_DEPTH_TOLERANCE_M)
             ):
                 raise SfincsResultError("SFINCS result contains materially negative water depth")
 
-            depth[:, active] = np.maximum(depth[:, active], 0.0)
-            max_depth[active] = np.maximum(max_depth[active], 0.0)
+            negative_depth_clipped_values = int(
+                np.count_nonzero(active_depth_values < 0.0)
+            )
+            negative_max_depth_clipped_cells = int(
+                np.count_nonzero(active_max_depth_values < 0.0)
+            )
+            depth[:, active] = np.maximum(active_depth_values, 0.0)
+            max_depth[active] = np.maximum(active_max_depth_values, 0.0)
 
             depth[:, ~active] = np.nan
             max_depth[~active] = np.nan
@@ -115,4 +132,7 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
         active_mask=active,
         time_values=time_values,
         hmax_reconstructed_cells=reconstructed_cells,
+        negative_depth_clipped_values=negative_depth_clipped_values,
+        negative_max_depth_clipped_cells=negative_max_depth_clipped_cells,
+        min_raw_active_depth_m=min_raw_active_depth,
     )
