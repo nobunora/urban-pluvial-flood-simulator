@@ -45,6 +45,14 @@
 - Cancellation must suppress fallback and remain terminal/idempotent.
 - These are review-path reliability limits, not permission to silently change provider provenance or hydraulic semantics.
 
+## Real SFINCS result-read decision
+
+- A completed regular-grid SFINCS run is not invalid merely because active `hmax` entries are NaN when the corresponding active `h` time series is finite.
+- For active cells with no finite `hmax` sample, reconstruct maximum depth from the finite `h` time outputs available in the same NetCDF.
+- Preserve finite SFINCS `hmax` values where present.
+- Infinite active `hmax`, non-finite active `h`, non-finite active terrain, materially negative depth, inconsistent dimensions, or unreadable NetCDF remain hard `RESULT_INVALID` failures.
+- Record the count of reconstructed `hmax` cells in normalized result metadata so the fallback is explicit and auditable.
+
 ## Deterministic validation ownership
 
 - GitHub Actions owns deterministic checks that do not require the user's private/local executable or live provider state.
