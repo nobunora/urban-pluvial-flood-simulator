@@ -29,27 +29,21 @@ Web ChatGPT owns:
 
 ### Local Codex
 
-Local Codex owns only:
+Local Codex primarily owns:
 
-- validation/test execution;
-- static-analysis execution;
-- frontend/build checks;
-- live/provider checks when explicitly requested;
-- diagnostics and reporting.
+- host-local validation/test execution;
+- live/provider and existing-engine checks when explicitly requested;
+- runtime diagnostics and reporting.
 
-Local Codex must not:
+To reduce unnecessary Web↔Codex round trips, Local Codex may make a tiny isolated mechanical correction when the intended behavior is unambiguous: formatting/import/typo/quoting/path/test-fixture/launcher-glue only, normally one file and at most two.
 
-- edit source code;
-- edit tests;
-- edit specifications or documentation;
-- regenerate committed assets in place unless the validation instruction explicitly permits a temporary uncommitted output outside tracked paths;
-- edit `.ai/*`;
-- commit;
-- push;
-- create branches or PRs;
-- merge PR #12.
+The allowance does **not** cover algorithms, hydraulic semantics, public APIs, dependencies, generated contracts/assets, specifications, architecture, multi-file behavioral changes, or Adaptive behavior.
 
-This validation-only role supersedes the earlier `Workflow Override — Codex Owns Implementation` instruction.
+Before a tiny-fix push, confirm the remote persistent branch still equals the requested exact SHA. Push normally (never force), report exact diff/reason/resulting SHA, and rerun the affected check.
+
+Local Codex must not create additional PRs or merge PR #12. Substantive repairs remain Web-owned.
+
+This validation-first role supersedes the earlier `Workflow Override — Codex Owns Implementation` instruction.
 
 The previous delegation of coding to Codex was based on a mistaken diagnosis of high token consumption. The user identified the actual cause as Local Codex running the Sol model. Local Codex has now been switched to Luna, so Web ChatGPT source editing is restored as the normal implementation path.
 
@@ -144,7 +138,7 @@ observed behavior
 whether failure is deterministic
 ```
 
-Do not fix the failure. Web ChatGPT owns corrections.
+Do not fix substantive failures. Web ChatGPT owns substantive corrections. A tiny isolated mechanical correction may be made only within the bounded allowance above.
 
 If a problem appears to require changing canonical product/spec behavior, report:
 
