@@ -10,11 +10,20 @@
 
 ## Role split — strict
 
-### Web ChatGPT owns all repository changes
+### Web ChatGPT is the primary repository implementation owner
 
-Web ChatGPT performs every source/test/docs/config/workflow/generated-asset/dependency/API/UI repair and push.
+Web ChatGPT performs substantive source/test/docs/config/workflow/generated-asset/dependency/API/UI implementation and repairs.
 
-Codex/Luna must **not** edit, commit, push, format, or repair repository files, including tiny import/formatting fixes. If validation finds a repository defect, report exact evidence and stop that failing gate; Web ChatGPT will publish the next exact SHA.
+To reduce unnecessary round trips, Codex/Luna may make and push a **tiny isolated mechanical correction** discovered during host-local validation only when all of these are true:
+
+- the intended behavior is already unambiguous;
+- the change is small and local (normally one file; at most two);
+- it is formatting/import/typo/quoting/path/test-fixture/launcher-glue class;
+- it does not alter algorithms, hydraulic semantics, public API, dependencies, generated contracts/assets, product specification, architecture, or Adaptive behavior;
+- the remote persistent branch still points to the exact task SHA before push;
+- Codex records the exact diff/reason and reruns the affected check.
+
+Anything larger or behaviorally substantive returns to Web ChatGPT.
 
 ### Codex/Luna owns only host-local execution evidence
 
@@ -70,7 +79,7 @@ python -m scripts.run_local_review
 
 The launcher now fails early with a clear diagnostic when the active Python/package versions are not canonical, before importing Uvicorn or starting the application.
 
-Normal frontend rebuild requires Node.js 22.
+Normal frontend rebuild requires Node.js >=22.12. Node.js 24 is supported.
 
 ## Web-owned deterministic validation
 
@@ -99,7 +108,7 @@ Codex must not duplicate these checks merely to compensate for missing local dep
 
 At exact head `d33e4708b5c91e7ef607fe1fc6ce8be7cb63af9e`, Codex confirmed the Ruff repair but the local host no longer had the canonical Python 3.12.10 environment. Host Python 3.14.3 lacked the pinned GIS/HydroMT dependencies, so mypy/pytest could not collect. This was correctly classified as an environment availability blocker, not a repository behavior failure.
 
-Web has now added environment bootstrap/preflight/documentation and deterministic CI so that this condition is explicit and reproducible.
+Web has now added environment bootstrap/preflight/documentation and deterministic CI. If no conda-compatible manager exists, the helper can obtain official portable micromamba in user-local application data without administrator rights or shell initialization.
 
 ## Preserved validated history
 
@@ -137,4 +146,4 @@ For the active exact SHA, Codex should return only:
 - final worktree state;
 - disposition: `local-review-ready | needs-web-fix | blocked-external`.
 
-Do not propose or make repository fixes. Do not resume Adaptive work unless a later authoritative comment explicitly changes priority.
+Only the tiny isolated correction class defined above may be repaired by Codex. Report every such correction with exact diff and resulting SHA. Do not resume Adaptive work unless a later authoritative comment explicitly changes priority.
