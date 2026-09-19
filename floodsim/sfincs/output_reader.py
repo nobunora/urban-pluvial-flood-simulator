@@ -21,6 +21,7 @@ class SfincsRegularResult:
     terrain_elevation_m: np.ndarray
     active_mask: np.ndarray
     time_values: tuple[str, ...]
+    hmax_reconstructed_cells: int = 0
 
     @property
     def global_max_depth_m(self) -> float:
@@ -56,17 +57,37 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
 
             if hmax_values.shape[0] < 1:
                 raise SfincsResultError("SFINCS hmax contains no output frame")
-            max_depth = np.nanmax(hmax_values, axis=0)
-            if depth.shape[1:] != active.shape or max_depth.shape != active.shape:
+            if depth.shape[1:] != active.shape or hmax_values.shape[1:] != active.shape:
                 raise SfincsResultError("SFINCS result grid shapes are inconsistent")
             if terrain.shape != active.shape:
                 raise SfincsResultError("SFINCS terrain shape is inconsistent")
             if np.any(~np.isfinite(depth[:, active])):
                 raise SfincsResultError("active SFINCS depth cells contain non-finite values")
-            if np.any(~np.isfinite(max_depth[active])):
-                raise SfincsResultError("active SFINCS maximum depth contains non-finite values")
             if np.any(~np.isfinite(terrain[active])):
                 raise SfincsResultError("active SFINCS terrain cells contain non-finite values")
+            if np.any(np.isinf(hmax_values[:, active])):
+                raise SfincsResultError("active SFINCS maximum depth contains infinite values")
+
+            finite_hmax = np.isfinite(hmax_values)
+            has_hmax = np.any(finite_hmax, axis=0)
+            max_depth = np.full(active.shape, np.nan, dtype=np.float32)
+            if np.any(has_hmax):
+                finite_values = np.where(finite_hmax, hmax_values, -np.inf)
+                finite_max = np.max(finite_values, axis=0)
+                max_depth[has_hmax] = finite_max[has_hmax]
+
+            reconstructed_mask = active & ~has_hmax
+            reconstructed_cells = int(np.count_nonzero(reconstructed_mask))
+            if reconstructed_cells:
+                max_depth[reconstructed_mask] = np.max(
+                    depth[:, reconstructed_mask],
+                    axis=0,
+                )
+
+            if np.any(~np.isfinite(max_depth[active])):
+                raise SfincsResultError(
+                    "active SFINCS maximum depth could not be reconstructed"
+                )
             if np.any(depth[:, active] < -1e-6) or np.any(max_depth[active] < -1e-6):
                 raise SfincsResultError("SFINCS result contains materially negative water depth")
 
@@ -85,4 +106,5 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
         terrain_elevation_m=terrain,
         active_mask=active,
         time_values=time_values,
+        hmax_reconstructed_cells=reconstructed_cells,
     )
