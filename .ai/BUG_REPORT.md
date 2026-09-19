@@ -9,7 +9,9 @@ The latest live Windows run exposed and isolated two substantive repository defe
 1. **PLATEAU review budget not enforced through CityGML parsing/cache work.** The run spent 89.349 s in `ACQUIRING_VECTORS` despite a 20-second policy. Deadline checks now cover cache reads, catalog processing, CityGML parsing/geometry loops, and output writing; OSM's 30-second budget likewise covers response/cache parsing and geometry processing.
 2. **Completed real SFINCS output rejected at `READING_RESULTS`.** SFINCS returned 0 and produced a readable 500×500 `sfincs_map.nc`, but most active `hmax` values were NaN while active `h` remained finite. The reader now reconstructs only missing active `hmax` cells from finite `h` time output and records the reconstruction count in metadata. Infinite `hmax` and other invalid active fields remain hard failures.
 
-Exact-head CI passes with 104 tests.
+A follow-up read of the same real artifact exposed one finite active depth sample at -0.0016127867 m. Codex made a temporary 1 cm clip under the tiny-fix allowance. Web reviewed that change against SFINCS 2.4.0 documentation and retained the 0.01 m magnitude specifically because it matches the engine's default `twet_threshold` for flooded/wet classification. The finalized reader preserves the raw NetCDF, clips only finite values in the dry band, rejects values below -0.01 m, and reports clipping diagnostics in normalized metadata.
+
+The newest exact-head CI result is authoritative once green.
 
 ## Current external / host-local validation remaining
 
