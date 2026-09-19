@@ -37,31 +37,29 @@ From the repository root, using any existing Python capable of running the stand
 python -m scripts.bootstrap_local_review
 ```
 
-The bootstrap helper auto-detects `micromamba`, `mamba`, or `conda`. If none is installed, install a conda-compatible environment manager first.
+The bootstrap helper auto-detects `micromamba`, `mamba`, or `conda`. If none is installed, it downloads the official portable micromamba archive into the user's local application-data directory and uses it without administrator rights or shell initialization.
 
-Then activate the environment, for example:
+The helper verifies the created environment automatically. Shell activation is optional. It prints the exact manager path and a `manager run -n ...` command that works without activation.
 
-```bash
-conda activate urban-pluvial-flood-phase0
-```
-
-If shell activation is unavailable, use `conda run` instead:
+To bootstrap and immediately launch the review build in one operation:
 
 ```bash
-conda run -n urban-pluvial-flood-phase0 python -m scripts.run_local_review --check-env
+python -m scripts.bootstrap_local_review --run-review -- --no-browser --port 8765
 ```
 
-Validate the active interpreter before review:
+To pass an existing SFINCS executable at the same time:
 
-```bash
-python -m scripts.run_local_review --check-env
+```powershell
+python -m scripts.bootstrap_local_review --run-review -- --no-browser --port 8765 --sfincs-bin "C:\path\to\sfincs.exe"
 ```
+
+If you deliberately do not want the helper to download portable micromamba, add `--no-bootstrap-manager`.
 
 The launcher refuses to proceed when Python or any canonical package version differs from `environment.yml`. This prevents accidental review under a partially installed Python 3.14/3.13/3.12 environment.
 
 ## Frontend requirement
 
-A normal frontend rebuild requires Node.js **22** and `npm`. The launcher checks the Node major version before building.
+A normal frontend rebuild requires Node.js **>=22.12** and `npm`. Node.js 24 is supported. The launcher checks the full Node version before building.
 
 ## Run it
 
@@ -74,7 +72,7 @@ python -m scripts.run_local_review
 The launcher:
 
 1. validates the canonical Python environment;
-2. verifies Node.js 22 when a frontend build is required;
+2. verifies Node.js >=22.12 when a frontend build is required;
 3. runs `npm ci` when `node_modules` is absent;
 4. runs `npm run build`;
 5. verifies both `floodsim/static/index.html` and `floodsim/static/smoke.html` exist;
