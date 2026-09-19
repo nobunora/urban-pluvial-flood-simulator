@@ -121,9 +121,13 @@ Web has now repaired both:
 - PLATEAU and OSM budgets cover cache/response parsing and geometry processing, with repeated monotonic deadline checks;
 - PLATEAU CityGML parsing accepts the same deadline and aborts with typed `ProviderTimeoutError` so the existing OSM fallback can run;
 - active cells with missing `hmax` are reconstructed from finite `h` time output, while infinite `hmax`, non-finite active `h`, non-finite terrain, and materially negative depths remain rejected;
-- the number of reconstructed `hmax` cells is recorded in normalized result metadata.
+- the number of reconstructed `hmax` cells is recorded in normalized result metadata;
+- the previous real artifact then exposed exactly one active `h` sample at -0.0016127867 m;
+- Codex's temporary 1 cm clip was reviewed by Web against SFINCS 2.4.0 documentation: `twet_threshold` defaults to 0.01 m for flooded/wet classification;
+- Web retained the 0.01 m magnitude as an explicit dry-output normalization band, not as an arbitrary physics tolerance, and added metadata for clipped-value count and minimum raw active depth;
+- raw `sfincs_map.nc` remains unchanged and values below -0.01 m are still rejected.
 
-Exact deterministic CI at `8803df9d86631378018ef36d939ef8bb51605032` passed Ruff, mypy, **104 pytest tests**, Node.js 24 frontend build, FastAPI startup, HTTP smoke and the 250,000-cell estimate.
+The newest exact deterministic CI result on the current head is authoritative once green.
 
 The next Codex cycle is now narrowly host-local: rerun the same real Windows case, verify vector-stage budget/fallback behavior, then confirm the already-proven SFINCS engine result now passes repository reading/normalization to `COMPLETE`.
 
