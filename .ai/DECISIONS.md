@@ -9,11 +9,12 @@
 
 ## Implementation / validation role split
 
-- **Web ChatGPT owns every repository modification**: source, tests, docs, configuration, workflows, generated assets, dependencies, API/UI contracts, formatting and commits/pushes.
-- **Local Codex/Luna is execution-only** for evidence that depends on the user's local Windows host, existing SFINCS executable, real processes, local filesystem, or external-provider access.
-- Codex must not edit, commit, push, format, or repair repository files, even for tiny issues.
-- On a repository defect, Codex stops the affected gate at diagnosis/minimal repro and returns it to Web ChatGPT.
-- This supersedes all earlier text permitting tiny Codex corrections.
+- **Web ChatGPT is the primary implementation owner** for source, tests, docs, configuration, workflows, generated assets, dependencies and API/UI contracts.
+- **Local Codex/Luna is primarily host-local validation/execution** for the user's Windows host, existing SFINCS executable, real processes, local filesystem and external-provider access.
+- To reduce unnecessary round trips, Codex may commit/push a tiny isolated mechanical correction found during validation (normally one file, at most two) when behavior is unambiguous and the change is limited to formatting/import/typo/quoting/path/test-fixture/launcher-glue.
+- Codex must not use that allowance for algorithms, hydraulic semantics, public APIs, dependencies, generated contracts/assets, specifications, architecture, multi-file behavioral changes or Adaptive behavior.
+- Before any tiny-fix push, Codex must verify the remote persistent branch still equals the task SHA; after the fix it must report exact diff/reason/new SHA and rerun the affected check.
+- Substantive defects return to Web ChatGPT.
 
 ## Review-first delivery decision
 
@@ -32,7 +33,7 @@
 - `scripts/bootstrap_local_review.py` is the supported helper to create/update the canonical conda-compatible environment.
 - `scripts/run_local_review.py --check-env` is the required preflight.
 - The launcher must fail clearly before application imports/startup when the canonical environment is not active.
-- Node.js 22 is required for a normal frontend rebuild.
+- Node.js >=22.12 is required for a normal frontend rebuild; Node.js 24 is supported.
 
 ## Deterministic validation ownership
 
