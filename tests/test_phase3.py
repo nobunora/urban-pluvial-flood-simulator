@@ -20,7 +20,11 @@ from floodsim.domain.rainfall import ConstantRainfall
 from floodsim.domain.run_config import AccuracyMode, RunConfig
 from floodsim.domain.run_state import RunState
 from floodsim.orchestration.rainfall_resolution import resolve_rainfall
-from floodsim.orchestration.run_coordinator import RunCoordinator
+from floodsim.orchestration.run_coordinator import (
+    DEFAULT_OSM_REVIEW_BUDGET_S,
+    DEFAULT_PLATEAU_REVIEW_BUDGET_S,
+    RunCoordinator,
+)
 from floodsim.preprocessing.full_grid import (
     GENERAL_MANNING,
     ROAD_MANNING,
@@ -341,3 +345,28 @@ def test_run_mutation_requires_json_content_type(
     response = client.post("/api/v1/runs", content="{}", headers={"Content-Type": "text/plain"})
     assert response.status_code == 415
     assert response.json()["error"]["code"] == "INPUT_UNSUPPORTED_CONTENT_TYPE"
+
+
+
+def test_coordinator_passes_bounded_vector_provider_budgets(tmp_path: Path) -> None:
+    observed: dict[str, object] = {}
+
+    def vector_acquirer(area: AnalysisArea, **kwargs: object):
+        observed.update(kwargs)
+        return _vectors(area, with_building=False)
+
+    coordinator = RunCoordinator(
+        runs_root=tmp_path / "runs",
+        elevation_provider=_FakeElevationProvider(),
+        vector_acquirer=vector_acquirer,
+        model_builder=_FakeModelBuilder(),
+        engine_resolver=lambda: ResolvedEngine(Path(__file__), "test", "TESTSHA"),
+        runner_factory=_FakeRunner,
+    )
+    record = coordinator.create_run(_config())
+    assert record.future is not None
+    record.future.result(timeout=10)
+
+    assert observed["plateau_budget_s"] == DEFAULT_PLATEAU_REVIEW_BUDGET_S
+    assert observed["osm_budget_s"] == DEFAULT_OSM_REVIEW_BUDGET_S
+    assert observed["cancel_event"] is record.cancel_event
