@@ -105,6 +105,18 @@ python -m scripts.run_local_review --skip-build
 
 The build-free fallback diagnostic remains available at `/smoke.html`; `web/public/smoke.html` ensures a normal Vite build preserves that route.
 
+## Live vector acquisition behavior
+
+The review path is deliberately bounded so a slow provider cannot hold the UI indefinitely before SFINCS:
+
+- PLATEAU remains the preferred vector provider;
+- PLATEAU receives a 20-second total acquisition budget for a review run;
+- if that budget expires or PLATEAU returns a normal provider error, acquisition falls back to OpenStreetMap;
+- OSM fallback receives a 30-second budget;
+- cancellation prevents starting the fallback and terminates the user-visible run immediately.
+
+These limits are review-path reliability controls; provider provenance and fallback warnings are still recorded so the user can see which vector source was actually used.
+
 ## Working-tree safety
 
 Before user review, run:
