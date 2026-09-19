@@ -52,6 +52,10 @@ class ProviderRequestError(ProviderError):
     retryable = True
 
 
+class ProviderTimeoutError(ProviderRequestError):
+    code = "PROVIDER_TIMEOUT"
+
+
 class ProviderParseError(ProviderError):
     code = "PROVIDER_PARSE_FAILED"
 
@@ -120,6 +124,7 @@ def request_with_retry(
     policy: NetworkPolicy = DEFAULT_NETWORK_POLICY,
     sleeper: Callable[[float], None] = time.sleep,
     accepted_statuses: frozenset[int] = frozenset(),
+    deadline_monotonic: float | None = None,
     **kwargs: Any,
 ) -> requests.Response:
     """Request with the single Phase 2A retry policy.
@@ -127,23 +132,50 @@ def request_with_retry(
     A test can pass a no-op sleeper; production defaults retain the prescribed
     one- and two-second backoff between attempts.
     """
-    kwargs.setdefault("timeout", policy.timeout)
+    def remaining_seconds() -> float | None:
+        if deadline_monotonic is None:
+            return None
+        remaining = deadline_monotonic - time.monotonic()
+        if remaining <= 0:
+            raise ProviderTimeoutError(f"{method} {url} exceeded provider time budget")
+        return remaining
+
+    def request_timeout() -> tuple[float, float]:
+        remaining = remaining_seconds()
+        if remaining is None:
+            return policy.timeout
+        bounded = max(0.1, remaining)
+        return min(policy.connect_timeout_s, bounded), min(policy.read_timeout_s, bounded)
+
+    def retry_sleep(attempt: int) -> None:
+        if attempt >= len(policy.backoff_seconds):
+            return
+        delay = policy.backoff_seconds[attempt]
+        remaining = remaining_seconds()
+        if remaining is not None and delay >= remaining:
+            raise ProviderTimeoutError(f"{method} {url} exceeded provider time budget")
+        sleeper(delay)
+
     last_error: BaseException | None = None
     for attempt in range(policy.max_attempts):
+        call_kwargs = dict(kwargs)
+        call_kwargs["timeout"] = request_timeout()
         try:
-            response = session.request(method, url, **kwargs)
+            response = session.request(method, url, **call_kwargs)
         except requests.RequestException as exc:
             last_error = exc
             if attempt + 1 >= policy.max_attempts:
+                if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+                    raise ProviderTimeoutError(
+                        f"{method} {url} exceeded provider time budget"
+                    ) from exc
                 raise ProviderRequestError(f"{method} {url} failed after retries") from exc
-            if attempt < len(policy.backoff_seconds):
-                sleeper(policy.backoff_seconds[attempt])
+            retry_sleep(attempt)
             continue
         if response.status_code in accepted_statuses:
             return response
         if response.status_code in policy.retryable_status_codes and attempt + 1 < policy.max_attempts:
-            if attempt < len(policy.backoff_seconds):
-                sleeper(policy.backoff_seconds[attempt])
+            retry_sleep(attempt)
             continue
         if response.status_code < 200 or response.status_code >= 300:
             raise ProviderRequestError(f"{method} {url} returned HTTP {response.status_code}")
