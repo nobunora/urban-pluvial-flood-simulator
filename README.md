@@ -2,6 +2,23 @@
 
 A compact **Rain-on-Grid urban pluvial flood simulator** with automatic Japanese terrain and urban-data preparation.
 
+## Current local review build
+
+The current development priority is a **user-reviewable Full 1 m vertical slice** before completing Adaptive.
+
+Use the canonical environment in `environment.yml`:
+
+```bash
+python -m scripts.bootstrap_local_review
+conda activate urban-pluvial-flood-phase0
+python -m scripts.run_local_review --check-env
+python -m scripts.run_local_review
+```
+
+Node.js 22 is required when rebuilding the frontend. For a permitted existing SFINCS 2.4.0 Galibier executable, pass `--sfincs-bin <path>`.
+
+Detailed setup and review acceptance criteria: `docs/local-review.md`.
+
 ## Product direction
 
 The repository currently contains the original native Local-Inertial reference solver and its preprocessing workflow.
