@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -83,10 +84,19 @@ class OsmProvider:
         out_dir: str | Path | None = None,
         margin_m: float = 30.0,
         acquired_at_utc: str | None = None,
+        time_budget_s: float | None = None,
     ) -> OsmVectors:
+        if time_budget_s is not None and time_budget_s <= 0:
+            raise ValueError("time_budget_s must be positive")
+        deadline = None if time_budget_s is None else time.monotonic() + time_budget_s
         lon1, lat1, lon2, lat2 = local_bbox(area, margin_m)
         bbox = f"{lat1:.8f},{lon1:.8f},{lat2:.8f},{lon2:.8f}"
-        query = f'''[out:json][timeout:{OVERPASS_QUERY_TIMEOUT_S}];
+        query_timeout_s = (
+            OVERPASS_QUERY_TIMEOUT_S
+            if time_budget_s is None
+            else max(1, min(OVERPASS_QUERY_TIMEOUT_S, int(time_budget_s)))
+        )
+        query = f'''[out:json][timeout:{query_timeout_s}];
 (
   way["building"]({bbox});
   way["highway"]({bbox});
@@ -100,12 +110,24 @@ out geom;'''
                 raise ProviderParseError("cached OSM response is invalid") from exc
         else:
             if self.sleeper is None:
-                response = request_with_retry(self.session, "POST", OVERPASS,
-                                              policy=self.policy, data={"data": query})
+                response = request_with_retry(
+                    self.session,
+                    "POST",
+                    OVERPASS,
+                    policy=self.policy,
+                    data={"data": query},
+                    deadline_monotonic=deadline,
+                )
             else:
-                response = request_with_retry(self.session, "POST", OVERPASS,
-                                              policy=self.policy, sleeper=self.sleeper,
-                                              data={"data": query})
+                response = request_with_retry(
+                    self.session,
+                    "POST",
+                    OVERPASS,
+                    policy=self.policy,
+                    sleeper=self.sleeper,
+                    data={"data": query},
+                    deadline_monotonic=deadline,
+                )
             payload = read_json(response, "OSM Overpass")
             cache_file.parent.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True), encoding="utf-8")
