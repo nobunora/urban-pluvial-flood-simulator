@@ -101,9 +101,13 @@ def _node_version() -> tuple[int, int, int]:
         raise SystemExit(f"Could not parse Node.js version: {result.stdout.strip()}") from exc
 
 
+def _node_version_supported(version: tuple[int, int, int]) -> bool:
+    return version >= (22, 12, 0)
+
+
 def _build_frontend() -> None:
     version = _node_version()
-    if version < (22, 12, 0):
+    if not _node_version_supported(version):
         found = ".".join(map(str, version))
         raise SystemExit(
             f"Node.js >=22.12 is required for the review build; found {found}."
