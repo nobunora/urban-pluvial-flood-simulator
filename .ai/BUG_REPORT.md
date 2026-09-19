@@ -17,12 +17,17 @@ Web-side mitigation is now committed:
 
 ## Current external / host-local blockers
 
-These cannot be fully resolved by repository edits:
+The latest host report found no installed conda-compatible manager and Node.js 24 while the launcher previously required Node 22. Web has now removed both avoidable blockers:
 
-1. The user's Windows validation host must have a conda-compatible environment manager available so the canonical environment can be restored.
-2. Real provider calls depend on current external network/provider availability.
-3. Real SFINCS validation depends on the already-present permitted local executable remaining accessible.
-4. SFINCS redistribution/bootstrap licensing remains unresolved for later packaging; do not download or redistribute it as part of review validation.
+- when no manager is installed, `scripts.bootstrap_local_review` downloads official portable micromamba into user-local application data and creates the canonical environment without administrator rights or shell initialization;
+- the frontend launcher accepts Node.js >=22.12, so the reported Node.js 24.15.0 host is supported.
+
+Remaining genuinely external/host-local conditions are:
+
+1. network access to the official micromamba/conda-forge/Git dependency sources during first environment creation;
+2. current external provider availability for live GSI/PLATEAU/OSM paths;
+3. the already-present permitted local SFINCS executable remaining accessible;
+4. SFINCS redistribution/bootstrap licensing for later packaging; do not download or redistribute SFINCS as part of review validation.
 
 ## Local working-tree warning
 
