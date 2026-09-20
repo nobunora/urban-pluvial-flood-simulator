@@ -36,6 +36,14 @@
 - Initial result-view implementation includes max depth, time-depth, grid-resolution, actual-index timeline, provenance and backend limitations.
 - Rainbow depth mode remains deferred until the backend provides an explicit canonical palette/legend contract; do not invent a competing frontend scalar mapping.
 
+## Generated frontend artifact workflow decision
+
+- Committed generated OpenAPI types and `package-lock.json` remain part of the repository contract.
+- Do not use a pull-request workflow that commits/pushes regenerated artifacts with the default GitHub Actions token.
+- A bot-authored push can suppress or require action for downstream pull-request workflows and creates a recursive validation ownership loop.
+- Web ChatGPT owns intentional generated-artifact updates; deterministic CI owns drift detection through `npm run api:check`.
+- CI must validate the exact PR head without mutating it.
+
 ## Canonical environment decision
 
 - `environment.yml` is the sole canonical Python environment for local review and validation.
