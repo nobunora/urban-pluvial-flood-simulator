@@ -5,8 +5,11 @@ from __future__ import annotations
 import hashlib
 import os
 import platform
+import re
 import subprocess
 import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,6 +17,10 @@ from platformdirs import user_data_path
 
 SFINCS_VERSION = "2.4.0"
 SFINCS_DISPLAY_VERSION = "2.4.0 Galibier"
+_PROGRESS_RE = re.compile(
+    r"(?P<percent>\d+(?:\.\d+)?)%\s+complete,\s+"
+    r"(?P<remaining>[-+]?\d+(?:\.\d+)?|Inf|inf|-)\s+s\s+remaining"
+)
 
 
 class SfincsEngineUnavailable(RuntimeError):
@@ -40,12 +47,35 @@ class ResolvedEngine:
 
 
 @dataclass(frozen=True)
+class SfincsProgress:
+    fraction: float
+    engine_reported_remaining_seconds: float | None
+
+
+@dataclass(frozen=True)
 class SfincsRunResult:
     return_code: int
     result_path: Path
     stdout_log: Path
     stderr_log: Path
     engine: ResolvedEngine
+    elapsed_seconds: float = 0.0
+
+
+def parse_sfincs_progress_line(line: str) -> SfincsProgress | None:
+    """Parse one official SFINCS stdout progress line."""
+    match = _PROGRESS_RE.search(line)
+    if match is None:
+        return None
+    fraction = min(1.0, max(0.0, float(match.group("percent")) / 100.0))
+    raw_remaining = match.group("remaining")
+    try:
+        remaining = float(raw_remaining)
+    except ValueError:
+        remaining = None
+    if remaining is not None and (remaining < 0 or remaining == float("inf")):
+        remaining = None
+    return SfincsProgress(fraction, remaining)
 
 
 def sha256_file(path: str | Path) -> str:
@@ -84,11 +114,11 @@ def resolve_sfincs_executable() -> ResolvedEngine:
 
 
 class SfincsRunner:
-    """Run SFINCS with captured logs and cooperative cancellation."""
+    """Run SFINCS with captured logs, progress parsing, and cancellation."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._process: subprocess.Popen[bytes] | None = None
+        self._process: subprocess.Popen[str] | None = None
 
     @property
     def process_id(self) -> int | None:
@@ -114,6 +144,7 @@ class SfincsRunner:
         logs_dir: str | Path,
         engine: ResolvedEngine | None = None,
         cancel_event: threading.Event | None = None,
+        progress_callback: Callable[[SfincsProgress], None] | None = None,
     ) -> SfincsRunResult:
         root = Path(model_dir)
         logs = Path(logs_dir)
@@ -121,37 +152,60 @@ class SfincsRunner:
         stdout_path = logs / "sfincs.stdout.log"
         stderr_path = logs / "sfincs.stderr.log"
         resolved = engine or resolve_sfincs_executable()
+        started = time.monotonic()
 
-        with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
-            process = subprocess.Popen(
-                [str(resolved.executable)],
-                cwd=root,
-                stdout=stdout,
-                stderr=stderr,
-                shell=False,
-            )
-            with self._lock:
-                self._process = process
-            try:
-                while process.poll() is None:
-                    if cancel_event is not None and cancel_event.wait(0.1):
-                        self.cancel()
-                        raise SfincsRunCancelled("SFINCS execution was cancelled")
+        process = subprocess.Popen(
+            [str(resolved.executable)],
+            cwd=root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        with self._lock:
+            self._process = process
+
+        def pump_stdout() -> None:
+            assert process.stdout is not None
+            with stdout_path.open("w", encoding="utf-8", newline="") as handle:
+                for line in process.stdout:
+                    handle.write(line)
+                    handle.flush()
+                    parsed = parse_sfincs_progress_line(line)
+                    if parsed is not None and progress_callback is not None:
+                        progress_callback(parsed)
+
+        def pump_stderr() -> None:
+            assert process.stderr is not None
+            with stderr_path.open("w", encoding="utf-8", newline="") as handle:
+                for line in process.stderr:
+                    handle.write(line)
+                    handle.flush()
+
+        stdout_thread = threading.Thread(target=pump_stdout, name="sfincs-stdout", daemon=True)
+        stderr_thread = threading.Thread(target=pump_stderr, name="sfincs-stderr", daemon=True)
+        stdout_thread.start()
+        stderr_thread.start()
+
+        try:
+            while process.poll() is None:
+                if cancel_event is not None and cancel_event.wait(0.1):
+                    self.cancel()
+                    raise SfincsRunCancelled("SFINCS execution was cancelled")
+                try:
                     process.wait(timeout=0.1)
-            except subprocess.TimeoutExpired:
-                # Normal polling path; continue until exit or cancellation.
-                while process.poll() is None:
-                    if cancel_event is not None and cancel_event.wait(0.1):
-                        self.cancel()
-                        raise SfincsRunCancelled("SFINCS execution was cancelled")
-                    try:
-                        process.wait(timeout=0.1)
-                    except subprocess.TimeoutExpired:
-                        continue
-            finally:
-                with self._lock:
-                    self._process = None
+                except subprocess.TimeoutExpired:
+                    continue
+        finally:
+            stdout_thread.join(timeout=5)
+            stderr_thread.join(timeout=5)
+            with self._lock:
+                self._process = None
 
+        elapsed = max(0.0, time.monotonic() - started)
         return_code = process.returncode
         if return_code is None:
             raise SfincsRunError("SFINCS process did not terminate")
@@ -166,4 +220,5 @@ class SfincsRunner:
             stdout_log=stdout_path,
             stderr_log=stderr_path,
             engine=resolved,
+            elapsed_seconds=elapsed,
         )
