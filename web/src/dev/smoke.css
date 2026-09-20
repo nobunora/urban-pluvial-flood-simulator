@@ -418,6 +418,13 @@
   font-size: 0.88rem;
 }
 
+.run-progress-engine-bar {
+  width: 100%;
+  height: 0.55rem;
+  margin-bottom: 0.65rem;
+  accent-color: #2563eb;
+}
+
 .run-progress-indeterminate {
   height: 0.45rem;
   margin-bottom: 0.65rem;
