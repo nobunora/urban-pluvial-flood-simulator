@@ -121,6 +121,7 @@ class RunRecord:
     runner: SfincsRunner | None = None
     progress_fraction: float | None = None
     estimated_remaining_seconds: float | None = None
+    activity_lines: list[str] = field(default_factory=list)
     lock: threading.RLock = field(default_factory=threading.RLock)
 
 
@@ -191,11 +192,23 @@ class RunCoordinator:
         )
         record.events.append(event)
 
+    def _append_activity(self, record: RunRecord, message: str, *, raw: bool = False) -> None:
+        line = message.strip()
+        if not line:
+            return
+        if not raw:
+            line = f"[APP] {line}"
+        with record.lock:
+            record.activity_lines.append(line)
+            if len(record.activity_lines) > 80:
+                del record.activity_lines[:-80]
+
     def _set_state(self, record: RunRecord, state: RunState, message: str) -> None:
         with record.lock:
             record.machine.transition(state)
             record.manifest = record.manifest.model_copy(update={"run_status": state})
             self._append_event(record, state, message)
+            self._append_activity(record, message)
             self._persist_manifest(record)
 
     def _mark_cancelled(self, record: RunRecord, message: str) -> None:
@@ -243,6 +256,7 @@ class RunCoordinator:
             self._active_run_id = run_id
             self.store.write_run_config(run_id, config.model_dump(mode="json"))
             self._append_event(record, RunState.CREATED, "計算を受け付けました。")
+            self._append_activity(record, "計算を受け付けました。")
             self._persist_manifest(record)
             record.future = self._executor.submit(self._execute, record)
             return record
@@ -379,6 +393,7 @@ class RunCoordinator:
                     "hit": True,
                     "key": cache_entry.key,
                 }
+                self._append_activity(record, f"prepared grid cache hit: {cache_entry.key}")
             else:
                 elevation = self.elevation_provider.acquire(
                     record.config.analysis_area,
@@ -386,6 +401,10 @@ class RunCoordinator:
                     cache_dir=run_root.parent.parent / "cache",
                 )
                 runtime_diagnostic["elevation"] = self._array_summary(elevation.z)
+                self._append_activity(
+                    record,
+                    f"標高取得完了: {elevation.z.shape[1]} × {elevation.z.shape[0]} samples",
+                )
             self._check_cancel(record)
 
             self._set_state(
@@ -407,6 +426,14 @@ class RunCoordinator:
                     record,
                     elevation,
                     vectors,
+                )
+                vector_provenance = vectors.provenance
+                self._append_activity(
+                    record,
+                    "建物・道路取得完了: "
+                    f"provider={vector_provenance.provider_id}, "
+                    f"buildings={len(vectors.buildings)}, "
+                    f"roads={len(vectors.road_lines) + len(vectors.road_polygons)}",
                 )
             self._check_cancel(record)
 
@@ -459,6 +486,12 @@ class RunCoordinator:
                     "hit": False,
                     "key": saved_entry.key,
                 }
+                self._append_activity(
+                    record,
+                    f"Full 1 m格子構築完了: {grid.width_cells} × {grid.height_cells} cells / "
+                    f"buildings={int(np.count_nonzero(grid.building_mask))} cells",
+                )
+                self._append_activity(record, f"prepared grid cache saved: {saved_entry.key}")
 
             elevation_summary = dict(cache_metadata.get("elevation_source_summary", {}))
             elevation_summary.update(
@@ -490,6 +523,7 @@ class RunCoordinator:
 
             self._set_state(record, RunState.BUILDING_MODEL, "HydroMT-SFINCSでregular 1 mモデルを構築しています。")
             build = self.model_builder.build(run_root / "model", grid, rainfall)
+            self._append_activity(record, "SFINCSモデル構築完了。")
             self._check_cancel(record)
 
             self._set_state(record, RunState.ENSURING_ENGINE, "SFINCS 2.4.0 Galibierを確認しています。")
@@ -510,6 +544,9 @@ class RunCoordinator:
             record.runner = runner
             engine_started = time.monotonic()
 
+            def append_engine_line(line: str) -> None:
+                self._append_activity(record, line, raw=True)
+
             def update_engine_progress(progress: SfincsProgress) -> None:
                 elapsed = max(0.0, time.monotonic() - engine_started)
                 remaining = None
@@ -526,11 +563,13 @@ class RunCoordinator:
                 engine=engine,
                 cancel_event=record.cancel_event,
                 progress_callback=update_engine_progress,
+                line_callback=append_engine_line,
             )
             with record.lock:
                 record.progress_fraction = 1.0
                 record.estimated_remaining_seconds = 0.0
             runtime_diagnostic["sfincs_elapsed_seconds"] = execution.elapsed_seconds
+            self._append_activity(record, f"SFINCS完了: {execution.elapsed_seconds:.2f} s")
             record.runner = None
             self._check_cancel(record)
 
@@ -564,6 +603,7 @@ class RunCoordinator:
                 },
             )
             record.result_metadata = normalized.metadata
+            self._append_activity(record, "結果読込・正規化完了。")
             record.manifest = record.manifest.model_copy(
                 update={
                     "output_files": {
