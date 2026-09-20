@@ -211,23 +211,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/runs/{run_id}/layers/flow-vectors.png": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Flow Vectors Layer */
-        get: operations["flow_vectors_layer_api_v1_runs__run_id__layers_flow_vectors_png_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/runs/{run_id}/layers/grid-resolution.png": {
         parameters: {
             query?: never;
@@ -1073,40 +1056,6 @@ export interface operations {
         };
     };
     time_depth_layer_api_v1_runs__run_id__layers_depth_png_get: {
-        parameters: {
-            query: {
-                time_index: number;
-                max_px?: number;
-            };
-            header?: never;
-            path: {
-                run_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    flow_vectors_layer_api_v1_runs__run_id__layers_flow_vectors_png_get: {
         parameters: {
             query: {
                 time_index: number;
