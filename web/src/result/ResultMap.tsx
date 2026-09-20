@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import maplibregl from "maplibre-gl";
+import maplibregl, { type MapMouseEvent, type Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import type { ResultMetadataResponse } from "../api/client";
@@ -57,8 +57,8 @@ export default function ResultMap({ runId, metadata, onInspect }: Props) {
     });
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-    let marker: maplibregl.Marker | null = null;
-    const handleClick = (event: maplibregl.MapMouseEvent) => {
+    let marker: Marker | null = null;
+    const handleClick = (event: MapMouseEvent) => {
       marker?.remove();
       marker = new maplibregl.Marker({ color: "#1f2937" })
         .setLngLat(event.lngLat)
