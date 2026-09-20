@@ -157,12 +157,15 @@ def acquire_vectors(
             time_budget_s=osm_budget_s,
         )
     except ProviderError as osm_error:
+        supplement_warning = (
+            "OSM small-building supplement unavailable "
+            f"({type(osm_error).__name__}: {osm_error}); using PLATEAU only."
+        )
         plateau_result.provenance = replace(
             plateau_result.provenance,
             warnings=[
                 *plateau_result.provenance.warnings,
-                "OSM small-building supplement unavailable "
-                f"({type(osm_error).__name__}: {osm_error}); using PLATEAU only.",
+                supplement_warning,
             ],
             source_details={
                 **plateau_result.provenance.source_details,
