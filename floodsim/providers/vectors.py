@@ -9,7 +9,11 @@ from pathlib import Path
 from threading import Event, Lock
 
 from floodsim.domain.geometry import AnalysisArea
-from floodsim.providers.common import ProviderError, ProviderTimeoutError, ProviderUnavailableError
+from floodsim.providers.common import (
+    ProviderError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
 from floodsim.providers.osm import OsmProvider, OsmVectors
 from floodsim.providers.plateau import PlateauProvider, PlateauVectors
 
