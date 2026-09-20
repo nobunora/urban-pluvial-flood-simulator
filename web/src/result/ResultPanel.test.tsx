@@ -1,12 +1,28 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ResultMetadataResponse } from "../api/client";
+import { inspectResult, type ResultMetadataResponse } from "../api/client";
 import ResultPanel from "./ResultPanel";
 
+vi.mock("../api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/client")>();
+  return { ...actual, inspectResult: vi.fn() };
+});
+
 vi.mock("./ResultMap", () => ({
-  default: ({ mapLabel, imageUrl }: { mapLabel: string; imageUrl: string }) => (
-    <div data-testid="result-map" data-image-url={imageUrl}>{mapLabel}</div>
+  default: ({
+    mapLabel,
+    imageUrl,
+    onInspect,
+  }: {
+    mapLabel: string;
+    imageUrl: string;
+    onInspect: (lon: number, lat: number) => void;
+  }) => (
+    <div data-testid="result-map" data-image-url={imageUrl}>
+      {mapLabel}
+      <button type="button" onClick={() => onInspect(139.75, 35.65)}>地点を確認</button>
+    </div>
   ),
 }));
 
@@ -73,6 +89,39 @@ const metadata: ResultMetadataResponse = {
 };
 
 describe("ResultPanel", () => {
+  it("shows native point values including maximum time", async () => {
+    vi.mocked(inspectResult).mockResolvedValue({
+      lon_deg: 139.75,
+      lat_deg: 35.65,
+      has_data: true,
+      row: 10,
+      column: 20,
+      time_index: null,
+      time_value: null,
+      depth_m: null,
+      max_depth_m: 0.42,
+      max_time_index: 3,
+      max_time_value: "2026-01-01T00:30:00",
+      terrain_elevation_m: 12.3,
+      grid_resolution_m: 1,
+    });
+
+    render(
+      <ResultPanel
+        runId="run-1"
+        metadata={metadata}
+        rainfallSummary="10 mm/h × 1分"
+        onNewAnalysis={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "地点を確認" }));
+
+    expect(await screen.findByText("0.420 m")).toBeVisible();
+    expect(screen.getByText("最大時刻")).toBeVisible();
+    expect(screen.getByText("00:30")).toBeVisible();
+  });
+
   it("shows maximum depth first and exposes backend provenance/limitations", () => {
     render(
       <ResultPanel
