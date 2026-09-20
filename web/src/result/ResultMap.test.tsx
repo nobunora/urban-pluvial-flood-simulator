@@ -5,16 +5,13 @@ import type { ResultMetadataResponse } from "../api/client";
 import ResultMap from "./ResultMap";
 
 const mocks = vi.hoisted(() => ({
-  constructorOptions: [] as unknown[],
-  resultUpdateImage: vi.fn(),
-  flowUpdateImage: vi.fn(),
-  setPaintProperty: vi.fn(),
-  triggerRepaint: vi.fn(),
+  constructorOptions: [] as Array<Record<string, unknown>>,
+  jumpTo: vi.fn(),
 }));
 
 vi.mock("maplibre-gl", () => {
   class Map {
-    constructor(options: unknown) {
+    constructor(options: Record<string, unknown>) {
       mocks.constructorOptions.push(options);
     }
     addControl() {}
@@ -22,15 +19,11 @@ vi.mock("maplibre-gl", () => {
     off() {}
     remove() {}
     once(_event: string, callback: () => void) { callback(); }
-    isStyleLoaded() { return true; }
-    getLayer() { return { id: "layer" }; }
-    getSource(id: string) {
-      if (id === "result-overlay") return { updateImage: mocks.resultUpdateImage };
-      if (id === "flow-overlay") return { updateImage: mocks.flowUpdateImage };
-      return undefined;
-    }
-    setPaintProperty(...args: unknown[]) { mocks.setPaintProperty(...args); }
-    triggerRepaint() { mocks.triggerRepaint(); }
+    jumpTo(value: unknown) { mocks.jumpTo(value); }
+    getCenter() { return { lng: 139.75, lat: 35.65 }; }
+    getZoom() { return 15; }
+    getBearing() { return 0; }
+    getPitch() { return 0; }
   }
 
   class Marker {
@@ -88,16 +81,22 @@ const metadata: ResultMetadataResponse = {
   limitations: {},
 };
 
+function overlayOptions(index: number) {
+  return mocks.constructorOptions[index] as {
+    style: {
+      sources: Record<string, { url?: string }>;
+      layers: Array<{ id: string; paint?: Record<string, unknown> }>;
+    };
+  };
+}
+
 describe("ResultMap", () => {
   beforeEach(() => {
     mocks.constructorOptions.length = 0;
-    mocks.resultUpdateImage.mockClear();
-    mocks.flowUpdateImage.mockClear();
-    mocks.setPaintProperty.mockClear();
-    mocks.triggerRepaint.mockClear();
+    mocks.jumpTo.mockClear();
   });
 
-  it("creates visible result layers in the initial style and fades only the basemap", () => {
+  it("uses an independent CSS-faded basemap and full-opacity result canvas", () => {
     const view = render(
       <ResultMap
         metadata={metadata}
@@ -109,47 +108,71 @@ describe("ResultMap", () => {
       />,
     );
 
-    const options = mocks.constructorOptions[0] as {
-      style: {
-        sources: Record<string, { url?: string }>;
-        layers: Array<{ id: string; paint?: Record<string, unknown> }>;
-      };
-    };
-    expect(options.style.sources["result-overlay"].url).toBe("/api/result/max.png");
+    expect(mocks.constructorOptions).toHaveLength(2);
+    const base = overlayOptions(0);
+    const overlay = overlayOptions(1);
+    expect(base.style.sources.gsi).toBeDefined();
+    expect(overlay.style.sources["result-overlay"].url).toBe("/api/result/max.png");
+    expect(
+      overlay.style.layers.find((layer) => layer.id === "result-overlay")?.paint?.["raster-opacity"],
+    ).toBe(1);
+    expect(overlay.style.layers.some((layer) => layer.id === "flow-overlay")).toBe(false);
+    expect(
+      overlay.style.layers.find((layer) => layer.id === "analysis-boundary-outline")?.paint?.["line-color"],
+    ).toBe("#DC2626");
 
-    const gsi = options.style.layers.find((layer) => layer.id === "gsi");
-    const result = options.style.layers.find((layer) => layer.id === "result-overlay");
-    const flow = options.style.layers.find((layer) => layer.id === "flow-overlay");
-    const boundary = options.style.layers.find((layer) => layer.id === "analysis-boundary-outline");
+    const baseElement = view.container.querySelector(".result-map-base") as HTMLElement;
+    expect(baseElement.style.opacity).toBe("0.55");
 
-    expect(gsi?.paint?.["raster-opacity"]).toBe(0.55);
-    expect(result?.paint?.["raster-opacity"]).toBe(1);
-    expect(flow?.paint?.["raster-opacity"]).toBe(0);
-    expect(boundary?.paint?.["line-color"]).toBe("#DC2626");
+    view.rerender(
+      <ResultMap
+        metadata={metadata}
+        imageUrl="/api/result/max.png"
+        flowImageUrl={null}
+        backgroundOpacity={0.1}
+        mapLabel="結果"
+        onInspect={vi.fn()}
+      />,
+    );
+
+    expect(mocks.constructorOptions).toHaveLength(2);
+    expect(baseElement.style.opacity).toBe("0.1");
+  });
+
+  it("rebuilds the overlay map with the selected depth/grid/vector image URLs", () => {
+    const view = render(
+      <ResultMap
+        metadata={metadata}
+        imageUrl="/api/result/max.png"
+        flowImageUrl={null}
+        backgroundOpacity={0.55}
+        mapLabel="結果"
+        onInspect={vi.fn()}
+      />,
+    );
 
     view.rerender(
       <ResultMap
         metadata={metadata}
         imageUrl="/api/result/depth.png?time_index=3"
         flowImageUrl="/api/result/flow.png?time_index=3"
-        backgroundOpacity={0.2}
+        backgroundOpacity={0.55}
         mapLabel="結果"
         onInspect={vi.fn()}
       />,
     );
 
-    expect(mocks.resultUpdateImage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ url: "/api/result/depth.png?time_index=3" }),
-    );
-    expect(mocks.flowUpdateImage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ url: "/api/result/flow.png?time_index=3" }),
-    );
-    expect(mocks.setPaintProperty).toHaveBeenCalledWith("gsi", "raster-opacity", 0.2);
-    expect(mocks.setPaintProperty).toHaveBeenCalledWith("flow-overlay", "raster-opacity", 1);
-    expect(mocks.setPaintProperty).not.toHaveBeenCalledWith(
-      "result-overlay",
-      "raster-opacity",
-      expect.anything(),
-    );
+    expect(mocks.constructorOptions).toHaveLength(4);
+    const replacementOverlay = overlayOptions(3);
+    expect(replacementOverlay.style.sources["result-overlay"].url)
+      .toBe("/api/result/depth.png?time_index=3");
+    expect(replacementOverlay.style.sources["flow-overlay"].url)
+      .toBe("/api/result/flow.png?time_index=3");
+    expect(
+      replacementOverlay.style.layers.find((layer) => layer.id === "result-overlay")?.paint?.["raster-opacity"],
+    ).toBe(1);
+    expect(
+      replacementOverlay.style.layers.find((layer) => layer.id === "flow-overlay")?.paint?.["raster-opacity"],
+    ).toBe(1);
   });
 });
