@@ -129,6 +129,7 @@ def get_run(run_id: UUID) -> RunStatusResponse:
             failure_message="計算に失敗しました。" if record.failure_code else None,
             progress_fraction=record.progress_fraction,
             estimated_remaining_seconds=record.estimated_remaining_seconds,
+            progress_detail=record.progress_detail,
             activity_lines=list(record.activity_lines),
         )
 
