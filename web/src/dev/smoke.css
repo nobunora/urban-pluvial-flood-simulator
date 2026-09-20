@@ -328,8 +328,8 @@
 
 .run-progress-stages {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
-  gap: 0.45rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.55rem;
   padding: 0;
   margin: 0;
   list-style: none;
@@ -338,29 +338,37 @@
 .run-progress-stage {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0.5rem;
-  border-radius: 8px;
+  gap: 0.55rem;
+  min-height: 3.4rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
   background: #f8fafc;
   color: #64748b;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
 }
 
-.run-progress-dot {
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 50%;
-  background: #cbd5e1;
-  flex: 0 0 auto;
+.run-progress-stage-icon {
+  min-width: 2.1rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.run-progress-stage-copy {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.run-progress-stage-copy small {
+  color: inherit;
+  font-size: 0.7rem;
+  line-height: 1.2;
 }
 
 .run-progress-stage.is-complete {
   background: #ecfdf5;
   color: #166534;
-}
-
-.run-progress-stage.is-complete .run-progress-dot {
-  background: #16a34a;
 }
 
 .run-progress-stage.is-current {
@@ -369,40 +377,37 @@
   font-weight: 700;
 }
 
-.run-progress-stage.is-current .run-progress-dot {
-  background: #2563eb;
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+
+.run-progress-console {
+  border: 1px solid #334155;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0f172a;
+  color: #e2e8f0;
 }
 
-.run-progress-artifacts {
+.run-progress-console-heading {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid #334155;
+  background: #1e293b;
+  font-size: 0.78rem;
 }
 
-.run-progress-artifact {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.35rem 0.55rem;
-  border: 1px solid #d8dee6;
-  border-radius: 999px;
-  background: #f8fafc;
+.run-progress-console-heading span {
   color: #94a3b8;
-  font-size: 0.82rem;
 }
 
-.run-progress-artifact.is-complete {
-  border-color: #86efac;
-  background: #f0fdf4;
-  color: #166534;
-}
-
-.run-progress-artifact.is-current {
-  border-color: #93c5fd;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-weight: 700;
+.run-progress-console pre {
+  max-height: 14rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0.7rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 0.78rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .run-progress-engine {
@@ -480,5 +485,9 @@
   .run-progress-summary {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .run-progress-stages {
+    grid-template-columns: 1fr;
   }
 }
