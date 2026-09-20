@@ -138,12 +138,28 @@ export default function RunProgress({ status, stageObservedAtMs, lastPollAtMs }:
 
       {status.stage_code === "RUNNING_ENGINE" && (
         <div className="run-progress-engine" role="status">
-          <div className="run-progress-indeterminate" aria-hidden="true"><span /></div>
-          <strong>SFINCS計算中 — 経過 {formatElapsed(elapsedSeconds)}</strong>
+          {status.progress_fraction == null ? (
+            <div className="run-progress-indeterminate" aria-hidden="true"><span /></div>
+          ) : (
+            <progress
+              className="run-progress-engine-bar"
+              max={1}
+              value={status.progress_fraction}
+              aria-label="SFINCS計算進捗"
+            />
+          )}
+          <strong>
+            SFINCS計算中
+            {status.progress_fraction == null
+              ? ""
+              : ` — ${Math.round(status.progress_fraction * 100)}%`}
+            {" — "}経過 {formatElapsed(elapsedSeconds)}
+          </strong>
           <p>
             状態確認: {pollAgeSeconds == null ? "未確認" : pollAgeSeconds <= 1 ? "1秒以内" : `${pollAgeSeconds}秒前`}
-            {" / "}
-            完了率はエンジンから取得していません。
+            {status.estimated_remaining_seconds == null
+              ? " / 実進捗を取得すると残り時間を推定します。"
+              : ` / 残り目安 約${formatElapsed(status.estimated_remaining_seconds)}（実進捗から推定）`}
           </p>
         </div>
       )}
