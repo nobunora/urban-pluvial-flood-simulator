@@ -586,6 +586,11 @@ export interface components {
             /** Depth Legend */
             depth_legend?: components["schemas"]["ResultDepthLegendItem"][];
             engine_summary?: components["schemas"]["ResultEngineSummary"];
+            /**
+             * Flow Vectors Available
+             * @default false
+             */
+            flow_vectors_available?: boolean;
             /** Grid Level Summary */
             grid_level_summary: {
                 [key: string]: number;
@@ -594,11 +599,6 @@ export interface components {
             limitations: {
                 [key: string]: boolean;
             };
-            /**
-             * Flow Vectors Available
-             * @default false
-             */
-            flow_vectors_available?: boolean;
             /** Max Depth Summary */
             max_depth_summary: {
                 [key: string]: number;
@@ -685,12 +685,12 @@ export interface components {
         RunState: "CREATED" | "VALIDATING" | "ACQUIRING_TERRAIN" | "ACQUIRING_VECTORS" | "ACQUIRING_RAINFALL" | "PREPROCESSING_TERRAIN" | "ALLOCATING_ROOF_RAIN" | "BUILDING_GRID" | "BUILDING_MODEL" | "ENSURING_ENGINE" | "RUNNING_ENGINE" | "READING_RESULTS" | "COMPLETE" | "FAILED" | "CANCELLING" | "CANCELLED";
         /** RunStatusResponse */
         RunStatusResponse: {
+            /** Estimated Remaining Seconds */
+            estimated_remaining_seconds?: number | null;
             /** Failure Code */
             failure_code?: string | null;
             /** Failure Message */
             failure_message?: string | null;
-            /** Estimated Remaining Seconds */
-            estimated_remaining_seconds?: number | null;
             /** Progress Fraction */
             progress_fraction?: number | null;
             /**
