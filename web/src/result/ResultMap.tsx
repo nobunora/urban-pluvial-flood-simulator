@@ -71,7 +71,6 @@ export default function ResultMap({
       },
       bounds: resultBounds(metadata.bounds),
       fitBoundsOptions: { padding: 32, maxZoom: 18 },
-      attributionControl: true,
     });
     mapRef.current = map;
     map.addControl(new NavigationControl({ showCompass: false }), "top-right");
