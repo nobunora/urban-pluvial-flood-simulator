@@ -186,7 +186,7 @@ def render_time_depth_png(
     return _png_bytes(
         _depth_rgba(arrays.depth_time_m[time_index], arrays.active_mask),
         max_px=max_px,
-        categorical=False,
+        categorical=True,
     )
 
 
