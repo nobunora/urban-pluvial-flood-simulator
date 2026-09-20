@@ -22,8 +22,8 @@ type Props = {
   onInspect: (lon: number, lat: number) => void;
 };
 
-const EMPTY_FLOW: GeoJSON.FeatureCollection = {
-  type: "FeatureCollection",
+const EMPTY_FLOW = {
+  type: "FeatureCollection" as const,
   features: [],
 };
 
