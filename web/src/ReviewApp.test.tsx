@@ -68,6 +68,7 @@ const metadata: ResultMetadataResponse = {
     grid_resolution: "m",
   },
   available_time_indices: [0, 1],
+  flow_vectors_available: false,
   time_values: ["2026-01-01T00:00:00", "2026-01-01T00:01:00"],
   max_depth_summary: { global_max_depth_m: 1.25 },
   grid_level_summary: { "1m": 250000 },
