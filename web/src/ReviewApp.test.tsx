@@ -7,6 +7,7 @@ import {
   getHealth,
   getResultMetadata,
   getRun,
+  searchLocation,
   type ResultMetadataResponse,
 } from "./api/client";
 
@@ -21,6 +22,7 @@ vi.mock("./api/client", async (importOriginal) => {
     cancelRun: vi.fn(),
     getResultMetadata: vi.fn(),
     inspectResult: vi.fn(),
+    searchLocation: vi.fn(),
   };
 });
 
@@ -127,6 +129,13 @@ describe("local review UI", () => {
       failure_message: null,
     });
     vi.mocked(getResultMetadata).mockResolvedValue(metadata);
+    vi.mocked(searchLocation).mockResolvedValue({
+      candidates: [],
+      attribution: {
+        text: "CSISシンプルジオコーディング実験を利用",
+        url: "https://geocode.csis.u-tokyo.ac.jp/",
+      },
+    });
   });
 
   it("renders the Full 1 m controls and lets the setup map change location/range", () => {
@@ -142,6 +151,44 @@ describe("local review UI", () => {
 
     fireEvent.change(screen.getByLabelText("範囲"), { target: { value: "500" } });
     expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "1000");
+  });
+
+
+  it("uses a geocoder candidate as the canonical setup center", async () => {
+    vi.mocked(searchLocation).mockResolvedValue({
+      candidates: [
+        {
+          title: "東京都府中市宮町1丁目",
+          lon: 139.4805,
+          lat: 35.6722,
+          provider: "csis_simple_geocoding",
+          confidence: 5,
+          level: 8,
+          converted: "東京都府中市宮町1丁目",
+        },
+      ],
+      attribution: {
+        text: "CSISシンプルジオコーディング実験を利用",
+        url: "https://geocode.csis.u-tokyo.ac.jp/",
+      },
+    });
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("住所・地名を検索"), {
+      target: { value: "府中駅" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "検索" }));
+
+    const candidate = await screen.findByRole("button", {
+      name: /東京都府中市宮町1丁目/,
+    });
+    fireEvent.click(candidate);
+
+    expect(screen.getByLabelText("緯度")).toHaveValue("35.672200");
+    expect(screen.getByLabelText("経度")).toHaveValue("139.480500");
+    expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "500");
+    expect(screen.getByText(/CSISシンプルジオコーディング実験を利用/)).toBeVisible();
   });
 
   it("disables setup-map mutation while a run is active", async () => {
