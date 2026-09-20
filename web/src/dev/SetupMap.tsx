@@ -153,6 +153,11 @@ export default function SetupMap({
     const updateArea = () => {
       const source = map.getSource("analysis-area") as GeoJSONSource | undefined;
       source?.setData(areaFeature(area));
+
+      // Explicitly move the viewport whenever canonical coordinates change.
+      // This makes geocoder selection deterministic even when the range size is unchanged.
+      map.resize();
+      map.jumpTo({ center: [centerLon, centerLat] });
       if (area) {
         map.fitBounds(
           [
@@ -162,7 +167,7 @@ export default function SetupMap({
           { padding: 40, maxZoom: 17, duration: 0 },
         );
       } else {
-        map.easeTo({ center: [centerLon, centerLat], zoom: 14, duration: 0 });
+        map.jumpTo({ center: [centerLon, centerLat], zoom: 14 });
       }
     };
 
