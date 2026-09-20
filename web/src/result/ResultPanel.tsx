@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  flowVectorsGeoJsonUrl,
   inspectResult,
   resultLayerUrl,
   type PointInspectionResponse,
@@ -36,6 +37,15 @@ const GRID_LEGEND = [
   ["8 m", "#7AA874"],
   ["16 m", "#BABC7D"],
   ["32 m", "#D0C8AD"],
+] as const;
+
+const FLOW_SPEED_LEGEND = [
+  ["0.01–0.10 m/s", "#2DC4B2"],
+  ["0.10–0.30 m/s", "#3BB2D0"],
+  ["0.30–0.50 m/s", "#3F51B5"],
+  ["0.50–1.00 m/s", "#8E44AD"],
+  ["1.00–2.00 m/s", "#E74C3C"],
+  ["2.00 m/s以上", "#7F0000"],
 ] as const;
 
 function metres(value: number | null | undefined): string {
@@ -102,7 +112,7 @@ export default function ResultPanel({
     return resultLayerUrl(runId, "max-depth");
   }, [layer, runId, selectedTimeIndex]);
 
-  const flowImageUrl = useMemo(() => {
+  const flowVectorUrl = useMemo(() => {
     if (
       !flowVisible ||
       !metadata.flow_vectors_available ||
@@ -110,8 +120,38 @@ export default function ResultPanel({
     ) {
       return null;
     }
-    return resultLayerUrl(runId, "flow-vectors", selectedTimeIndex);
+    return flowVectorsGeoJsonUrl(runId, selectedTimeIndex);
   }, [flowVisible, metadata.flow_vectors_available, runId, selectedTimeIndex]);
+
+  useEffect(() => {
+    const indices = metadata.available_time_indices;
+    if (indices.length === 0) return;
+
+    const prioritized = indices.length <= 120
+      ? indices
+      : indices.slice(0, 24);
+    const controller = new AbortController();
+    let cursor = 0;
+
+    const worker = async () => {
+      while (!controller.signal.aborted) {
+        const index = prioritized[cursor];
+        cursor += 1;
+        if (index == null) return;
+        try {
+          await window.fetch(resultLayerUrl(runId, "depth", index), {
+            cache: "force-cache",
+            signal: controller.signal,
+          });
+        } catch {
+          if (controller.signal.aborted) return;
+        }
+      }
+    };
+
+    void Promise.allSettled([worker(), worker(), worker(), worker()]);
+    return () => controller.abort();
+  }, [metadata.available_time_indices, runId]);
 
   const showTimeline =
     metadata.available_time_indices.length > 0 &&
@@ -273,7 +313,7 @@ export default function ResultPanel({
             <ResultMap
               metadata={metadata}
               imageUrl={imageUrl}
-              flowImageUrl={flowImageUrl}
+              flowVectorUrl={flowVectorUrl}
               backgroundOpacity={(100 - backgroundTransparency) / 100}
               mapLabel={mapLabel}
               onInspect={handleInspect}
@@ -324,9 +364,7 @@ export default function ResultPanel({
                       {item.label}
                     </span>
                   ))}
-                  {flowVisible && metadata.flow_vectors_available && (
-                    <span className="result-vector-note">矢印: 選択時刻の流向</span>
-                  )}
+
                 </>
               ) : (
                 <>
@@ -341,6 +379,19 @@ export default function ResultPanel({
                 </>
               )}
             </section>
+
+            {flowVisible && metadata.flow_vectors_available && (
+              <section className="result-legend result-legend-sidebar result-flow-legend" aria-label="流速の凡例">
+                <strong>流速 (m/s)</strong>
+                {FLOW_SPEED_LEGEND.map(([label, color]) => (
+                  <span key={label}>
+                    <i style={{ backgroundColor: color }} aria-hidden="true" />
+                    {label}
+                  </span>
+                ))}
+                <span className="result-vector-note">矢印の向き: 流向 / 色: 流速</span>
+              </section>
+            )}
 
             <div className="result-sidebar-extra">
               <details>
