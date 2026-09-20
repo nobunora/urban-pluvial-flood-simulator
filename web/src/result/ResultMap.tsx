@@ -4,6 +4,7 @@ import {
   Marker,
   NavigationControl,
   type MapMouseEvent,
+  type StyleSpecification,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -23,9 +24,9 @@ function overlayStyle(
   metadata: ResultMetadataResponse,
   imageUrl: string,
   flowImageUrl: string | null,
-) {
+): StyleSpecification {
   const coordinates = resultImageCoordinates(metadata.bounds);
-  const sources: Record<string, object> = {
+  const sources: StyleSpecification["sources"] = {
     "result-overlay": {
       type: "image",
       url: imageUrl,
@@ -49,7 +50,7 @@ function overlayStyle(
       },
     },
   };
-  const layers: object[] = [
+  const layers: StyleSpecification["layers"] = [
     {
       id: "result-overlay",
       type: "raster",
@@ -100,7 +101,7 @@ function overlayStyle(
   );
 
   return {
-    version: 8 as const,
+    version: 8,
     sources,
     layers,
   };
