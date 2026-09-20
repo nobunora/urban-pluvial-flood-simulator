@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -11,6 +12,7 @@ import numpy as np
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.domain.manifest import Limitations
 from floodsim.sfincs.output_reader import SfincsRegularResult
+from floodsim.results.view import depth_legend_metadata
 from floodsim.storage.run_store import atomic_write_json
 
 
@@ -27,6 +29,8 @@ def normalize_regular_result(
     area: AnalysisArea,
     results_dir: str | Path,
     limitations: Limitations,
+    provider_summary: Mapping[str, Any] | None = None,
+    engine_summary: Mapping[str, Any] | None = None,
 ) -> NormalizedResult:
     root = Path(results_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -60,6 +64,9 @@ def normalize_regular_result(
         "grid_level_summary": {
             "1m": int(np.count_nonzero(result.active_mask)),
         },
+        "depth_legend": depth_legend_metadata(),
+        "provider_summary": dict(provider_summary or {}),
+        "engine_summary": dict(engine_summary or {}),
         "no_data_policy": (
             "inactive/blocked SFINCS cells are NaN in normalized arrays; "
             "active cells with missing hmax are reconstructed from finite h time output; "
