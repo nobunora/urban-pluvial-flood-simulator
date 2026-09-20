@@ -23,7 +23,7 @@ vi.mock("maplibre-gl", () => {
   }
 
   class Map {
-    sources = new Map<string, unknown>();
+    sources = new globalThis.Map<string, unknown>();
 
     constructor(options: Record<string, unknown>) {
       mocks.constructorOptions.push(options);
