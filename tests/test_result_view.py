@@ -79,6 +79,32 @@ def test_max_depth_png_is_north_up_and_transparent_for_dry_no_data() -> None:
     assert tuple(rgba[1, 1]) == DEPTH_BANDS[1].rgba
 
 
+def test_depth_png_downscale_preserves_only_declared_band_colors() -> None:
+    values = np.full((300, 300), 0.02, dtype=np.float32)
+    values[:, 150:] = 1.20
+    arrays = NormalizedArrays(
+        depth_time_m=values[np.newaxis, :, :],
+        max_depth_m=values,
+        terrain_elevation_m=np.zeros_like(values),
+        active_mask=np.ones_like(values, dtype=bool),
+        time_values=("0",),
+        grid_resolution_m=1.0,
+    )
+
+    allowed = {
+        DEPTH_BANDS[0].rgba,
+        DEPTH_BANDS[-1].rgba,
+    }
+
+    max_rgba = _rgba(render_max_depth_png(arrays, max_px=256))
+    time_rgba = _rgba(render_time_depth_png(arrays, time_index=0, max_px=256))
+
+    assert max_rgba.shape == (256, 256, 4)
+    assert time_rgba.shape == (256, 256, 4)
+    assert {tuple(pixel) for pixel in max_rgba.reshape(-1, 4)} <= allowed
+    assert {tuple(pixel) for pixel in time_rgba.reshape(-1, 4)} <= allowed
+
+
 def test_time_depth_png_validates_time_index() -> None:
     rgba = _rgba(render_time_depth_png(_arrays(), time_index=0))
     assert tuple(rgba[0, 1]) == DEPTH_BANDS[0].rgba
