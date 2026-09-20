@@ -2,28 +2,47 @@
 
 ## Current confirmed repository blockers
 
-None currently confirmed after the Web repair at `8803df9d86631378018ef36d939ef8bb51605032`.
+### Fresh Full 1 m run fails at BUILDING_GRID
 
-The latest live Windows run exposed and isolated two substantive repository defects, both now repaired by Web:
+Windows run `f2dc662c-f445-4f6d-af75-223bb8c2f16c` on exact head `017d3c0686490acfc55d20906d22434fd8c5de7e` reached:
 
-1. **PLATEAU review budget not enforced through CityGML parsing/cache work.** The run spent 89.349 s in `ACQUIRING_VECTORS` despite a 20-second policy. Deadline checks now cover cache reads, catalog processing, CityGML parsing/geometry loops, and output writing; OSM's 30-second budget likewise covers response/cache parsing and geometry processing.
-2. **Completed real SFINCS output rejected at `READING_RESULTS`.** SFINCS returned 0 and produced a readable 500×500 `sfincs_map.nc`, but most active `hmax` values were NaN while active `h` remained finite. The reader now reconstructs only missing active `hmax` cells from finite `h` time output and records the reconstruction count in metadata. Infinite `hmax` and other invalid active fields remain hard failures.
+```text
+ACQUIRING_TERRAIN
+ACQUIRING_VECTORS
+ACQUIRING_RAINFALL
+PREPROCESSING_TERRAIN
+ALLOCATING_ROOF_RAIN
+BUILDING_GRID
+FAILED
+```
 
-A follow-up read of the same real artifact exposed one finite active depth sample at -0.0016127867 m. Codex made a temporary 1 cm clip under the tiny-fix allowance. Web reviewed that change against SFINCS 2.4.0 documentation and retained the 0.01 m magnitude specifically because it matches the engine's default `twet_threshold` for flooded/wet classification. The finalized reader preserves the raw NetCDF, clips only finite values in the dry band, rejects values below -0.01 m, and reports clipping diagnostics in normalized metadata.
+The vector stage completed in 24.411 s (PLATEAU; no OSM fallback), a substantial improvement from the prior 89.349 s path. The failure occurred immediately in BUILDING_GRID before model/SFINCS creation.
 
-The newest exact-head CI result is authoritative once green.
+The old manifest persisted only:
+
+```text
+failure_code: INTERNAL_RUN_FAILED
+failing_stage: BUILDING_GRID
+```
+
+and discarded the underlying exception, so the exact grid root cause cannot be recovered from that old manifest alone.
+
+Web repair now committed:
+
+- persist exception type/message/diagnostic-file path in manifest;
+- write atomic `logs/failure_diagnostic.json` with traceback and runtime grid-input summary;
+- harden polygon/road feature conversion against ragged/non-numeric/non-finite/invalid individual vector features;
+- add `scripts/diagnose_grid_run.py` to replay BUILDING_GRID from an existing run's persisted `source_refs` without repeating live vector acquisition or SFINCS;
+- deterministic tests cover diagnostic persistence, malformed-feature skipping, and persisted-source-ref replay loading.
+
+The exact substantive grid cause remains host-local until the old failed run is replayed with this new instrumentation.
 
 ## Current external / host-local validation remaining
 
-No external blocker was observed in the last run: GSI, PLATEAU and SFINCS all responded, and SFINCS completed successfully.
-
-The only remaining proof needed is a fresh Windows run at the repaired exact SHA to verify:
-
-1. PLATEAU either finishes within budget or exits to OSM rather than spending ~89 s in vector acquisition;
-2. the real SFINCS output proceeds through `READING_RESULTS` and normalization;
-3. final run state becomes `COMPLETE` and result metadata exposes the reconstructed-`hmax` diagnostic when applicable.
-
-SFINCS redistribution/bootstrap licensing remains a later packaging issue. Do not download or redistribute SFINCS during review validation.
+1. Run `scripts.diagnose_grid_run` against failed run `f2dc662c-f445-4f6d-af75-223bb8c2f16c` on the Windows host.
+2. If replay passes, perform one fresh Full 1 m end-to-end run and confirm `COMPLETE`.
+3. If replay fails, use the new exception/traceback diagnostics to identify the precise grid defect; apply only a tiny mechanical correction locally if it is inside the authorized allowance, otherwise return the deterministic diagnostic to Web.
+4. SFINCS redistribution/bootstrap licensing remains a later packaging issue. Do not download or redistribute SFINCS.
 
 ## Local working-tree warning
 
