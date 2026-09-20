@@ -175,6 +175,8 @@ describe("ResultPanel", () => {
     expect(screen.getByText("1.250 m")).toBeVisible();
     expect(screen.getAllByText("osm").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("浸透は考慮していません。")).toBeVisible();
+
+    fireEvent.click(screen.getByText("解析条件と出典"));
     expect(screen.getByText("Application: 0.1.0")).toBeVisible();
     expect(screen.getByText("Boundary: closed boundary")).toBeVisible();
   });
