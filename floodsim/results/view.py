@@ -171,7 +171,7 @@ def render_max_depth_png(arrays: NormalizedArrays, *, max_px: int = MAX_RENDER_P
     return _png_bytes(
         _depth_rgba(arrays.max_depth_m, arrays.active_mask),
         max_px=max_px,
-        categorical=False,
+        categorical=True,
     )
 
 
