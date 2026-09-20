@@ -336,7 +336,7 @@ class RunCoordinator:
             )
         except Exception:  # noqa: BLE001
             return None
-        return str(path.relative_to(self.store.run_dir(record.run_id)))
+        return path.relative_to(self.store.run_dir(record.run_id)).as_posix()
 
     def _execute(self, record: RunRecord) -> None:
         run_root = self.store.ensure_run(record.run_id)
