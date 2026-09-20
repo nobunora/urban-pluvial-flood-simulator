@@ -180,11 +180,9 @@ def build_full_1m_grid(
             executor.submit(build_building_mask): "建物マスク",
             executor.submit(build_road_mask): "道路マスク",
         }
-        done_count = 0
-        for future in as_completed(futures):
+        for done_count, future in enumerate(as_completed(futures), start=1):
             label_name = futures[future]
             completed[label_name] = future.result()
-            done_count += 1
             if progress_callback is not None:
                 progress_callback(
                     0.15 * done_count,
