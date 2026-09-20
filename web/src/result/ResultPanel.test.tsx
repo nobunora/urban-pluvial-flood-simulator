@@ -5,7 +5,9 @@ import type { ResultMetadataResponse } from "../api/client";
 import ResultPanel from "./ResultPanel";
 
 vi.mock("./ResultMap", () => ({
-  default: ({ mapLabel }: { mapLabel: string }) => <div data-testid="result-map">{mapLabel}</div>,
+  default: ({ mapLabel, imageUrl }: { mapLabel: string; imageUrl: string }) => (
+    <div data-testid="result-map" data-image-url={imageUrl}>{mapLabel}</div>
+  ),
 }));
 
 const metadata: ResultMetadataResponse = {
@@ -21,8 +23,13 @@ const metadata: ResultMetadataResponse = {
     terrain_elevation: "m",
     grid_resolution: "m",
   },
-  available_time_indices: [0, 1],
-  time_values: ["2026-01-01T00:00:00", "2026-01-01T00:10:00"],
+  available_time_indices: [0, 3],
+  time_values: [
+    "2026-01-01T00:00:00",
+    "2026-01-01T00:10:00",
+    "2026-01-01T00:20:00",
+    "2026-01-01T00:30:00",
+  ],
   max_depth_summary: {
     global_max_depth_m: 1.25,
   },
@@ -89,7 +96,11 @@ describe("ResultPanel", () => {
     expect(screen.getByText("現在: 00:00")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "次の時刻" }));
-    expect(screen.getByText("現在: 00:10")).toBeVisible();
+    expect(screen.getByText("現在: 00:30")).toBeVisible();
+    expect(screen.getByTestId("result-map")).toHaveAttribute(
+      "data-image-url",
+      "/api/v1/runs/run-1/layers/depth.png?time_index=3",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "計算格子" }));
     expect(screen.getByTestId("result-map")).toHaveTextContent("計算格子解像度の地図");
