@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -335,10 +336,13 @@ class PlateauProvider:
         margin_m: float = 50.0,
         acquired_at_utc: str | None = None,
         time_budget_s: float | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
     ) -> PlateauVectors:
         if time_budget_s is not None and time_budget_s <= 0:
             raise ValueError("time_budget_s must be positive")
         deadline = None if time_budget_s is None else time.monotonic() + time_budget_s
+        if progress_callback is not None:
+            progress_callback(0.02, "PLATEAUカタログを検索中")
         lon1, lat1, lon2, lat2 = area_lonlat_bounds(area, margin_m)
         condition = f"r:{lon1:.9f},{lat1:.9f},{lon2:.9f},{lat2:.9f}"
         url = f"{API_BASE}/datacatalog/citygml/{condition}"
@@ -374,10 +378,17 @@ class PlateauProvider:
         transport_urls = list(dict.fromkeys(transport_urls))
         if not building_urls:
             raise ProviderUnavailableError("PLATEAU dataset has no building CityGML files for this area")
+        total_files = len(building_urls) + len(transport_urls)
+        if progress_callback is not None:
+            progress_callback(
+                0.08,
+                f"PLATEAU対象ファイル {total_files}件（建物{len(building_urls)} / 道路{len(transport_urls)}）",
+            )
         buildings: list[np.ndarray] = []
         roads: list[np.ndarray] = []
         road_polygons: list[np.ndarray] = []
         cache = Path(cache_dir)
+        processed_files = 0
         for file_url in building_urls:
             parsed_buildings, _, _ = extract_citygml(
                 self._download(file_url, cache, deadline_monotonic=deadline),
@@ -386,6 +397,13 @@ class PlateauProvider:
                 deadline_monotonic=deadline,
             )
             buildings.extend(parsed_buildings)
+            processed_files += 1
+            if progress_callback is not None:
+                progress_callback(
+                    0.08 + 0.82 * processed_files / max(1, total_files),
+                    f"PLATEAU {processed_files}/{total_files}ファイル処理済み / "
+                    f"建物{len(buildings)}件 / 残り{total_files - processed_files}ファイル",
+                )
         for file_url in transport_urls:
             _, parsed_lines, parsed_polygons = extract_citygml(
                 self._download(file_url, cache, deadline_monotonic=deadline),
@@ -395,6 +413,14 @@ class PlateauProvider:
             )
             roads.extend(parsed_lines)
             road_polygons.extend(parsed_polygons)
+            processed_files += 1
+            if progress_callback is not None:
+                progress_callback(
+                    0.08 + 0.82 * processed_files / max(1, total_files),
+                    f"PLATEAU {processed_files}/{total_files}ファイル処理済み / "
+                    f"建物{len(buildings)}件・道路{len(roads) + len(road_polygons)}件 / "
+                    f"残り{total_files - processed_files}ファイル",
+                )
         _check_deadline(deadline, "PLATEAU acquisition")
         if not buildings:
             raise ProviderUnavailableError("PLATEAU building files downloaded but no usable footprints were parsed")
@@ -422,6 +448,11 @@ class PlateauProvider:
         _check_deadline(deadline, "PLATEAU acquisition")
         if out_dir is not None:
             self._write_legacy(result, Path(out_dir))
+        if progress_callback is not None:
+            progress_callback(
+                1.0,
+                f"PLATEAU取得完了 / 建物{len(buildings)}件・道路{len(roads) + len(road_polygons)}件",
+            )
         _check_deadline(deadline, "PLATEAU acquisition")
         return result
 
