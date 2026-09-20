@@ -54,6 +54,9 @@ class RunManifest(BaseModel):
     run_status: RunState
     failing_stage: str | None = None
     failure_code: str | None = None
+    failure_exception_type: str | None = None
+    failure_message: str | None = None
+    failure_diagnostic_file: str | None = None
     output_files: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("created_at_utc")
