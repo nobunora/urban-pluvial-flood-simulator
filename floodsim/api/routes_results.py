@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -10,6 +12,7 @@ from fastapi.responses import JSONResponse, Response
 from floodsim.api.errors import ApiContractError
 from floodsim.api.routes_runs import coordinator
 from floodsim.api.schemas import PointInspectionResponse, ResultMetadataResponse
+from floodsim.domain.geometry import AnalysisArea
 from floodsim.orchestration.run_coordinator import ResultNotReady, RunNotFound
 from floodsim.results.view import (
     PointOutsideResult,
@@ -18,7 +21,6 @@ from floodsim.results.view import (
     flow_vectors_geojson,
     inspect_native_point,
     load_normalized_arrays,
-    render_flow_vectors_png,
     render_grid_resolution_png,
     render_max_depth_png,
     render_time_depth_png,
@@ -41,12 +43,56 @@ def _map_result_error(exc: RuntimeError) -> ApiContractError:
     return ApiContractError(500, "RESULT_VIEW_FAILED", "計算結果を表示できません。")
 
 
+@lru_cache(maxsize=16)
+def _load_arrays_cached(path_text: str, mtime_ns: int):
+    del mtime_ns
+    return load_normalized_arrays(Path(path_text))
+
+
+@lru_cache(maxsize=512)
+def _render_time_depth_cached(
+    path_text: str,
+    mtime_ns: int,
+    time_index: int,
+    max_px: int,
+) -> bytes:
+    arrays = _load_arrays_cached(path_text, mtime_ns)
+    return render_time_depth_png(arrays, time_index=time_index, max_px=max_px)
+
+
+@lru_cache(maxsize=256)
+def _flow_geojson_cached(
+    path_text: str,
+    mtime_ns: int,
+    area_json: str,
+    time_index: int,
+    max_vectors: int,
+) -> dict:
+    arrays = _load_arrays_cached(path_text, mtime_ns)
+    return flow_vectors_geojson(
+        arrays,
+        area=AnalysisArea.model_validate_json(area_json),
+        time_index=time_index,
+        max_vectors=max_vectors,
+    )
+
+
+def _arrays_path_for_run(run_id: UUID) -> tuple[Path, int]:
+    path = coordinator.result_arrays_path(run_id)
+    return path, path.stat().st_mtime_ns
+
+
 def _arrays_for_run(run_id: UUID):
     try:
-        path = coordinator.result_arrays_path(run_id)
-        return load_normalized_arrays(path)
-    except (RunNotFound, ResultNotReady, ResultViewError) as exc:
+        path, mtime_ns = _arrays_path_for_run(run_id)
+        return _load_arrays_cached(str(path), mtime_ns)
+    except (RunNotFound, ResultNotReady, ResultViewError, OSError) as exc:
         raise _map_result_error(exc) from exc
+
+
+LAYER_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=31536000, immutable",
+}
 
 
 @router.get("/runs/{run_id}/result-metadata", response_model=ResultMetadataResponse)
@@ -65,7 +111,7 @@ def max_depth_layer(run_id: UUID, max_px: int = 4096) -> Response:
         content = render_max_depth_png(arrays, max_px=max_px)
     except ResultViewError as exc:
         raise _map_result_error(exc) from exc
-    return Response(content=content, media_type="image/png")
+    return Response(content=content, media_type="image/png", headers=LAYER_CACHE_HEADERS)
 
 
 @router.get("/runs/{run_id}/layers/depth.png")
@@ -74,12 +120,21 @@ def time_depth_layer(
     time_index: int,
     max_px: int = 4096,
 ) -> Response:
-    arrays = _arrays_for_run(run_id)
     try:
-        content = render_time_depth_png(arrays, time_index=time_index, max_px=max_px)
-    except ResultViewError as exc:
+        path, mtime_ns = _arrays_path_for_run(run_id)
+        content = _render_time_depth_cached(
+            str(path),
+            mtime_ns,
+            time_index,
+            max_px,
+        )
+    except (RunNotFound, ResultNotReady, ResultViewError, OSError) as exc:
         raise _map_result_error(exc) from exc
-    return Response(content=content, media_type="image/png")
+    return Response(
+        content=content,
+        media_type="image/png",
+        headers=LAYER_CACHE_HEADERS,
+    )
 
 
 @router.get("/runs/{run_id}/layers/grid-resolution.png")
@@ -89,7 +144,7 @@ def grid_resolution_layer(run_id: UUID, max_px: int = 4096) -> Response:
         content = render_grid_resolution_png(arrays, max_px=max_px)
     except ResultViewError as exc:
         raise _map_result_error(exc) from exc
-    return Response(content=content, media_type="image/png")
+    return Response(content=content, media_type="image/png", headers=LAYER_CACHE_HEADERS)
 
 
 
@@ -102,32 +157,19 @@ def flow_vectors_geojson_layer(
     time_index: int,
     max_vectors: int = Query(default=900, ge=1, le=2500),
 ) -> JSONResponse:
-    arrays = _arrays_for_run(run_id)
     try:
+        path, mtime_ns = _arrays_path_for_run(run_id)
         record = coordinator.get(run_id)
-        payload = flow_vectors_geojson(
-            arrays,
-            area=record.config.analysis_area,
-            time_index=time_index,
-            max_vectors=max_vectors,
+        payload = _flow_geojson_cached(
+            str(path),
+            mtime_ns,
+            record.config.analysis_area.model_dump_json(),
+            time_index,
+            max_vectors,
         )
-    except (RunNotFound, ResultViewError) as exc:
+    except (RunNotFound, ResultNotReady, ResultViewError, OSError) as exc:
         raise _map_result_error(exc) from exc
-    return JSONResponse(content=payload)
-
-
-@router.get("/runs/{run_id}/layers/flow-vectors.png")
-def flow_vectors_layer(
-    run_id: UUID,
-    time_index: int,
-    max_px: int = 4096,
-) -> Response:
-    arrays = _arrays_for_run(run_id)
-    try:
-        content = render_flow_vectors_png(arrays, time_index=time_index, max_px=max_px)
-    except ResultViewError as exc:
-        raise _map_result_error(exc) from exc
-    return Response(content=content, media_type="image/png")
+    return JSONResponse(content=payload, headers=LAYER_CACHE_HEADERS)
 
 
 @router.get("/runs/{run_id}/inspect", response_model=PointInspectionResponse)
