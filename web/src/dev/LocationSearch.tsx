@@ -1,4 +1,4 @@
-import { FormEvent, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import {
   searchLocation,
@@ -17,6 +17,10 @@ export default function LocationSearch({ disabled, onSelect }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => requestRef.current?.abort();
+  }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
