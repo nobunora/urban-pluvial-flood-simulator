@@ -89,15 +89,28 @@ export function inspectResult(
 
 export function resultLayerUrl(
   runId: string,
-  layer: "max-depth" | "grid-resolution" | "depth" | "flow-vectors",
+  layer: "max-depth" | "grid-resolution" | "depth",
   timeIndex: number | null = null,
 ): string {
   const encodedRunId = encodeURIComponent(runId);
-  if (layer === "depth" || layer === "flow-vectors") {
+  if (layer === "depth") {
     if (timeIndex === null) {
       throw new Error("timeIndex is required for time-dependent result layers");
     }
     return `/api/v1/runs/${encodedRunId}/layers/${layer}.png?time_index=${timeIndex}`;
   }
   return `/api/v1/runs/${encodedRunId}/layers/${layer}.png`;
+}
+
+
+export function flowVectorsGeoJsonUrl(
+  runId: string,
+  timeIndex: number,
+  maxVectors = 900,
+): string {
+  const params = new URLSearchParams({
+    time_index: String(timeIndex),
+    max_vectors: String(maxVectors),
+  });
+  return `/api/v1/runs/${encodeURIComponent(runId)}/layers/flow-vectors.geojson?${params.toString()}`;
 }
