@@ -185,6 +185,7 @@ export default function SmokeApp() {
     }
     setBusy(true);
     setError(null);
+    setRunId(null);
     setStatus(null);
     setStageObservedAtMs(null);
     setLastPollAtMs(null);
