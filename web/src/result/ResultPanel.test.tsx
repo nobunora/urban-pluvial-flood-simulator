@@ -105,6 +105,10 @@ const metadata: ResultMetadataResponse = {
 describe("ResultPanel", () => {
   beforeEach(() => {
     vi.mocked(inspectResult).mockReset();
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value: vi.fn(),
+    });
   });
 
   it("shows native point values including maximum time", async () => {
@@ -228,7 +232,13 @@ describe("ResultPanel", () => {
 
     expect(screen.getByRole("heading", { name: "解析結果" })).toBeVisible();
     expect(screen.getByTestId("result-map")).toHaveTextContent("最大浸水深の地図");
-    expect(screen.getByText("1.250 m")).toBeVisible();
+
+    const summary = screen.getByText("結果概要").closest("details");
+    expect(summary).not.toHaveAttribute("open");
+    expect(screen.getByText("1.250 m")).not.toBeVisible();
+
+    const legend = screen.getByLabelText("浸水深の凡例");
+    expect(legend.closest(".result-sidebar")).not.toBeNull();
 
     for (const label of [
       "0.01–0.05 m",
@@ -241,6 +251,8 @@ describe("ResultPanel", () => {
       expect(screen.getByText(label)).toBeVisible();
     }
 
+    fireEvent.click(screen.getByText("結果概要"));
+    expect(screen.getByText("1.250 m")).toBeVisible();
     expect(screen.getAllByText("osm").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("浸透は考慮していません。")).toBeVisible();
 
@@ -320,6 +332,28 @@ describe("ResultPanel", () => {
       "data-flow-image-url",
       "/api/v1/runs/run-1/layers/flow-vectors.png?time_index=3",
     );
+  });
+
+  it("requests fullscreen for the focused map/point/legend region", () => {
+    render(
+      <ResultPanel
+        runId="run-1"
+        metadata={metadata}
+        rainfallSummary="10 mm/h × 1分"
+        onNewAnalysis={vi.fn()}
+      />,
+    );
+
+    const region = screen.getByTestId("result-focus-region");
+    const requestFullscreen = region.requestFullscreen as ReturnType<typeof vi.fn>;
+
+    fireEvent.click(screen.getByRole("button", { name: "地図を全画面表示" }));
+
+    expect(requestFullscreen).toHaveBeenCalledTimes(1);
+    expect(region.querySelector('[aria-label="浸水深の凡例"]')).not.toBeNull();
+    expect(region.querySelector(".result-point-panel")).not.toBeNull();
+    expect(region.querySelector(".result-map-panel")).not.toBeNull();
+    expect(region.querySelector(".result-sidebar-extra")).not.toBeNull();
   });
 
   it("shows vector unavailability for historical runs without stored velocities", () => {
