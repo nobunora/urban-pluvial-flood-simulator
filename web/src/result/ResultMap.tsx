@@ -232,7 +232,9 @@ export default function ResultMap({
       return;
     }
     map.once("load", update);
-    return () => map.off("load", update);
+    return () => {
+      map.off("load", update);
+    };
   }, [imageUrl, metadata.bounds]);
 
   useEffect(() => {
@@ -254,7 +256,9 @@ export default function ResultMap({
       return;
     }
     map.once("load", update);
-    return () => map.off("load", update);
+    return () => {
+      map.off("load", update);
+    };
   }, [flowVectorUrl]);
 
   return (
