@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -143,24 +145,30 @@ def build_full_1m_grid(
     """Create the exact 1 m hydraulic arrays required by the Phase 3 builder."""
     width = _cell_count(area.width_m)
     height = _cell_count(area.height_m)
-    terrain = _cell_center_elevation(elevation, height, width)
-
-    building_mask = _rasterize_local(
-        _polygon_shapes(list(vectors.buildings)),
-        width=width,
-        height=height,
-        width_m=area.width_m,
-        height_m=area.height_m,
-        all_touched=True,
-    )
-    road_mask = _rasterize_local(
-        _road_shapes(vectors),
-        width=width,
-        height=height,
-        width_m=area.width_m,
-        height_m=area.height_m,
-        all_touched=True,
-    )
+    worker_count = min(3, max(1, os.cpu_count() or 1))
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="full1m-prep") as executor:
+        terrain_future = executor.submit(_cell_center_elevation, elevation, height, width)
+        building_future = executor.submit(
+            _rasterize_local,
+            _polygon_shapes(list(vectors.buildings)),
+            width=width,
+            height=height,
+            width_m=area.width_m,
+            height_m=area.height_m,
+            all_touched=True,
+        )
+        road_future = executor.submit(
+            _rasterize_local,
+            _road_shapes(vectors),
+            width=width,
+            height=height,
+            width_m=area.width_m,
+            height_m=area.height_m,
+            all_touched=True,
+        )
+        terrain = terrain_future.result()
+        building_mask = building_future.result()
+        road_mask = road_future.result()
 
     manning = np.full((height, width), GENERAL_MANNING, dtype=np.float32)
     manning[road_mask & ~building_mask] = ROAD_MANNING
