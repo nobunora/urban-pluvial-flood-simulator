@@ -227,6 +227,140 @@ def render_grid_resolution_png(
 
 
 
+def flow_vectors_geojson(
+    arrays: NormalizedArrays,
+    *,
+    area: AnalysisArea,
+    time_index: int,
+    max_vectors: int = 900,
+    min_speed_mps: float = 0.01,
+) -> dict[str, Any]:
+    """Return sampled flow arrows as vector GeoJSON with speed metadata."""
+    if time_index < 0 or time_index >= arrays.depth_time_m.shape[0]:
+        raise ResultTimeIndexInvalid(f"time_index {time_index} is outside available output")
+    if arrays.velocity_u_mps is None or arrays.velocity_v_mps is None:
+        raise ResultArtifactMissing("flow-vector output is not available for this run")
+    if max_vectors <= 0:
+        raise ResultViewError("max_vectors must be positive")
+
+    height, width = arrays.shape
+    target_stride = int(np.ceil(np.sqrt((height * width) / float(max_vectors))))
+    stride = max(4, target_stride)
+    depth = arrays.depth_time_m[time_index]
+    u = arrays.velocity_u_mps[time_index]
+    v = arrays.velocity_v_mps[time_index]
+    cell_width_m = area.width_m / float(width)
+    cell_height_m = area.height_m / float(height)
+    xmin = -area.width_m / 2.0
+    ymin = -area.height_m / 2.0
+    transformer = Transformer.from_crs(
+        local_crs(area),
+        CRS.from_epsg(4326),
+        always_xy=True,
+    )
+
+    features: list[dict[str, Any]] = []
+    for row0 in range(0, height, stride):
+        row1 = min(height, row0 + stride)
+        for col0 in range(0, width, stride):
+            col1 = min(width, col0 + stride)
+            wet = (
+                arrays.active_mask[row0:row1, col0:col1]
+                & np.isfinite(depth[row0:row1, col0:col1])
+                & (depth[row0:row1, col0:col1] >= DISPLAY_DRY_THRESHOLD_M)
+                & np.isfinite(u[row0:row1, col0:col1])
+                & np.isfinite(v[row0:row1, col0:col1])
+            )
+            if not np.any(wet):
+                continue
+
+            mean_u = float(np.mean(u[row0:row1, col0:col1][wet]))
+            mean_v = float(np.mean(v[row0:row1, col0:col1][wet]))
+            speed = float(np.hypot(mean_u, mean_v))
+            if not np.isfinite(speed) or speed < min_speed_mps:
+                continue
+
+            direction_x = mean_u / speed
+            direction_y = mean_v / speed
+            center_x = xmin + ((col0 + col1) / 2.0) * cell_width_m
+            center_y = ymin + ((row0 + row1) / 2.0) * cell_height_m
+            block_span_m = min(
+                max(cell_width_m, 1e-6) * (col1 - col0),
+                max(cell_height_m, 1e-6) * (row1 - row0),
+            )
+            arrow_length_m = max(2.0, min(14.0, block_span_m * 0.62))
+            tail_scale = arrow_length_m * 0.42
+            tip_scale = arrow_length_m * 0.58
+
+            tail = (
+                center_x - direction_x * tail_scale,
+                center_y - direction_y * tail_scale,
+            )
+            tip = (
+                center_x + direction_x * tip_scale,
+                center_y + direction_y * tip_scale,
+            )
+            head_length = max(1.2, arrow_length_m * 0.28)
+            head_angle = np.deg2rad(30.0)
+            cos_a = float(np.cos(head_angle))
+            sin_a = float(np.sin(head_angle))
+            back_x = -direction_x
+            back_y = -direction_y
+            left_dir = (
+                back_x * cos_a - back_y * sin_a,
+                back_x * sin_a + back_y * cos_a,
+            )
+            right_dir = (
+                back_x * cos_a + back_y * sin_a,
+                -back_x * sin_a + back_y * cos_a,
+            )
+            left = (
+                tip[0] + left_dir[0] * head_length,
+                tip[1] + left_dir[1] * head_length,
+            )
+            right = (
+                tip[0] + right_dir[0] * head_length,
+                tip[1] + right_dir[1] * head_length,
+            )
+
+            def lonlat(point: tuple[float, float]) -> list[float]:
+                lon, lat = transformer.transform(point[0], point[1])
+                return [float(lon), float(lat)]
+
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "MultiLineString",
+                        "coordinates": [
+                            [lonlat(tail), lonlat(tip)],
+                            [lonlat(tip), lonlat(left)],
+                            [lonlat(tip), lonlat(right)],
+                        ],
+                    },
+                    "properties": {
+                        "speed_mps": speed,
+                        "u_mps": mean_u,
+                        "v_mps": mean_v,
+                        "time_index": time_index,
+                        "row": int((row0 + row1 - 1) // 2),
+                        "column": int((col0 + col1 - 1) // 2),
+                    },
+                }
+            )
+
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "metadata": {
+            "speed_unit": "m/s",
+            "min_speed_mps": float(min_speed_mps),
+            "sample_stride_cells": stride,
+            "arrow_count": len(features),
+        },
+    }
+
+
 def render_flow_vectors_png(
     arrays: NormalizedArrays,
     *,
