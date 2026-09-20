@@ -44,7 +44,12 @@ from floodsim.sfincs.model_builder import (
     derive_output_interval_seconds,
 )
 from floodsim.sfincs.output_reader import SfincsResultError, read_regular_result
-from floodsim.sfincs.runner import ResolvedEngine, SfincsRunResult
+from floodsim.sfincs.runner import (
+    ResolvedEngine,
+    SfincsProgress,
+    SfincsRunResult,
+    parse_sfincs_progress_line,
+)
 
 
 def _area(size: int = 4) -> AnalysisArea:
@@ -168,6 +173,8 @@ def test_real_sfincs_builder_writes_with_host_debug(
     assert result.report["roof_rain_relative_mass_error"] <= 1e-9
     config = (result.model_dir / "sfincs.inp").read_text(encoding="utf-8")
     assert "netamprfile          = sfincs_netampr.nc" in config
+    assert "storevel             = 1" in config
+    assert result.report["velocity_output"]["storevel"] == 1
     assert "epsg" not in config.lower()
     assert "debug" not in config.lower()
     with xr.open_dataset(result.model_dir / "sfincs_netampr.nc") as precipitation:
@@ -189,6 +196,8 @@ def _write_synthetic_result(
     *,
     nonfinite: bool = False,
     missing_hmax: bool = False,
+    with_velocity: bool = False,
+    one_sided_velocity: bool = False,
 ) -> None:
     h = np.asarray(
         [[[0.0, 0.01], [0.02, 0.03]], [[0.0, 0.02], [0.04, 0.05]]],
@@ -199,14 +208,31 @@ def _write_synthetic_result(
     hmax = np.nanmax(h, axis=0, keepdims=True)
     if missing_hmax:
         hmax[:, 1, 1] = np.nan
+    data_vars = {
+        "h": (("time", "n", "m"), h),
+        "hmax": (("timemax", "n", "m"), hmax),
+        "zs": (("time", "n", "m"), h + 1.0),
+        "zb": (("n", "m"), np.ones((2, 2), dtype=np.float32)),
+        "msk": (("n", "m"), np.ones((2, 2), dtype=np.int16)),
+    }
+    if with_velocity or one_sided_velocity:
+        data_vars["u"] = (
+            ("time", "n", "m"),
+            np.asarray(
+                [[[0.0, 0.1], [0.2, 0.3]], [[0.0, 0.2], [0.3, 0.4]]],
+                dtype=np.float32,
+            ),
+        )
+    if with_velocity:
+        data_vars["v"] = (
+            ("time", "n", "m"),
+            np.asarray(
+                [[[0.0, 0.0], [0.1, 0.1]], [[0.0, 0.1], [0.2, 0.2]]],
+                dtype=np.float32,
+            ),
+        )
     dataset = xr.Dataset(
-        {
-            "h": (("time", "n", "m"), h),
-            "hmax": (("timemax", "n", "m"), hmax),
-            "zs": (("time", "n", "m"), h + 1.0),
-            "zb": (("n", "m"), np.ones((2, 2), dtype=np.float32)),
-            "msk": (("n", "m"), np.ones((2, 2), dtype=np.int16)),
-        },
+        data_vars,
         coords={"time": [0, 60], "timemax": [60]},
     )
     dataset.to_netcdf(path)
@@ -225,6 +251,41 @@ def test_output_reader_and_normalizer_expose_max_depth(tmp_path: Path) -> None:
     )
     assert normalized.metadata["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.05)
     assert normalized.arrays_path.is_file()
+
+
+def test_output_reader_persists_paired_velocity_and_keeps_old_results_compatible(
+    tmp_path: Path,
+) -> None:
+    old_path = tmp_path / "old_no_velocity.nc"
+    _write_synthetic_result(old_path)
+    old_result = read_regular_result(old_path)
+    assert old_result.flow_vectors_available is False
+
+    path = tmp_path / "with_velocity.nc"
+    _write_synthetic_result(path, with_velocity=True)
+    result = read_regular_result(path)
+    assert result.flow_vectors_available is True
+    assert result.velocity_u_mps is not None
+    assert result.velocity_v_mps is not None
+    assert result.velocity_u_mps.shape == result.depth_time_m.shape
+
+    normalized = normalize_regular_result(
+        result,
+        area=_area(2),
+        results_dir=tmp_path / "normalized_velocity",
+        limitations=Limitations(),
+    )
+    assert normalized.metadata["flow_vectors_available"] is True
+    with np.load(normalized.arrays_path, allow_pickle=False) as archive:
+        assert "velocity_u_mps" in archive.files
+        assert "velocity_v_mps" in archive.files
+
+
+def test_output_reader_rejects_one_sided_velocity_output(tmp_path: Path) -> None:
+    path = tmp_path / "one_sided_velocity.nc"
+    _write_synthetic_result(path, one_sided_velocity=True)
+    with pytest.raises(SfincsResultError, match="both u and v"):
+        read_regular_result(path)
 
 
 def test_output_reader_reconstructs_missing_active_hmax_from_depth(tmp_path: Path) -> None:
@@ -321,6 +382,15 @@ def test_output_interval_is_whole_minute_and_bounded() -> None:
     assert 60 <= derive_output_interval_seconds(12 * 3600) <= 900
 
 
+def test_sfincs_progress_parser_uses_official_percent_line() -> None:
+    parsed = parse_sfincs_progress_line("  40% complete,    18.5 s remaining ...")
+    assert parsed is not None
+    assert parsed.fraction == pytest.approx(0.40)
+    assert parsed.engine_reported_remaining_seconds == pytest.approx(18.5)
+    assert parse_sfincs_progress_line("Starting computation ...") is None
+
+
+
 class _FakeElevationProvider:
     def acquire(self, area: AnalysisArea, **_: object) -> ElevationProduct:
         return _elevation(area)
@@ -356,6 +426,7 @@ class _FakeRunner:
         logs_dir: Path,
         engine: ResolvedEngine,
         cancel_event: object,
+        progress_callback=None,
     ) -> SfincsRunResult:
         logs_dir.mkdir(parents=True, exist_ok=True)
         result = model_dir / "sfincs_map.nc"
@@ -364,7 +435,9 @@ class _FakeRunner:
         stderr = logs_dir / "sfincs.stderr.log"
         stdout.write_text("ok\n", encoding="utf-8")
         stderr.write_text("", encoding="utf-8")
-        return SfincsRunResult(0, result, stdout, stderr, engine)
+        if progress_callback is not None:
+            progress_callback(SfincsProgress(0.5, 1.0))
+        return SfincsRunResult(0, result, stdout, stderr, engine, elapsed_seconds=2.0)
 
 
 def _test_coordinator(tmp_path: Path) -> RunCoordinator:
@@ -401,6 +474,55 @@ def test_coordinator_runs_full_1m_to_normalized_result(tmp_path: Path) -> None:
     assert manifest["limitations"]["sewer_network_modelled"] is False
     assert manifest["roof_rain_mass_diagnostic"]["relative_error"] <= 1e-9
     assert [event.sequence for event in record.events] == list(range(1, len(record.events) + 1))
+
+
+def test_coordinator_reuses_prepared_grid_for_same_area_changed_rainfall(
+    tmp_path: Path,
+) -> None:
+    calls = {"elevation": 0, "vectors": 0, "grid": 0}
+
+    class CountingElevation:
+        def acquire(self, area: AnalysisArea, **_: object) -> ElevationProduct:
+            calls["elevation"] += 1
+            return _elevation(area)
+
+    def vectors(area: AnalysisArea, **_: object):
+        calls["vectors"] += 1
+        return _vectors(area, with_building=False)
+
+    def grid(area: AnalysisArea, elevation: ElevationProduct, vector_data: object):
+        calls["grid"] += 1
+        return build_full_1m_grid(area, elevation, vector_data)
+
+    coordinator = RunCoordinator(
+        runs_root=tmp_path / "runs",
+        elevation_provider=CountingElevation(),
+        vector_acquirer=vectors,
+        grid_builder=grid,
+        model_builder=_FakeModelBuilder(),
+        engine_resolver=lambda: ResolvedEngine(Path(__file__), "test", "TESTSHA"),
+        runner_factory=_FakeRunner,
+    )
+
+    first = coordinator.create_run(_config())
+    assert first.future is not None
+    first.future.result(timeout=10)
+    assert first.machine.state is RunState.COMPLETE
+    assert calls == {"elevation": 1, "vectors": 1, "grid": 1}
+
+    changed_rain = _config().model_copy(
+        update={"rainfall": ConstantRainfall(intensity_mm_per_h=120, duration_minutes=1)}
+    )
+    second = coordinator.create_run(changed_rain)
+    assert second.future is not None
+    second.future.result(timeout=10)
+    assert second.machine.state is RunState.COMPLETE
+    assert calls == {"elevation": 1, "vectors": 1, "grid": 1}
+
+    manifest = coordinator.store.read_manifest(second.run_id)
+    assert manifest is not None
+    assert manifest["elevation_source_summary"]["prepared_cache_hit"] is True
+    assert manifest["rainfall_source"] != coordinator.store.read_manifest(first.run_id)["rainfall_source"]
 
 
 def test_coordinator_cancels_while_provider_is_blocked(tmp_path: Path) -> None:
