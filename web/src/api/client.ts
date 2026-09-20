@@ -6,6 +6,8 @@ export type ResourceEstimateResponse = components["schemas"]["ResourceEstimateRe
 export type RunConfig = components["schemas"]["RunConfig"];
 export type RunCreateResponse = components["schemas"]["RunCreateResponse"];
 export type RunStatusResponse = components["schemas"]["RunStatusResponse"];
+export type ResultMetadataResponse = components["schemas"]["ResultMetadataResponse"];
+export type PointInspectionResponse = components["schemas"]["PointInspectionResponse"];
 
 async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await window.fetch(path, init);
@@ -51,4 +53,44 @@ export function cancelRun(runId: string): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: "{}",
   });
+}
+
+
+export function getResultMetadata(runId: string): Promise<ResultMetadataResponse> {
+  return jsonRequest<ResultMetadataResponse>(
+    `/api/v1/runs/${encodeURIComponent(runId)}/result-metadata`,
+  );
+}
+
+export function inspectResult(
+  runId: string,
+  lon: number,
+  lat: number,
+  timeIndex: number | null = null,
+  signal?: AbortSignal,
+): Promise<PointInspectionResponse> {
+  const params = new URLSearchParams({
+    lon: String(lon),
+    lat: String(lat),
+  });
+  if (timeIndex !== null) params.set("time_index", String(timeIndex));
+  return jsonRequest<PointInspectionResponse>(
+    `/api/v1/runs/${encodeURIComponent(runId)}/inspect?${params.toString()}`,
+    { signal },
+  );
+}
+
+export function resultLayerUrl(
+  runId: string,
+  layer: "max-depth" | "grid-resolution" | "depth",
+  timeIndex: number | null = null,
+): string {
+  const encodedRunId = encodeURIComponent(runId);
+  if (layer === "depth") {
+    if (timeIndex === null) {
+      throw new Error("timeIndex is required for the time-depth layer");
+    }
+    return `/api/v1/runs/${encodedRunId}/layers/depth.png?time_index=${timeIndex}`;
+  }
+  return `/api/v1/runs/${encodedRunId}/layers/${layer}.png`;
 }
