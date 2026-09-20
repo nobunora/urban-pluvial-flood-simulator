@@ -39,6 +39,33 @@ describe("RunProgress", () => {
     expect(screen.getByRole("progressbar", { name: "アプリケーション工程の進捗" })).toHaveValue(3);
   });
 
+  it("shows provider/grid progress detail and remaining work outside SFINCS", () => {
+    const acquiring = status(
+      "ACQUIRING_VECTORS",
+      "建物・道路データを取得中",
+      "ACQUIRING_VECTORS",
+    );
+    acquiring.progress_fraction = 0.45;
+    acquiring.progress_detail = "PLATEAU 3/8ファイル処理済み / 建物120件 / 残り5ファイル";
+    acquiring.activity_lines = [
+      "[APP] PLATEAU対象ファイル 8件",
+      "[APP] PLATEAU 3/8ファイル処理済み / 建物120件 / 残り5ファイル",
+    ];
+
+    render(
+      <RunProgress
+        status={acquiring}
+        stageObservedAtMs={Date.now() - 5000}
+        lastPollAtMs={Date.now()}
+      />,
+    );
+
+    expect(screen.getByRole("progressbar", { name: "現在工程の処理進捗" })).toHaveValue(0.45);
+    expect(screen.getByText("45%")).toBeVisible();
+    expect(screen.getAllByText(/残り5ファイル/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByLabelText("処理ログ")).toHaveTextContent("3/8ファイル処理済み");
+  });
+
   it("uses indeterminate engine activity until real progress is available", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-20T08:00:10Z"));
