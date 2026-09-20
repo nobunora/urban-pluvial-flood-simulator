@@ -63,6 +63,15 @@
 - Record the number of clipped time-cell depth values, clipped max-depth cells, and minimum raw active depth in normalized metadata.
 - Preserve the raw `sfincs_map.nc` unchanged so every normalization decision remains auditable.
 
+## Operational failure diagnostics decision
+
+- Unexpected run failures must not persist only a generic `INTERNAL_RUN_FAILED` code.
+- The run manifest persists the failing stage, exception type, exception message, and relative diagnostic-file path.
+- `logs/failure_diagnostic.json` stores the traceback and stage-specific runtime inputs needed for local diagnosis.
+- BUILDING_GRID diagnostics include analysis dimensions, elevation array shape/finite range, vector provider, and building/road feature counts.
+- Invalid individual vector features (ragged, non-numeric, non-finite, or invalid geometry) are skipped consistently with the existing invalid-polygon filtering policy rather than aborting the entire Full 1 m grid.
+- `scripts/diagnose_grid_run.py` is the supported host-local isolation tool for replaying BUILDING_GRID from an existing failed run without repeating SFINCS execution.
+
 ## Deterministic validation ownership
 
 - GitHub Actions owns deterministic checks that do not require the user's private/local executable or live provider state.
