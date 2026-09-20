@@ -267,6 +267,19 @@ class RunCoordinator:
                 raise ResultNotReady(str(run_id))
             return dict(record.result_metadata)
 
+    def result_arrays_path(self, run_id: UUID) -> Path:
+        record = self.get(run_id)
+        with record.lock:
+            if record.machine.state is not RunState.COMPLETE or record.result_metadata is None:
+                raise ResultNotReady(str(run_id))
+            filename = record.manifest.output_files.get("normalized_arrays")
+        if not filename:
+            raise ResultNotReady(str(run_id))
+        path = self.store.run_dir(run_id) / "results" / filename
+        if not path.is_file():
+            raise ResultNotReady(str(run_id))
+        return path
+
     def events_after(self, run_id: UUID, sequence: int = 0) -> list[RunEvent]:
         record = self.get(run_id)
         with record.lock:
@@ -445,6 +458,17 @@ class RunCoordinator:
                 area=record.config.analysis_area,
                 results_dir=run_root / "results",
                 limitations=record.manifest.limitations,
+                provider_summary={
+                    "building_provider": record.manifest.building_provider,
+                    "road_provider": record.manifest.road_provider,
+                    "warnings": list(record.manifest.provider_warnings),
+                },
+                engine_summary={
+                    "sfincs_version": record.manifest.sfincs_version,
+                    "sfincs_build_sha256": record.manifest.sfincs_build_sha256,
+                    "sfincs_engine_source": record.manifest.sfincs_engine_source,
+                    "hydromt_sfincs_version": record.manifest.hydromt_sfincs_version,
+                },
             )
             record.result_metadata = normalized.metadata
             record.manifest = record.manifest.model_copy(
