@@ -7,6 +7,7 @@ import {
   getHealth,
   getResultMetadata,
   getRun,
+  type ResultMetadataResponse,
 } from "./api/client";
 
 vi.mock("./api/client", async (importOriginal) => {
@@ -29,7 +30,7 @@ vi.mock("./result/ResultMap", () => ({
   ),
 }));
 
-const metadata = {
+const metadata: ResultMetadataResponse = {
   schema_version: "1",
   bounds: {
     west_deg: 139.764,
@@ -81,7 +82,7 @@ const metadata = {
     coastal_tide_surge_modelled: false,
     official_forecast: false,
   },
-} as const;
+};
 
 describe("local review UI", () => {
   beforeEach(() => {
