@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import math
 import os
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
@@ -141,24 +142,28 @@ def build_full_1m_grid(
     area: AnalysisArea,
     elevation: ElevationProduct,
     vectors: Any,
+    *,
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> FullGridProduct:
     """Create the exact 1 m hydraulic arrays required by the Phase 3 builder."""
     width = _cell_count(area.width_m)
     height = _cell_count(area.height_m)
-    worker_count = min(3, max(1, os.cpu_count() or 1))
-    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="full1m-prep") as executor:
-        terrain_future = executor.submit(_cell_center_elevation, elevation, height, width)
-        building_future = executor.submit(
-            _rasterize_local,
-            _polygon_shapes(list(vectors.buildings)),
+    if progress_callback is not None:
+        progress_callback(0.0, "Full 1 m前処理 0/3 完了 / 残り3処理")
+
+    def build_building_mask() -> np.ndarray:
+        shapes = _polygon_shapes(list(vectors.buildings))
+        return _rasterize_local(
+            shapes,
             width=width,
             height=height,
             width_m=area.width_m,
             height_m=area.height_m,
             all_touched=True,
         )
-        road_future = executor.submit(
-            _rasterize_local,
+
+    def build_road_mask() -> np.ndarray:
+        return _rasterize_local(
             _road_shapes(vectors),
             width=width,
             height=height,
@@ -166,9 +171,36 @@ def build_full_1m_grid(
             height_m=area.height_m,
             all_touched=True,
         )
-        terrain = terrain_future.result()
-        building_mask = building_future.result()
-        road_mask = road_future.result()
+
+    worker_count = min(3, max(1, os.cpu_count() or 1))
+    completed: dict[str, np.ndarray] = {}
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="full1m-prep") as executor:
+        futures = {
+            executor.submit(_cell_center_elevation, elevation, height, width): "地形",
+            executor.submit(build_building_mask): "建物マスク",
+            executor.submit(build_road_mask): "道路マスク",
+        }
+        done_count = 0
+        for future in as_completed(futures):
+            label_name = futures[future]
+            completed[label_name] = future.result()
+            done_count += 1
+            if progress_callback is not None:
+                progress_callback(
+                    0.15 * done_count,
+                    f"Full 1 m前処理 {done_count}/3 完了（{label_name}） / 残り{3 - done_count}処理",
+                )
+
+    terrain = completed["地形"]
+    building_mask = completed["建物マスク"]
+    road_mask = completed["道路マスク"]
+
+    if progress_callback is not None:
+        progress_callback(
+            0.52,
+            f"建物セル {int(np.count_nonzero(building_mask)):,} / 道路セル "
+            f"{int(np.count_nonzero(road_mask)):,} を確定",
+        )
 
     manning = np.full((height, width), GENERAL_MANNING, dtype=np.float32)
     manning[road_mask & ~building_mask] = ROAD_MANNING
@@ -180,12 +212,28 @@ def build_full_1m_grid(
     sfincs_mask[:, -1] = 3
     sfincs_mask[building_mask] = 0
 
+    if progress_callback is not None:
+        progress_callback(0.60, "粗度・SFINCS建物マスク完了 / 屋根雨水配分を開始")
+
+    def roof_progress(done: int, total: int) -> None:
+        if progress_callback is None:
+            return
+        fraction = 1.0 if total == 0 else done / total
+        remaining = max(0, total - done)
+        progress_callback(
+            0.60 + 0.35 * fraction,
+            f"屋根雨水配分 {done}/{total}建物群 / 残り{remaining}建物群",
+        )
+
     allocation = allocate_roof_rainfall(
         building_mask,
         cell_area_m2=1.0,
         max_distance_cells=5,
         tolerance=1e-9,
+        progress_callback=roof_progress,
     )
+    if progress_callback is not None:
+        progress_callback(1.0, "Full 1 m格子・建物マスク・粗度の構築完了")
     crs = local_crs(area)
     return FullGridProduct(
         elevation_m=terrain,
