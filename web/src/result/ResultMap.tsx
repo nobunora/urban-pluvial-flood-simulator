@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
-import maplibregl, {
-  type ImageSource,
-  type Map as MapLibreMap,
+import {
+  ImageSource,
+  Map as MapLibreMap,
+  Marker,
+  NavigationControl,
   type MapMouseEvent,
-  type Marker,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -35,7 +36,7 @@ export default function ResultMap({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const map = new maplibregl.Map({
+    const map = new MapLibreMap({
       container: containerRef.current,
       style: {
         version: 8,
@@ -73,11 +74,11 @@ export default function ResultMap({
       attributionControl: true,
     });
     mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    map.addControl(new NavigationControl({ showCompass: false }), "top-right");
 
     const handleClick = (event: MapMouseEvent) => {
       markerRef.current?.remove();
-      markerRef.current = new maplibregl.Marker({ color: "#1f2937" })
+      markerRef.current = new Marker({ color: "#1f2937" })
         .setLngLat(event.lngLat)
         .addTo(map);
       inspectRef.current(event.lngLat.lng, event.lngLat.lat);
