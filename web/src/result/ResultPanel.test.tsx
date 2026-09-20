@@ -54,6 +54,10 @@ const metadata: ResultMetadataResponse = {
   },
   depth_legend: [
     { label: "0.01–0.05 m", min_m: 0.01, max_m: 0.05, color: "#C6E8FF" },
+    { label: "0.05–0.10 m", min_m: 0.05, max_m: 0.1, color: "#5BB1FF" },
+    { label: "0.10–0.30 m", min_m: 0.1, max_m: 0.3, color: "#406EDE" },
+    { label: "0.30–0.50 m", min_m: 0.3, max_m: 0.5, color: "#7E52C4" },
+    { label: "0.50–1.00 m", min_m: 0.5, max_m: 1, color: "#C4418B" },
     { label: "1.00 m以上", min_m: 1, max_m: null, color: "#6D1B4A" },
   ],
   provider_summary: {
@@ -124,6 +128,48 @@ describe("ResultPanel", () => {
     expect(await screen.findByText("0.420 m")).toBeVisible();
     expect(screen.getByText("最大時刻")).toBeVisible();
     expect(screen.getByText("00:30")).toBeVisible();
+    expect(screen.getByText("12.300 m")).toBeVisible();
+    expect(screen.getByText("1.000 m")).toBeVisible();
+  });
+
+  it("passes the selected actual output index to native inspection on the time layer", async () => {
+    vi.mocked(inspectResult).mockResolvedValue({
+      lon_deg: 139.75,
+      lat_deg: 35.65,
+      has_data: true,
+      row: 10,
+      column: 20,
+      time_index: 3,
+      time_value: "2026-01-01T00:30:00",
+      depth_m: 0.12,
+      max_depth_m: 0.42,
+      max_time_index: 3,
+      max_time_value: "2026-01-01T00:30:00",
+      terrain_elevation_m: 12.3,
+      grid_resolution_m: 1,
+    });
+
+    render(
+      <ResultPanel
+        runId="run-1"
+        metadata={metadata}
+        rainfallSummary="10 mm/h × 1分"
+        onNewAnalysis={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "時刻別の浸水深" }));
+    fireEvent.click(screen.getByRole("button", { name: "次の時刻" }));
+    fireEvent.click(screen.getByRole("button", { name: "地点を確認" }));
+
+    expect(await screen.findByText("0.120 m")).toBeVisible();
+    expect(screen.getByText("現在水深")).toBeVisible();
+    expect(vi.mocked(inspectResult).mock.calls[0]?.slice(0, 4)).toEqual([
+      "run-1",
+      139.75,
+      35.65,
+      3,
+    ]);
   });
 
   it("shows no-data distinctly from zero depth", async () => {
@@ -160,7 +206,7 @@ describe("ResultPanel", () => {
     expect(screen.queryByText("0.000 m")).not.toBeInTheDocument();
   });
 
-  it("shows maximum depth first and exposes backend provenance/limitations", () => {
+  it("shows maximum depth first, the exact six-band legend, and complete provenance/limitations", () => {
     render(
       <ResultPanel
         runId="run-1"
@@ -173,15 +219,33 @@ describe("ResultPanel", () => {
     expect(screen.getByRole("heading", { name: "解析結果" })).toBeVisible();
     expect(screen.getByTestId("result-map")).toHaveTextContent("最大浸水深の地図");
     expect(screen.getByText("1.250 m")).toBeVisible();
+
+    for (const label of [
+      "0.01–0.05 m",
+      "0.05–0.10 m",
+      "0.10–0.30 m",
+      "0.30–0.50 m",
+      "0.50–1.00 m",
+      "1.00 m以上",
+    ]) {
+      expect(screen.getByText(label)).toBeVisible();
+    }
+
     expect(screen.getAllByText("osm").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("浸透は考慮していません。")).toBeVisible();
 
     fireEvent.click(screen.getByText("解析条件と出典"));
     expect(screen.getByText("Application: 0.1.0")).toBeVisible();
+    expect(screen.getByText(/Rainfall:/)).toBeVisible();
+    expect(screen.getByText(/Elevation:/)).toBeVisible();
+    expect(screen.getByText(/Elevation provider counts:/)).toBeVisible();
+    expect(screen.getByText(/Manning:/)).toBeVisible();
     expect(screen.getByText("Boundary: closed boundary")).toBeVisible();
+    expect(screen.getByText(/Roof-rain mass diagnostic:/)).toBeVisible();
+    expect(screen.getByText("HydroMT-SFINCS: 2.0.0rc3")).toBeVisible();
   });
 
-  it("switches to time depth and grid-resolution controls", () => {
+  it("switches only among actual time indices and exposes grid-resolution controls", () => {
     render(
       <ResultPanel
         runId="run-1"
@@ -195,6 +259,10 @@ describe("ResultPanel", () => {
     expect(screen.getByTestId("result-map")).toHaveTextContent("時刻別浸水深の地図");
     expect(screen.getByRole("slider", { name: "結果時刻" })).toBeVisible();
     expect(screen.getByText("現在: 00:00")).toBeVisible();
+    expect(screen.getByTestId("result-map")).toHaveAttribute(
+      "data-image-url",
+      "/api/v1/runs/run-1/layers/depth.png?time_index=0",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "次の時刻" }));
     expect(screen.getByText("現在: 00:30")).toBeVisible();
