@@ -8,11 +8,6 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-# SFINCS 2.4.0 uses twet_threshold=0.01 m by default when classifying a cell
-# as flooded/wet. Treat finite output excursions within that dry-cell band as
-# zero-depth normalization noise, but expose diagnostics instead of hiding them.
-SFINCS_DRY_DEPTH_TOLERANCE_M = 0.01
-
 
 class SfincsResultError(RuntimeError):
     code = "RESULT_INVALID"
@@ -30,6 +25,7 @@ class SfincsRegularResult:
     negative_depth_clipped_values: int = 0
     negative_max_depth_clipped_cells: int = 0
     min_raw_active_depth_m: float = 0.0
+    excluded_boundary_cells: int = 0
 
     @property
     def global_max_depth_m(self) -> float:
@@ -45,7 +41,19 @@ def _require_dims(dataset: xr.Dataset, name: str, expected: tuple[str, ...]) -> 
 
 
 def read_regular_result(path: str | Path) -> SfincsRegularResult:
-    """Read the regular-grid result contract proven during Phase 0."""
+    """Read and normalize the regular-grid result contract proven during Phase 0.
+
+    SFINCS regular-grid NetCDF deliberately writes h = zs - zb for every
+    output cell without wet-cell filtering. Dry cells can therefore contain a
+    finite negative h even when the engine completed normally. Product-level
+    water depth is physical depth, so finite negative time-depth values are
+    normalized to zero and retained as diagnostics rather than treated as a
+    solver failure.
+
+    hmax is different: SFINCS writes it through its wet-cell filter. A finite
+    negative hmax is therefore inconsistent with the engine's maximum
+    wet-depth contract and remains a hard RESULT_INVALID error.
+    """
     result_path = Path(path)
     if not result_path.is_file():
         raise SfincsResultError("SFINCS result file is missing")
@@ -61,7 +69,13 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
             hmax_values = np.asarray(dataset["hmax"].values, dtype=np.float32)
             terrain = np.asarray(dataset["zb"].values, dtype=np.float32)
             mask_values = np.asarray(dataset["msk"].values)
-            active = mask_values > 0
+
+            # v0.1 reports only normal hydraulic cells. SFINCS msk=2/3 cells
+            # are boundary-control cells; in particular msk=3 outflow cells
+            # have depth artificially held at zero by the engine and are not
+            # independent physical result cells.
+            active = mask_values == 1
+            boundary = (mask_values == 2) | (mask_values == 3)
 
             if hmax_values.shape[0] < 1:
                 raise SfincsResultError("SFINCS hmax contains no output frame")
@@ -73,17 +87,41 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
                 raise SfincsResultError("active SFINCS depth cells contain non-finite values")
             if np.any(~np.isfinite(terrain[active])):
                 raise SfincsResultError("active SFINCS terrain cells contain non-finite values")
-            if np.any(np.isinf(hmax_values[:, active])):
+
+            active_hmax = hmax_values[:, active]
+            if np.any(np.isinf(active_hmax)):
                 raise SfincsResultError("active SFINCS maximum depth contains infinite values")
+            finite_active_hmax = active_hmax[np.isfinite(active_hmax)]
+            if np.any(finite_active_hmax < 0.0):
+                raise SfincsResultError(
+                    "active SFINCS maximum depth contains negative finite values"
+                )
+
+            active_depth_values = depth[:, active]
+            min_raw_active_depth = (
+                float(np.min(active_depth_values)) if active_depth_values.size else 0.0
+            )
+            negative_depth_clipped_values = int(
+                np.count_nonzero(active_depth_values < 0.0)
+            )
+
+            # Convert SFINCS' unfiltered signed regular-grid h output into the
+            # product contract: physical water depth cannot be negative.
+            depth[:, active] = np.maximum(active_depth_values, 0.0)
 
             finite_hmax = np.isfinite(hmax_values)
             has_hmax = np.any(finite_hmax, axis=0)
             max_depth = np.full(active.shape, np.nan, dtype=np.float32)
-            if np.any(has_hmax):
+            valid_hmax = active & has_hmax
+            if np.any(valid_hmax):
                 finite_values = np.where(finite_hmax, hmax_values, -np.inf)
                 finite_max = np.max(finite_values, axis=0)
-                max_depth[has_hmax] = finite_max[has_hmax]
+                max_depth[valid_hmax] = finite_max[valid_hmax]
 
+            # Regular-grid hmax is wet-filtered by SFINCS. Missing hmax on an
+            # otherwise active cell can legitimately mean the cell never passed
+            # the engine's wet threshold. Reconstruct from already-normalized
+            # time-depth output; a never-wet cell becomes exactly zero.
             reconstructed_mask = active & ~has_hmax
             reconstructed_cells = int(np.count_nonzero(reconstructed_mask))
             if reconstructed_cells:
@@ -96,30 +134,14 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
                 raise SfincsResultError(
                     "active SFINCS maximum depth could not be reconstructed"
                 )
-            active_depth_values = depth[:, active]
-            active_max_depth_values = max_depth[active]
-            min_raw_active_depth = (
-                float(np.min(active_depth_values)) if active_depth_values.size else 0.0
-            )
-            if (
-                np.any(active_depth_values < -SFINCS_DRY_DEPTH_TOLERANCE_M)
-                or np.any(active_max_depth_values < -SFINCS_DRY_DEPTH_TOLERANCE_M)
-            ):
-                raise SfincsResultError("SFINCS result contains materially negative water depth")
 
-            negative_depth_clipped_values = int(
-                np.count_nonzero(active_depth_values < 0.0)
-            )
-            negative_max_depth_clipped_cells = int(
-                np.count_nonzero(active_max_depth_values < 0.0)
-            )
-            depth[:, active] = np.maximum(active_depth_values, 0.0)
-            max_depth[active] = np.maximum(active_max_depth_values, 0.0)
+            negative_max_depth_clipped_cells = 0
 
             depth[:, ~active] = np.nan
             max_depth[~active] = np.nan
             terrain[~active] = np.nan
             time_values = tuple(str(value) for value in dataset["time"].values)
+            excluded_boundary_cells = int(np.count_nonzero(boundary))
     except SfincsResultError:
         raise
     except (OSError, ValueError, KeyError) as exc:
@@ -135,4 +157,5 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
         negative_depth_clipped_values=negative_depth_clipped_values,
         negative_max_depth_clipped_cells=negative_max_depth_clipped_cells,
         min_raw_active_depth_m=min_raw_active_depth,
+        excluded_boundary_cells=excluded_boundary_cells,
     )
