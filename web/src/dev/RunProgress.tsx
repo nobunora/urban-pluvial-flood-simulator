@@ -29,18 +29,18 @@ const BACKEND_ORDER = [
 const GROUPS = [
   {
     label: "準備",
-    icon: "☂ ⚙",
-    codes: ["CREATED", "VALIDATING", "ACQUIRING_RAINFALL", "ENSURING_ENGINE"],
+    icon: "✓",
+    codes: ["CREATED", "VALIDATING"],
   },
   {
-    label: "地図データ",
-    icon: "⛰ ▦",
-    codes: ["ACQUIRING_TERRAIN", "ACQUIRING_VECTORS"],
+    label: "データ取得",
+    icon: "⛰ ▦ ☂",
+    codes: ["ACQUIRING_TERRAIN", "ACQUIRING_VECTORS", "ACQUIRING_RAINFALL"],
   },
   {
     label: "解析格子",
-    icon: "▤ ▱",
-    codes: ["PREPROCESSING_TERRAIN", "ALLOCATING_ROOF_RAIN", "BUILDING_GRID", "BUILDING_MODEL"],
+    icon: "▤ ▱ ⚙",
+    codes: ["PREPROCESSING_TERRAIN", "ALLOCATING_ROOF_RAIN", "BUILDING_GRID", "BUILDING_MODEL", "ENSURING_ENGINE"],
   },
   {
     label: "SFINCS計算",
