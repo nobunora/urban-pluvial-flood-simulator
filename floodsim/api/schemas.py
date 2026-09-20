@@ -127,6 +127,7 @@ class RunStatusResponse(BaseModel):
     failure_message: str | None = None
     progress_fraction: float | None = Field(default=None, ge=0, le=1)
     estimated_remaining_seconds: float | None = Field(default=None, ge=0)
+    progress_detail: str | None = None
     activity_lines: list[str] = Field(default_factory=list)
 
 
