@@ -49,6 +49,16 @@ const metadata: ResultMetadataResponse = {
     sfincs_version: "2.4.0 Galibier",
     hydromt_sfincs_version: "2.0.0rc3",
   },
+  run_summary: {
+    application_version: "0.1.0",
+    requested_accuracy_mode: "full_1m",
+    rainfall_source: { mode: "constant", intensity_mm_per_h: 10 },
+    elevation_provider_counts: { gsi_1m: 250000 },
+    elevation_source_summary: { primary: "GSI" },
+    manning_defaults: { general: 0.03, road: 0.02 },
+    boundary_policy: "closed boundary",
+    roof_rain_mass_diagnostic: { relative_mass_error: 0 },
+  },
   no_data_policy: "inactive cells are NaN",
   limitations: {
     infiltration_modelled: false,
@@ -78,6 +88,8 @@ describe("ResultPanel", () => {
     expect(screen.getByText("1.250 m")).toBeVisible();
     expect(screen.getAllByText("osm").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("浸透は考慮していません。")).toBeVisible();
+    expect(screen.getByText("Application: 0.1.0")).toBeVisible();
+    expect(screen.getByText("Boundary: closed boundary")).toBeVisible();
   });
 
   it("switches to time depth and grid-resolution controls", () => {
