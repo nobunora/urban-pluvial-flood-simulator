@@ -189,6 +189,7 @@ class SfincsModelBuilder:
             model.config.set("outputformat", "net")
             model.config.set("coriolis", 0)
             model.config.set("storecumprcp", 1)
+            model.config.set("storevel", 1)
 
             _configure_precipitation(model, _precipitation(rainfall, grid), rainfall)
             model.write()
@@ -213,6 +214,7 @@ class SfincsModelBuilder:
             "rainfall_volume_after_weight_area_m2": grid.roof_allocation.hydraulic_weighted_area_m2,
             "roof_rain_relative_mass_error": grid.roof_allocation.relative_mass_error,
             "output_interval_seconds": output_interval,
+            "velocity_output": {"storevel": 1, "variables": ["u", "v"]},
             "unsupported_physics": {
                 "infiltration": False,
                 "sewer_drainage": False,
