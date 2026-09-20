@@ -113,7 +113,7 @@ describe("local review UI", () => {
     expect(screen.getByRole("button", { name: "解析開始" })).toBeVisible();
   });
 
-  it("enters dedicated RESULT mode after a completed run", async () => {
+  it("enters dedicated RESULT mode after a completed run and retains setup inputs for a new analysis", async () => {
     render(<App />);
 
     fireEvent.change(screen.getByLabelText("継続時間 (min)"), {
@@ -130,6 +130,15 @@ describe("local review UI", () => {
 
     expect(screen.getByTestId("result-map")).toHaveTextContent("最大浸水深の地図");
     expect(screen.queryByRole("heading", { name: "1. 条件" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "新しい解析" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "新しい解析" }));
+
+    expect(screen.getByRole("heading", { name: "1. 条件" })).toBeVisible();
+    expect(screen.getByLabelText("緯度")).toHaveValue("35.681236");
+    expect(screen.getByLabelText("経度")).toHaveValue("139.767125");
+    expect(screen.getByLabelText("範囲")).toHaveValue("250");
+    expect(screen.getByLabelText("雨量強度 (mm/h)")).toHaveValue("10");
+    expect(screen.getByLabelText("継続時間 (min)")).toHaveValue("1");
+    expect(screen.getByText(/精度:/)).toHaveTextContent("Full 1 m");
   });
 });
