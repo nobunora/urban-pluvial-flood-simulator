@@ -18,7 +18,7 @@ from floodsim.preprocessing.roof_rainfall import RoofRainAllocation
 from floodsim.storage.run_store import atomic_write_json
 
 PREPARED_GRID_CACHE_SCHEMA = "1"
-PREPARED_GRID_REVISION = "full1m-preprocess-v1"
+PREPARED_GRID_REVISION = "full1m-preprocess-v2-building-supplement"
 
 
 @dataclass(frozen=True)
