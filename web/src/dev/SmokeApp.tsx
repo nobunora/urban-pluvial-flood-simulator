@@ -293,7 +293,7 @@ export default function SmokeApp() {
             <p>精度: <strong>Full 1 m</strong>（Adaptiveはレビュー版では無効）</p>
             <div className="smoke-actions">
               <button disabled={!area || setupLocked} onClick={() => void handleEstimate()}>負荷を見積る</button>
-              <button disabled={!area || busy || runActive} onClick={() => void handleRun()}>
+              <button disabled={!area || setupLocked} onClick={() => void handleRun()}>
                 解析開始
               </button>
             </div>
