@@ -115,6 +115,7 @@ export default function ResultPanel({
 
   const provider = metadata.provider_summary;
   const engine = metadata.engine_summary;
+  const runSummary = metadata.run_summary;
   const globalMax = metadata.max_depth_summary.global_max_depth_m;
   const maxTimePosition = Math.max(0, metadata.available_time_indices.length - 1);
 
@@ -188,7 +189,7 @@ export default function ResultPanel({
           >
             ▶
           </button>
-          <strong>現在: {elapsedLabel(metadata.time_values, timePosition)}</strong>
+          <strong>現在: {elapsedLabel(metadata.time_values, selectedTimeIndex ?? 0)}</strong>
         </div>
       )}
 
@@ -240,10 +241,16 @@ export default function ResultPanel({
                 <dt>経度</dt><dd>{inspection.lon_deg.toFixed(6)}</dd>
                 <dt>地盤高</dt><dd>{metres(inspection.terrain_elevation_m)}</dd>
                 <dt>最大浸水深</dt><dd>{metres(inspection.max_depth_m)}</dd>
+                <dt>最大時刻</dt>
+                <dd>
+                  {inspection.max_time_index == null
+                    ? "—"
+                    : elapsedLabel(metadata.time_values, inspection.max_time_index)}
+                </dd>
                 {layer === "time_depth" && (
                   <>
                     <dt>現在水深</dt><dd>{metres(inspection.depth_m)}</dd>
-                    <dt>時刻</dt><dd>{inspection.time_value ?? elapsedLabel(metadata.time_values, timePosition)}</dd>
+                    <dt>時刻</dt><dd>{inspection.time_value ?? elapsedLabel(metadata.time_values, selectedTimeIndex ?? 0)}</dd>
                   </>
                 )}
                 <dt>格子</dt><dd>{metres(inspection.grid_resolution_m)}</dd>
@@ -276,6 +283,24 @@ export default function ResultPanel({
               Grid: {Object.entries(metadata.grid_level_summary)
                 .map(([level, count]) => `${level}: ${count.toLocaleString()}`)
                 .join(" / ")}
+            </p>
+            <p>Application: {runSummary.application_version}</p>
+            <p>Accuracy: {runSummary.requested_accuracy_mode}</p>
+            <p>
+              Rainfall: <code>{JSON.stringify(runSummary.rainfall_source)}</code>
+            </p>
+            <p>
+              Elevation: <code>{JSON.stringify(runSummary.elevation_source_summary)}</code>
+            </p>
+            <p>
+              Elevation provider counts: <code>{JSON.stringify(runSummary.elevation_provider_counts)}</code>
+            </p>
+            <p>
+              Manning: <code>{JSON.stringify(runSummary.manning_defaults)}</code>
+            </p>
+            <p>Boundary: {runSummary.boundary_policy}</p>
+            <p>
+              Roof-rain mass diagnostic: <code>{JSON.stringify(runSummary.roof_rain_mass_diagnostic)}</code>
             </p>
             <p>HydroMT-SFINCS: {engine?.hydromt_sfincs_version ?? "—"}</p>
             <p className="result-policy">{metadata.no_data_policy}</p>
