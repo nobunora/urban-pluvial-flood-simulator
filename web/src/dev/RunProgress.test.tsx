@@ -33,7 +33,7 @@ describe("RunProgress", () => {
     expect(screen.getByRole("progressbar", { name: "アプリケーション工程の進捗" })).toHaveValue(8);
   });
 
-  it("uses indeterminate engine activity and elapsed time without fake completion percentage", () => {
+  it("uses indeterminate engine activity until real progress is available", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-20T08:00:10Z"));
 
@@ -46,8 +46,30 @@ describe("RunProgress", () => {
     );
 
     expect(screen.getByText("SFINCS計算中 — 経過 00:10")).toBeVisible();
-    expect(screen.getByText(/完了率はエンジンから取得していません/)).toBeVisible();
-    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+    expect(screen.getByText(/実進捗を取得すると残り時間を推定します/)).toBeVisible();
+    expect(screen.queryByRole("progressbar", { name: "SFINCS計算進捗" })).not.toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  it("shows actual parsed SFINCS percentage and elapsed-based ETA", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-20T08:00:12Z"));
+    const running = status("RUNNING_ENGINE", "SFINCSを実行中", "RUNNING_ENGINE");
+    running.progress_fraction = 0.4;
+    running.estimated_remaining_seconds = 18;
+
+    render(
+      <RunProgress
+        status={running}
+        stageObservedAtMs={Date.parse("2026-09-20T08:00:00Z")}
+        lastPollAtMs={Date.parse("2026-09-20T08:00:11Z")}
+      />,
+    );
+
+    expect(screen.getByText(/SFINCS計算中 — 40% — 経過 00:12/)).toBeVisible();
+    expect(screen.getByRole("progressbar", { name: "SFINCS計算進捗" })).toHaveValue(0.4);
+    expect(screen.getByText(/残り目安 約00:18（実進捗から推定）/)).toBeVisible();
 
     vi.useRealTimers();
   });
