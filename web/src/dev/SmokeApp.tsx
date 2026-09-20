@@ -203,6 +203,7 @@ export default function SmokeApp() {
         <div className="smoke-health">Backend: {backend}</div>
       </header>
 
+      {!resultMetadata && (
       <section className="smoke-grid">
         <div className="smoke-card">
           <h2>1. 条件</h2>
@@ -260,6 +261,7 @@ export default function SmokeApp() {
           {error && <pre className="smoke-error">{error}</pre>}
         </div>
       </section>
+      )}
 
       {runId && resultMetadata && (
         <ResultPanel
