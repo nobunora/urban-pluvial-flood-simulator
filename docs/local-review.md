@@ -167,6 +167,19 @@ python -m scripts.diagnose_grid_run f2dc662c-f445-4f6d-af75-223bb8c2f16c
 
 The command reuses the persisted run config and `source_refs`, uses the normal elevation cache path, writes `logs/grid_replay_diagnostic.json`, and reports building/road counts plus grid/roof-allocation diagnostics.
 
+## Normalized vector provider contract
+
+The Full 1 m grid receives one provider-neutral vector structure:
+
+- `buildings`;
+- `road_lines`;
+- `road_polygons`;
+- provenance.
+
+PLATEAU can supply road polygons. The OSM fallback currently supplies road lines only, so its `road_polygons` collection is explicitly empty. This avoids provider-specific branching in grid construction and does not invent polygon geometry.
+
+Persisted manifest paths such as `logs/failure_diagnostic.json` always use forward slashes, including on Windows, so run artifacts remain portable across tools and platforms.
+
 ## Working-tree safety
 
 Before user review, run:
