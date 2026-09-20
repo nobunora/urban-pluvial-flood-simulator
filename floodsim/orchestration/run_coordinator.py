@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import threading
 import time
 import traceback
@@ -121,6 +122,7 @@ class RunRecord:
     runner: SfincsRunner | None = None
     progress_fraction: float | None = None
     estimated_remaining_seconds: float | None = None
+    progress_detail: str | None = None
     activity_lines: list[str] = field(default_factory=list)
     lock: threading.RLock = field(default_factory=threading.RLock)
 
@@ -207,9 +209,54 @@ class RunCoordinator:
         with record.lock:
             record.machine.transition(state)
             record.manifest = record.manifest.model_copy(update={"run_status": state})
+            record.progress_fraction = None
+            record.estimated_remaining_seconds = None
+            record.progress_detail = None
             self._append_event(record, state, message)
             self._append_activity(record, message)
             self._persist_manifest(record)
+
+    def _update_work_progress(
+        self,
+        record: RunRecord,
+        fraction: float,
+        detail: str,
+        *,
+        log: bool = True,
+    ) -> None:
+        bounded = max(0.0, min(1.0, float(fraction)))
+        with record.lock:
+            record.progress_fraction = bounded
+            record.progress_detail = detail
+        if log:
+            self._append_activity(record, detail)
+
+    def _build_grid_with_progress(
+        self,
+        record: RunRecord,
+        area: Any,
+        elevation: Any,
+        vectors: Any,
+    ) -> Any:
+        callback = lambda fraction, detail: self._update_work_progress(
+            record, fraction, detail
+        )
+        signature = inspect.signature(self.grid_builder)
+        accepts_progress = (
+            "progress_callback" in signature.parameters
+            or any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in signature.parameters.values()
+            )
+        )
+        if accepts_progress:
+            return self.grid_builder(
+                area,
+                elevation,
+                vectors,
+                progress_callback=callback,
+            )
+        return self.grid_builder(area, elevation, vectors)
 
     def _mark_cancelled(self, record: RunRecord, message: str) -> None:
         with record.lock:
@@ -421,6 +468,9 @@ class RunCoordinator:
                     plateau_budget_s=self.plateau_vector_budget_s,
                     osm_budget_s=self.osm_vector_budget_s,
                     cancel_event=record.cancel_event,
+                    progress_callback=lambda fraction, detail: self._update_work_progress(
+                        record, fraction, detail
+                    ),
                 )
                 runtime_diagnostic["grid_input"] = self._grid_input_diagnostic(
                     record,
@@ -463,7 +513,12 @@ class RunCoordinator:
                 assert cache_entry is not None
                 cache_metadata = cache_entry.metadata
             else:
-                grid = self.grid_builder(record.config.analysis_area, elevation, vectors)
+                grid = self._build_grid_with_progress(
+                    record,
+                    record.config.analysis_area,
+                    elevation,
+                    vectors,
+                )
                 elevation_details = elevation.provenance.source_details
                 vector_provenance = vectors.provenance
                 cache_metadata = {
@@ -556,6 +611,12 @@ class RunCoordinator:
                 with record.lock:
                     record.progress_fraction = progress.fraction
                     record.estimated_remaining_seconds = remaining
+                    record.progress_detail = (
+                        f"SFINCS {round(progress.fraction * 100)}% / "
+                        f"残り目安 {remaining:.1f}秒"
+                        if remaining is not None
+                        else f"SFINCS {round(progress.fraction * 100)}%"
+                    )
 
             execution = runner.run(
                 build.model_dir,
@@ -568,6 +629,7 @@ class RunCoordinator:
             with record.lock:
                 record.progress_fraction = 1.0
                 record.estimated_remaining_seconds = 0.0
+                record.progress_detail = "SFINCS 100%"
             runtime_diagnostic["sfincs_elapsed_seconds"] = execution.elapsed_seconds
             self._append_activity(record, f"SFINCS完了: {execution.elapsed_seconds:.2f} s")
             record.runner = None
