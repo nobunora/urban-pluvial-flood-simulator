@@ -211,6 +211,12 @@ def test_auto_fallback_is_disclosed_and_unexpected_errors_do_not_fallback():
         acquire_vectors(rectangle(), "auto", plateau=plateau, osm=osm)
     assert osm.calls == 0
 
+
+def test_osm_vectors_expose_empty_road_polygon_contract():
+    result = OsmVectors([], [], provenance("osm"))
+
+    assert result.road_polygons == []
+
     plateau = FakePlateau(ProviderParseError("catalog malformed"))
     osm = FakeOsm(osm_result)
     result = acquire_vectors(rectangle(), "auto", plateau=plateau, osm=osm)

@@ -45,6 +45,11 @@ class OsmVectors:
     road_lines: list[np.ndarray]
     provenance: ProviderProvenance
 
+    @property
+    def road_polygons(self) -> list[np.ndarray]:
+        """Match the full-grid vector contract; OSM currently supplies road lines only."""
+        return []
+
     def legacy_manifest(self) -> dict[str, Any]:
         details = self.provenance.source_details
         return {
