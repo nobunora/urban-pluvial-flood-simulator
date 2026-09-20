@@ -170,7 +170,7 @@ out geom;'''
             tags = element.get("tags") or {}
             if not isinstance(tags, dict):
                 continue
-            if "building" in tags and len(points) >= 4:
+            if ("building" in tags or "building:part" in tags) and len(points) >= 4:
                 polygon = Polygon(points)
                 if not polygon.is_valid:
                     polygon = polygon.buffer(0)
@@ -200,7 +200,7 @@ out geom;'''
                 "building_polygons": len(buildings),
                 "road_lines": len(roads),
                 "query_margin_m": margin_m,
-                "tags": ["building", "highway"],
+                "tags": ["building", "building:part", "highway"],
             },
             acquired_at_utc=acquired_at_utc,
         )
