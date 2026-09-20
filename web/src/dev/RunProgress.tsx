@@ -145,12 +145,29 @@ export default function RunProgress({ status, stageObservedAtMs, lastPollAtMs }:
               <span className="run-progress-stage-icon" aria-hidden="true">{group.icon}</span>
               <span className="run-progress-stage-copy">
                 <strong>{group.label}</strong>
-                {current && <small>{status.stage_label}</small>}
+                {current && <small>{status.progress_detail ?? status.stage_label}</small>}
               </span>
             </li>
           );
         })}
       </ol>
+
+      {status.stage_code !== "RUNNING_ENGINE" &&
+        !TERMINAL.has(status.state) &&
+        status.progress_fraction != null && (
+          <div className="run-progress-work" role="status">
+            <progress
+              className="run-progress-work-bar"
+              max={1}
+              value={status.progress_fraction}
+              aria-label="現在工程の処理進捗"
+            />
+            <div>
+              <strong>{Math.round(status.progress_fraction * 100)}%</strong>
+              <span>{status.progress_detail ?? status.stage_label}</span>
+            </div>
+          </div>
+        )}
 
       {status.stage_code === "RUNNING_ENGINE" && (
         <div className="run-progress-engine" role="status">
