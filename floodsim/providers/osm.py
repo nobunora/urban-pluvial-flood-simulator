@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -75,7 +76,7 @@ def _cache_path(cache_dir: Path, area: AnalysisArea, margin_m: float) -> Path:
         "width_m": area.width_m,
         "height_m": area.height_m,
         "margin_m": margin_m,
-        "query_revision": "building-part-v2",
+        "query_revision": "building-relation-v3",
     }
     digest = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:20]
     return cache_dir / "osm" / f"{digest}.json"
@@ -97,10 +98,13 @@ class OsmProvider:
         margin_m: float = 30.0,
         acquired_at_utc: str | None = None,
         time_budget_s: float | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
     ) -> OsmVectors:
         if time_budget_s is not None and time_budget_s <= 0:
             raise ValueError("time_budget_s must be positive")
         deadline = None if time_budget_s is None else time.monotonic() + time_budget_s
+        if progress_callback is not None:
+            progress_callback(0.03, "OSM Overpassへ建物・building:part・道路を問い合わせ中")
         lon1, lat1, lon2, lat2 = local_bbox(area, margin_m)
         bbox = f"{lat1:.8f},{lon1:.8f},{lat2:.8f},{lon2:.8f}"
         query_timeout_s = (
@@ -112,6 +116,8 @@ class OsmProvider:
 (
   way["building"]({bbox});
   way["building:part"]({bbox});
+  relation["building"]({bbox});
+  relation["building:part"]({bbox});
   way["highway"]({bbox});
 );
 out geom;'''
@@ -145,6 +151,8 @@ out geom;'''
                 )
             payload = read_json(response, "OSM Overpass")
             _check_deadline(deadline, "OSM response parse")
+            if progress_callback is not None:
+                progress_callback(0.18, "OSM応答受信完了 / ジオメトリ変換を開始")
             cache_file.parent.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True), encoding="utf-8")
         if not isinstance(payload, dict) or not isinstance(payload.get("elements"), list):
@@ -154,39 +162,74 @@ out geom;'''
                    area.width_m / 2.0 + 20.0, area.height_m / 2.0 + 20.0)
         buildings: list[np.ndarray] = []
         roads: list[np.ndarray] = []
-        for element_index, element in enumerate(payload["elements"]):
-            if element_index % 128 == 0:
-                _check_deadline(deadline, "OSM geometry processing")
-            if not isinstance(element, dict):
-                continue
-            geometry = element.get("geometry") or []
-            if not isinstance(geometry, list) or len(geometry) < 2:
-                continue
+        elements = payload["elements"]
+        total_elements = len(elements)
+        callback_step = max(1, total_elements // 20)
+
+        def append_building_geometry(geometry: object) -> None:
+            if not isinstance(geometry, list) or len(geometry) < 4:
+                return
             try:
                 lon = [point["lon"] for point in geometry]
                 lat = [point["lat"] for point in geometry]
             except (KeyError, TypeError):
-                continue
+                return
             x, y = transformer.transform(lon, lat)
-            points = np.column_stack((x, y))
+            polygon = Polygon(np.column_stack((x, y)))
+            if not polygon.is_valid:
+                polygon = polygon.buffer(0)
+            clipped = polygon.intersection(clip)
+            if clipped.geom_type == "Polygon":
+                buildings.append(np.asarray(clipped.exterior.coords, dtype=float))
+            elif clipped.geom_type == "MultiPolygon":
+                buildings.extend(
+                    np.asarray(item.exterior.coords, dtype=float)
+                    for item in clipped.geoms
+                    if not item.is_empty
+                )
+
+        for element_index, element in enumerate(elements):
+            if element_index % 128 == 0:
+                _check_deadline(deadline, "OSM geometry processing")
+            if not isinstance(element, dict):
+                continue
             tags = element.get("tags") or {}
             if not isinstance(tags, dict):
                 continue
-            if ("building" in tags or "building:part" in tags) and len(points) >= 4:
-                polygon = Polygon(points)
-                if not polygon.is_valid:
-                    polygon = polygon.buffer(0)
-                clipped = polygon.intersection(clip)
-                if clipped.geom_type == "Polygon":
-                    buildings.append(np.asarray(clipped.exterior.coords, dtype=float))
-                elif clipped.geom_type == "MultiPolygon":
-                    buildings.extend(np.asarray(item.exterior.coords, dtype=float) for item in clipped.geoms)
+
+            is_building = "building" in tags or "building:part" in tags
+            if is_building:
+                append_building_geometry(element.get("geometry") or [])
+                if element.get("type") == "relation":
+                    for member in element.get("members") or []:
+                        if not isinstance(member, dict) or member.get("role") == "inner":
+                            continue
+                        append_building_geometry(member.get("geometry") or [])
             elif "highway" in tags:
-                line = LineString(points).intersection(clip)
-                if line.geom_type == "LineString":
-                    roads.append(np.asarray(line.coords, dtype=float))
-                elif line.geom_type == "MultiLineString":
-                    roads.extend(np.asarray(item.coords, dtype=float) for item in line.geoms)
+                geometry = element.get("geometry") or []
+                if isinstance(geometry, list) and len(geometry) >= 2:
+                    try:
+                        lon = [point["lon"] for point in geometry]
+                        lat = [point["lat"] for point in geometry]
+                    except (KeyError, TypeError):
+                        continue
+                    x, y = transformer.transform(lon, lat)
+                    line = LineString(np.column_stack((x, y))).intersection(clip)
+                    if line.geom_type == "LineString":
+                        roads.append(np.asarray(line.coords, dtype=float))
+                    elif line.geom_type == "MultiLineString":
+                        roads.extend(np.asarray(item.coords, dtype=float) for item in line.geoms)
+
+            processed = element_index + 1
+            if progress_callback is not None and (
+                processed == total_elements or processed % callback_step == 0
+            ):
+                progress_callback(
+                    0.18 + 0.77 * processed / max(1, total_elements),
+                    f"OSM {processed}/{total_elements}要素処理済み / "
+                    f"建物{len(buildings)}件・道路{len(roads)}件 / "
+                    f"残り{total_elements - processed}要素",
+                )
         _check_deadline(deadline, "OSM geometry processing")
         if not buildings:
             raise ProviderUnavailableError("OSM fallback returned no building ways for requested area")
@@ -202,7 +245,7 @@ out geom;'''
                 "building_polygons": len(buildings),
                 "road_lines": len(roads),
                 "query_margin_m": margin_m,
-                "tags": ["building", "building:part", "highway"],
+                "tags": ["building", "building:part", "building relation", "building:part relation", "highway"],
             },
             acquired_at_utc=acquired_at_utc,
         )
@@ -210,6 +253,11 @@ out geom;'''
         _check_deadline(deadline, "OSM acquisition")
         if out_dir is not None:
             self._write_legacy(result, Path(out_dir))
+        if progress_callback is not None:
+            progress_callback(
+                1.0,
+                f"OSM取得完了 / 建物{len(buildings)}件・道路{len(roads)}件",
+            )
         _check_deadline(deadline, "OSM acquisition")
         return result
 
