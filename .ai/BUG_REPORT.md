@@ -2,47 +2,45 @@
 
 ## Current confirmed repository blockers
 
-### Fresh Full 1 m run fails at BUILDING_GRID
+None currently confirmed after the OSM vector-contract repair and diagnostic-path portability repair.
 
-Windows run `f2dc662c-f445-4f6d-af75-223bb8c2f16c` on exact head `017d3c0686490acfc55d20906d22434fd8c5de7e` reached:
+### Latest repaired BUILDING_GRID defect
 
-```text
-ACQUIRING_TERRAIN
-ACQUIRING_VECTORS
-ACQUIRING_RAINFALL
-PREPROCESSING_TERRAIN
-ALLOCATING_ROOF_RAIN
-BUILDING_GRID
-FAILED
-```
-
-The vector stage completed in 24.411 s (PLATEAU; no OSM fallback), a substantial improvement from the prior 89.349 s path. The failure occurred immediately in BUILDING_GRID before model/SFINCS creation.
-
-The old manifest persisted only:
+Windows replay proved the prior persisted OSM source refs build a valid 250,000-cell Full 1 m grid. A fresh run then failed with:
 
 ```text
-failure_code: INTERNAL_RUN_FAILED
-failing_stage: BUILDING_GRID
+AttributeError: 'OsmVectors' object has no attribute 'road_polygons'
 ```
 
-and discarded the underlying exception, so the exact grid root cause cannot be recovered from that old manifest alone.
+This was a common-contract omission, not a hydraulic algorithm issue. OSM continues to provide road lines only; `OsmVectors.road_polygons` now explicitly returns an empty list so the Full 1 m grid can consume both PLATEAU and OSM through the same interface.
 
-Web repair now committed:
+The two Codex repair commits were:
 
-- persist exception type/message/diagnostic-file path in manifest;
-- write atomic `logs/failure_diagnostic.json` with traceback and runtime grid-input summary;
-- harden polygon/road feature conversion against ragged/non-numeric/non-finite/invalid individual vector features;
-- add `scripts/diagnose_grid_run.py` to replay BUILDING_GRID from an existing run's persisted `source_refs` without repeating live vector acquisition or SFINCS;
-- deterministic tests cover diagnostic persistence, malformed-feature skipping, and persisted-source-ref replay loading.
+- `855076c7ba2f4dfaf81ee7c5ecb5acce2b45b9b2` — expose the empty OSM road-polygon contract;
+- `67e0cb330c128aa9276d7c4802a002ee550106a3` — repair the focused regression-test placement.
 
-The exact substantive grid cause remains host-local until the old failed run is replayed with this new instrumentation.
+A broader Windows focused run then exposed a diagnostic-path portability mismatch:
+
+```text
+expected: logs/failure_diagnostic.json
+actual:   logs\\failure_diagnostic.json
+```
+
+Web repaired this by persisting diagnostic paths as POSIX-style relative paths on all operating systems.
 
 ## Current external / host-local validation remaining
 
-1. Run `scripts.diagnose_grid_run` against failed run `f2dc662c-f445-4f6d-af75-223bb8c2f16c` on the Windows host.
-2. If replay passes, perform one fresh Full 1 m end-to-end run and confirm `COMPLETE`.
-3. If replay fails, use the new exception/traceback diagnostics to identify the precise grid defect; apply only a tiny mechanical correction locally if it is inside the authorized allowance, otherwise return the deterministic diagnostic to Web.
-4. SFINCS redistribution/bootstrap licensing remains a later packaging issue. Do not download or redistribute SFINCS.
+Only one fresh Windows end-to-end Full 1 m run remains to prove the current exact head reaches `COMPLETE`:
+
+1. live provider acquisition;
+2. BUILDING_GRID with either PLATEAU or OSM;
+3. model build;
+4. existing permitted SFINCS execution;
+5. real NetCDF reader;
+6. normalization;
+7. final `COMPLETE` state.
+
+If a new failure occurs, the manifest + `failure_diagnostic.json` contract must preserve the exact exception and traceback. SFINCS redistribution/bootstrap licensing remains a later packaging issue.
 
 ## Local working-tree warning
 
