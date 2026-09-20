@@ -10,36 +10,60 @@ type Props = {
 
 const TERMINAL = new Set<RunStatusResponse["state"]>(["COMPLETE", "FAILED", "CANCELLED"]);
 
-const STAGES = [
-  ["CREATED", "受付"],
-  ["VALIDATING", "入力確認"],
-  ["ACQUIRING_TERRAIN", "標高取得"],
-  ["ACQUIRING_VECTORS", "建物・道路取得"],
-  ["ACQUIRING_RAINFALL", "降雨準備"],
-  ["PREPROCESSING_TERRAIN", "地形前処理"],
-  ["ALLOCATING_ROOF_RAIN", "屋根雨水配分"],
-  ["BUILDING_GRID", "1 m格子構築"],
-  ["BUILDING_MODEL", "SFINCSモデル構築"],
-  ["ENSURING_ENGINE", "エンジン確認"],
-  ["RUNNING_ENGINE", "SFINCS計算"],
-  ["READING_RESULTS", "結果読込"],
-  ["COMPLETE", "完了"],
+const BACKEND_ORDER = [
+  "CREATED",
+  "VALIDATING",
+  "ACQUIRING_TERRAIN",
+  "ACQUIRING_VECTORS",
+  "ACQUIRING_RAINFALL",
+  "PREPROCESSING_TERRAIN",
+  "ALLOCATING_ROOF_RAIN",
+  "BUILDING_GRID",
+  "BUILDING_MODEL",
+  "ENSURING_ENGINE",
+  "RUNNING_ENGINE",
+  "READING_RESULTS",
+  "COMPLETE",
 ] as const;
 
-const ARTIFACTS = [
-  ["ACQUIRING_TERRAIN", "⛰", "標高"],
-  ["ACQUIRING_VECTORS", "▦", "建物・道路"],
-  ["ACQUIRING_RAINFALL", "☂", "雨"],
-  ["BUILDING_GRID", "▤", "1 m格子"],
-  ["BUILDING_MODEL", "▱", "モデル"],
-  ["ENSURING_ENGINE", "⚙", "SFINCS"],
-  ["RUNNING_ENGINE", "▶", "計算"],
-  ["READING_RESULTS", "▥", "結果"],
-  ["COMPLETE", "⌖", "地図"],
+const GROUPS = [
+  {
+    label: "準備",
+    icon: "☂ ⚙",
+    codes: ["CREATED", "VALIDATING", "ACQUIRING_RAINFALL", "ENSURING_ENGINE"],
+  },
+  {
+    label: "地図データ",
+    icon: "⛰ ▦",
+    codes: ["ACQUIRING_TERRAIN", "ACQUIRING_VECTORS"],
+  },
+  {
+    label: "解析格子",
+    icon: "▤ ▱",
+    codes: ["PREPROCESSING_TERRAIN", "ALLOCATING_ROOF_RAIN", "BUILDING_GRID", "BUILDING_MODEL"],
+  },
+  {
+    label: "SFINCS計算",
+    icon: "▶",
+    codes: ["RUNNING_ENGINE"],
+  },
+  {
+    label: "結果",
+    icon: "▥ ⌖",
+    codes: ["READING_RESULTS", "COMPLETE"],
+  },
 ] as const;
 
-function stageIndex(code: string | null | undefined): number {
-  return STAGES.findIndex(([stageCode]) => stageCode === code);
+function backendIndex(code: string | null | undefined): number {
+  return BACKEND_ORDER.findIndex((stageCode) => stageCode === code);
+}
+
+function groupIndex(code: string | null | undefined): number {
+  return GROUPS.findIndex((group) => group.codes.some((stageCode) => stageCode === code));
+}
+
+function groupLastBackendIndex(group: (typeof GROUPS)[number]): number {
+  return Math.max(...group.codes.map((code) => backendIndex(code)));
 }
 
 function formatElapsed(totalSeconds: number): string {
@@ -63,10 +87,13 @@ export default function RunProgress({ status, stageObservedAtMs, lastPollAtMs }:
     return () => window.clearInterval(timer);
   }, [status]);
 
-  const currentIndex = stageIndex(status?.stage_code);
-  const enteredStage = currentIndex >= 0 ? currentIndex + 1 : 0;
+  const currentBackendIndex = backendIndex(status?.stage_code);
+  const currentGroupIndex = groupIndex(status?.stage_code);
   const elapsedSeconds = stageObservedAtMs == null ? 0 : (nowMs - stageObservedAtMs) / 1000;
-  const pollAgeSeconds = lastPollAtMs == null ? null : Math.max(0, Math.floor((nowMs - lastPollAtMs) / 1000));
+  const pollAgeSeconds = lastPollAtMs == null
+    ? null
+    : Math.max(0, Math.floor((nowMs - lastPollAtMs) / 1000));
+  const activityLines = status?.activity_lines ?? [];
 
   const progressText = useMemo(() => {
     if (!status) return "解析を開始すると工程が表示されます。";
@@ -81,60 +108,49 @@ export default function RunProgress({ status, stageObservedAtMs, lastPollAtMs }:
     return <p className="run-progress-empty">{progressText}</p>;
   }
 
+  const displayGroupIndex = status.state === "COMPLETE"
+    ? GROUPS.length - 1
+    : currentGroupIndex;
+
   return (
     <section className="run-progress" aria-label="解析工程">
       <div className="run-progress-summary">
         <div>
           <strong>{progressText}</strong>
-          {currentIndex >= 0 && <span>工程 {enteredStage} / {STAGES.length}</span>}
+          {displayGroupIndex >= 0 && <span>工程 {displayGroupIndex + 1} / {GROUPS.length}</span>}
         </div>
         {stageObservedAtMs != null && !TERMINAL.has(status.state) && (
-          <span>この工程の経過 {formatElapsed(elapsedSeconds)}</span>
+          <span>現在処理の経過 {formatElapsed(elapsedSeconds)}</span>
         )}
       </div>
 
-      {currentIndex >= 0 && (
+      {displayGroupIndex >= 0 && (
         <progress
           className="run-progress-overall"
-          value={enteredStage}
-          max={STAGES.length}
+          value={displayGroupIndex + 1}
+          max={GROUPS.length}
           aria-label="アプリケーション工程の進捗"
         />
       )}
 
       <ol className="run-progress-stages">
-        {STAGES.map(([code, label], index) => {
-          const mode =
-            status.state === "COMPLETE" || index < currentIndex
-              ? "complete"
-              : index === currentIndex
-                ? "current"
-                : "pending";
+        {GROUPS.map((group, index) => {
+          const complete =
+            status.state === "COMPLETE" ||
+            (currentBackendIndex >= 0 && currentBackendIndex > groupLastBackendIndex(group));
+          const current = displayGroupIndex === index && status.state !== "COMPLETE";
+          const mode = complete ? "complete" : current ? "current" : "pending";
           return (
-            <li className={`run-progress-stage is-${mode}`} key={code}>
-              <span className="run-progress-dot" aria-hidden="true" />
-              <span>{label}</span>
+            <li className={`run-progress-stage is-${mode}`} key={group.label}>
+              <span className="run-progress-stage-icon" aria-hidden="true">{group.icon}</span>
+              <span className="run-progress-stage-copy">
+                <strong>{group.label}</strong>
+                {current && <small>{status.stage_label}</small>}
+              </span>
             </li>
           );
         })}
       </ol>
-
-      <div className="run-progress-artifacts" aria-label="取得・生成データ">
-        {ARTIFACTS.map(([code, icon, label]) => {
-          const index = stageIndex(code);
-          const complete = status.state === "COMPLETE" || (currentIndex >= 0 && currentIndex > index);
-          const current = currentIndex === index && !TERMINAL.has(status.state);
-          return (
-            <span
-              className={`run-progress-artifact ${complete ? "is-complete" : current ? "is-current" : ""}`}
-              key={code}
-            >
-              <span aria-hidden="true">{icon}</span>
-              {label}
-            </span>
-          );
-        })}
-      </div>
 
       {status.stage_code === "RUNNING_ENGINE" && (
         <div className="run-progress-engine" role="status">
@@ -161,6 +177,16 @@ export default function RunProgress({ status, stageObservedAtMs, lastPollAtMs }:
               ? " / 実進捗を取得すると残り時間を推定します。"
               : ` / 残り目安 約${formatElapsed(status.estimated_remaining_seconds)}（実進捗から推定）`}
           </p>
+        </div>
+      )}
+
+      {activityLines.length > 0 && (
+        <div className="run-progress-console">
+          <div className="run-progress-console-heading">
+            <strong>処理ログ</strong>
+            <span>最新 {Math.min(activityLines.length, 16)} 行</span>
+          </div>
+          <pre aria-label="処理ログ">{activityLines.slice(-16).join("\n")}</pre>
         </div>
       )}
     </section>
