@@ -145,6 +145,7 @@ class SfincsRunner:
         engine: ResolvedEngine | None = None,
         cancel_event: threading.Event | None = None,
         progress_callback: Callable[[SfincsProgress], None] | None = None,
+        line_callback: Callable[[str], None] | None = None,
     ) -> SfincsRunResult:
         root = Path(model_dir)
         logs = Path(logs_dir)
@@ -154,9 +155,15 @@ class SfincsRunner:
         resolved = engine or resolve_sfincs_executable()
         started = time.monotonic()
 
+        thread_count = max(1, os.cpu_count() or 1)
+        process_env = os.environ.copy()
+        process_env["OMP_NUM_THREADS"] = str(thread_count)
+        process_env["OMP_DYNAMIC"] = "FALSE"
+
         process = subprocess.Popen(
             [str(resolved.executable)],
             cwd=root,
+            env=process_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             shell=False,
@@ -174,6 +181,8 @@ class SfincsRunner:
                 for line in process.stdout:
                     handle.write(line)
                     handle.flush()
+                    if line_callback is not None:
+                        line_callback(line.rstrip("\r\n"))
                     parsed = parse_sfincs_progress_line(line)
                     if parsed is not None and progress_callback is not None:
                         progress_callback(parsed)
@@ -184,6 +193,8 @@ class SfincsRunner:
                 for line in process.stderr:
                     handle.write(line)
                     handle.flush()
+                    if line_callback is not None:
+                        line_callback(f"[stderr] {line.rstrip(chr(13) + chr(10))}")
 
         stdout_thread = threading.Thread(target=pump_stdout, name="sfincs-stdout", daemon=True)
         stderr_thread = threading.Thread(target=pump_stderr, name="sfincs-stderr", daemon=True)
