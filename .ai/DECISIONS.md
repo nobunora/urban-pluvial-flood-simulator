@@ -72,6 +72,14 @@
 - Invalid individual vector features (ragged, non-numeric, non-finite, or invalid geometry) are skipped consistently with the existing invalid-polygon filtering policy rather than aborting the entire Full 1 m grid.
 - `scripts/diagnose_grid_run.py` is the supported host-local isolation tool for replaying BUILDING_GRID from an existing failed run without repeating SFINCS execution.
 
+## Common vector contract decision
+
+- Full 1 m grid construction consumes one normalized vector interface with `buildings`, `road_lines`, `road_polygons`, and provenance.
+- PLATEAU may populate both road lines and polygons.
+- OSM currently populates road lines only and must expose `road_polygons` as an explicit empty list.
+- An empty member is preferred to provider-specific `hasattr` branching in the hydraulic grid because it preserves one stable normalized provider contract without inventing source geometry.
+- Persisted relative artifact/diagnostic paths use forward-slash POSIX form regardless of host OS so manifests remain portable.
+
 ## Deterministic validation ownership
 
 - GitHub Actions owns deterministic checks that do not require the user's private/local executable or live provider state.
