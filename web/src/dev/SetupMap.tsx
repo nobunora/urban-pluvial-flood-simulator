@@ -150,36 +150,35 @@ export default function SetupMap({
 
     markerRef.current?.setLngLat([centerLon, centerLat]);
 
-    const updateArea = () => {
-      const source = map.getSource("analysis-area") as GeoJSONSource | undefined;
-      source?.setData(areaFeature(area));
-
-      // Explicitly move the viewport whenever canonical coordinates change.
-      // This makes geocoder selection deterministic even when the range size is unchanged.
-      map.resize();
-      map.jumpTo({ center: [centerLon, centerLat] });
-      if (area) {
-        map.fitBounds(
-          [
-            [area.bounds.west_deg, area.bounds.south_deg],
-            [area.bounds.east_deg, area.bounds.north_deg],
-          ],
-          { padding: 40, maxZoom: 17, duration: 0 },
-        );
-      } else {
-        map.jumpTo({ center: [centerLon, centerLat], zoom: 14 });
-      }
-    };
-
-    if (map.isStyleLoaded()) {
-      updateArea();
-      return;
+    // Viewport movement does not depend on style/source readiness.
+    // Do it immediately so geocoder selection can never get stuck waiting for
+    // a load event that may already have fired.
+    map.stop();
+    map.resize();
+    if (area) {
+      map.fitBounds(
+        [
+          [area.bounds.west_deg, area.bounds.south_deg],
+          [area.bounds.east_deg, area.bounds.north_deg],
+        ],
+        { padding: 40, maxZoom: 17, duration: 350 },
+      );
+    } else {
+      map.easeTo({ center: [centerLon, centerLat], zoom: 14, duration: 350 });
     }
 
-    map.once("load", updateArea);
-    return () => {
-      map.off("load", updateArea);
+    const updateAreaSource = () => {
+      const source = map.getSource("analysis-area") as GeoJSONSource | undefined;
+      source?.setData(areaFeature(area));
     };
+
+    updateAreaSource();
+    if (!map.getSource("analysis-area")) {
+      map.once("load", updateAreaSource);
+      return () => {
+        map.off("load", updateAreaSource);
+      };
+    }
   }, [area, centerLat, centerLon]);
 
   return (
