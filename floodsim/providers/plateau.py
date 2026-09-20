@@ -205,7 +205,7 @@ def extract_citygml(
         if element_index % 128 == 0:
             _check_deadline(deadline_monotonic, "PLATEAU CityGML parsing")
         kind = _local(element.tag)
-        if kind == "Building":
+        if kind in {"Building", "BuildingPart"}:
             surfaces: list[Polygon] = []
             for preferred in (("lod0FootPrint",), ("lod0RoofEdge",), ("GroundSurface",)):
                 groups = _find_named_descendants(element, preferred, deadline_monotonic)
