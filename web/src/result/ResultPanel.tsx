@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   inspectResult,
@@ -70,6 +70,26 @@ export default function ResultPanel({
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionError, setInspectionError] = useState<string | null>(null);
   const inspectionController = useRef<AbortController | null>(null);
+  const focusRegionRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === focusRegionRef.current);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const region = focusRegionRef.current;
+    if (!region) return;
+    if (document.fullscreenElement === region) {
+      void document.exitFullscreen();
+      return;
+    }
+    void region.requestFullscreen();
+  }, []);
 
   const selectedTimeIndex = metadata.available_time_indices[timePosition] ?? null;
   const activeTimeIndex = layer === "time_depth" ? selectedTimeIndex : null;
@@ -238,134 +258,140 @@ export default function ResultPanel({
         </div>
       )}
 
-      <div className="result-layout">
-        <div className="result-map-panel">
-          <ResultMap
-            metadata={metadata}
-            imageUrl={imageUrl}
-            flowImageUrl={flowImageUrl}
-            backgroundOpacity={(100 - backgroundTransparency) / 100}
-            mapLabel={mapLabel}
-            onInspect={handleInspect}
-          />
-          {layer !== "grid_resolution" ? (
-            <div className="result-legend" aria-label="浸水深の凡例">
-              <strong>{layer === "max_depth" ? "最大浸水深 (m)" : "浸水深 (m)"}</strong>
-              {metadata.depth_legend?.map((item) => (
-                <span key={item.label}>
-                  <i style={{ backgroundColor: item.color }} aria-hidden="true" />
-                  {item.label}
-                </span>
-              ))}
-              {flowVisible && metadata.flow_vectors_available && (
-                <span className="result-vector-note">矢印: 選択時刻の流向</span>
+      <div className="result-focus-region" ref={focusRegionRef}>
+        <button
+          type="button"
+          className="result-fullscreen-button"
+          onClick={toggleFullscreen}
+          aria-label={isFullscreen ? "全画面表示を終了" : "地図を全画面表示"}
+        >
+          {isFullscreen ? "全画面を終了" : "全画面"}
+        </button>
+
+        <div className="result-layout">
+          <div className="result-map-panel">
+            <ResultMap
+              metadata={metadata}
+              imageUrl={imageUrl}
+              flowImageUrl={flowImageUrl}
+              backgroundOpacity={(100 - backgroundTransparency) / 100}
+              mapLabel={mapLabel}
+              onInspect={handleInspect}
+            />
+          </div>
+
+          <aside className="result-sidebar">
+            <section className="result-point-panel">
+              <h3>地点</h3>
+              {inspectionLoading && <p>地点データを読み込んでいます…</p>}
+              {inspectionError && <p className="smoke-error">{inspectionError}</p>}
+              {!inspectionLoading && !inspection && (
+                <p>地図をクリックすると、その地点の計算値を確認できます。</p>
               )}
+              {inspection && !inspection.has_data && (
+                <p>この地点には解析データがありません。</p>
+              )}
+              {inspection?.has_data && (
+                <dl>
+                  <dt>緯度</dt><dd>{inspection.lat_deg.toFixed(6)}</dd>
+                  <dt>経度</dt><dd>{inspection.lon_deg.toFixed(6)}</dd>
+                  <dt>地盤高</dt><dd>{metres(inspection.terrain_elevation_m)}</dd>
+                  <dt>最大浸水深</dt><dd>{metres(inspection.max_depth_m)}</dd>
+                  <dt>最大時刻</dt>
+                  <dd>
+                    {inspection.max_time_index == null
+                      ? "—"
+                      : elapsedLabel(metadata.time_values, inspection.max_time_index)}
+                  </dd>
+                  {layer === "time_depth" && (
+                    <>
+                      <dt>現在水深</dt><dd>{metres(inspection.depth_m)}</dd>
+                      <dt>時刻</dt><dd>{inspection.time_value ?? elapsedLabel(metadata.time_values, selectedTimeIndex ?? 0)}</dd>
+                    </>
+                  )}
+                  <dt>格子</dt><dd>{metres(inspection.grid_resolution_m)}</dd>
+                </dl>
+              )}
+            </section>
+
+            <section className="result-legend result-legend-sidebar" aria-label={layer === "grid_resolution" ? "計算格子の凡例" : "浸水深の凡例"}>
+              {layer !== "grid_resolution" ? (
+                <>
+                  <strong>{layer === "max_depth" ? "最大浸水深 (m)" : "浸水深 (m)"}</strong>
+                  {metadata.depth_legend?.map((item) => (
+                    <span key={item.label}>
+                      <i style={{ backgroundColor: item.color }} aria-hidden="true" />
+                      {item.label}
+                    </span>
+                  ))}
+                  {flowVisible && metadata.flow_vectors_available && (
+                    <span className="result-vector-note">矢印: 選択時刻の流向</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <strong>格子解像度</strong>
+                  {GRID_LEGEND.map(([label, color]) => (
+                    <span key={label}>
+                      <i style={{ backgroundColor: color }} aria-hidden="true" />
+                      {label}
+                    </span>
+                  ))}
+                  <span className="result-vector-note">実計算格子: 1 m</span>
+                </>
+              )}
+            </section>
+
+            <div className="result-sidebar-extra">
+              <details>
+                <summary>結果概要</summary>
+                <dl>
+                  <dt>最大浸水深</dt>
+                  <dd>{typeof globalMax === "number" ? `${globalMax.toFixed(3)} m` : "—"}</dd>
+                  <dt>建物データ</dt><dd>{provider?.building_provider ?? "—"}</dd>
+                  <dt>道路データ</dt><dd>{provider?.road_provider ?? "—"}</dd>
+                  <dt>SFINCS</dt><dd>{engine?.sfincs_version ?? "—"}</dd>
+                </dl>
+                {provider?.warnings?.map((warning) => (
+                  <p className="result-warning" key={warning}>{warning}</p>
+                ))}
+              </details>
+
+              <details>
+                <summary>解析条件と出典</summary>
+                <p>
+                  範囲: {metadata.bounds.south_deg.toFixed(6)}, {metadata.bounds.west_deg.toFixed(6)}
+                  {" — "}
+                  {metadata.bounds.north_deg.toFixed(6)}, {metadata.bounds.east_deg.toFixed(6)}
+                </p>
+                <p>
+                  Grid: {Object.entries(metadata.grid_level_summary)
+                    .map(([level, count]) => `${level}: ${count.toLocaleString()}`)
+                    .join(" / ")}
+                </p>
+                <p>Application: {runSummary.application_version}</p>
+                <p>Accuracy: {runSummary.requested_accuracy_mode}</p>
+                <p>Flow vectors: {metadata.flow_vectors_available ? "available" : "not stored"}</p>
+                <p>Rainfall: <code>{JSON.stringify(runSummary.rainfall_source)}</code></p>
+                <p>Elevation: <code>{JSON.stringify(runSummary.elevation_source_summary)}</code></p>
+                <p>Elevation provider counts: <code>{JSON.stringify(runSummary.elevation_provider_counts)}</code></p>
+                <p>Manning: <code>{JSON.stringify(runSummary.manning_defaults)}</code></p>
+                <p>Boundary: {runSummary.boundary_policy}</p>
+                <p>Roof-rain mass diagnostic: <code>{JSON.stringify(runSummary.roof_rain_mass_diagnostic)}</code></p>
+                <p>HydroMT-SFINCS: {engine?.hydromt_sfincs_version ?? "—"}</p>
+                <p className="result-policy">{metadata.no_data_policy}</p>
+              </details>
+
+              <details open>
+                <summary>モデルの主な制約</summary>
+                <ul>
+                  {omittedLimitations.map((label) => <li key={label}>{label}</li>)}
+                  <li>屋根雨水は周囲の地表へ質量保存で再配分する近似です。</li>
+                </ul>
+              </details>
             </div>
-          ) : (
-            <div className="result-legend" aria-label="計算格子の凡例">
-              <strong>格子解像度</strong>
-              {GRID_LEGEND.map(([label, color]) => (
-                <span key={label}>
-                  <i style={{ backgroundColor: color }} aria-hidden="true" />
-                  {label}
-                </span>
-              ))}
-              <span className="result-vector-note">実計算格子: 1 m</span>
-            </div>
-          )}
+          </aside>
         </div>
-
-        <aside className="result-sidebar">
-          <section>
-            <h3>地点</h3>
-            {inspectionLoading && <p>地点データを読み込んでいます…</p>}
-            {inspectionError && <p className="smoke-error">{inspectionError}</p>}
-            {!inspectionLoading && !inspection && (
-              <p>地図をクリックすると、その地点の計算値を確認できます。</p>
-            )}
-            {inspection && !inspection.has_data && (
-              <p>この地点には解析データがありません。</p>
-            )}
-            {inspection?.has_data && (
-              <dl>
-                <dt>緯度</dt><dd>{inspection.lat_deg.toFixed(6)}</dd>
-                <dt>経度</dt><dd>{inspection.lon_deg.toFixed(6)}</dd>
-                <dt>地盤高</dt><dd>{metres(inspection.terrain_elevation_m)}</dd>
-                <dt>最大浸水深</dt><dd>{metres(inspection.max_depth_m)}</dd>
-                <dt>最大時刻</dt>
-                <dd>
-                  {inspection.max_time_index == null
-                    ? "—"
-                    : elapsedLabel(metadata.time_values, inspection.max_time_index)}
-                </dd>
-                {layer === "time_depth" && (
-                  <>
-                    <dt>現在水深</dt><dd>{metres(inspection.depth_m)}</dd>
-                    <dt>時刻</dt><dd>{inspection.time_value ?? elapsedLabel(metadata.time_values, selectedTimeIndex ?? 0)}</dd>
-                  </>
-                )}
-                <dt>格子</dt><dd>{metres(inspection.grid_resolution_m)}</dd>
-              </dl>
-            )}
-          </section>
-
-          <section>
-            <h3>結果概要</h3>
-            <dl>
-              <dt>最大浸水深</dt>
-              <dd>{typeof globalMax === "number" ? `${globalMax.toFixed(3)} m` : "—"}</dd>
-              <dt>建物データ</dt><dd>{provider?.building_provider ?? "—"}</dd>
-              <dt>道路データ</dt><dd>{provider?.road_provider ?? "—"}</dd>
-              <dt>SFINCS</dt><dd>{engine?.sfincs_version ?? "—"}</dd>
-            </dl>
-            {provider?.warnings?.map((warning) => (
-              <p className="result-warning" key={warning}>{warning}</p>
-            ))}
-          </section>
-
-          <details>
-            <summary>解析条件と出典</summary>
-            <p>
-              範囲: {metadata.bounds.south_deg.toFixed(6)}, {metadata.bounds.west_deg.toFixed(6)}
-              {" — "}
-              {metadata.bounds.north_deg.toFixed(6)}, {metadata.bounds.east_deg.toFixed(6)}
-            </p>
-            <p>
-              Grid: {Object.entries(metadata.grid_level_summary)
-                .map(([level, count]) => `${level}: ${count.toLocaleString()}`)
-                .join(" / ")}
-            </p>
-            <p>Application: {runSummary.application_version}</p>
-            <p>Accuracy: {runSummary.requested_accuracy_mode}</p>
-            <p>Flow vectors: {metadata.flow_vectors_available ? "available" : "not stored"}</p>
-            <p>
-              Rainfall: <code>{JSON.stringify(runSummary.rainfall_source)}</code>
-            </p>
-            <p>
-              Elevation: <code>{JSON.stringify(runSummary.elevation_source_summary)}</code>
-            </p>
-            <p>
-              Elevation provider counts: <code>{JSON.stringify(runSummary.elevation_provider_counts)}</code>
-            </p>
-            <p>
-              Manning: <code>{JSON.stringify(runSummary.manning_defaults)}</code>
-            </p>
-            <p>Boundary: {runSummary.boundary_policy}</p>
-            <p>
-              Roof-rain mass diagnostic: <code>{JSON.stringify(runSummary.roof_rain_mass_diagnostic)}</code>
-            </p>
-            <p>HydroMT-SFINCS: {engine?.hydromt_sfincs_version ?? "—"}</p>
-            <p className="result-policy">{metadata.no_data_policy}</p>
-          </details>
-
-          <details open>
-            <summary>モデルの主な制約</summary>
-            <ul>
-              {omittedLimitations.map((label) => <li key={label}>{label}</li>)}
-              <li>屋根雨水は周囲の地表へ質量保存で再配分する近似です。</li>
-            </ul>
-          </details>
-        </aside>
       </div>
     </section>
   );
