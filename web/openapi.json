@@ -1886,66 +1886,6 @@
         ]
       }
     },
-    "/api/v1/runs/{run_id}/layers/flow-vectors.png": {
-      "get": {
-        "operationId": "flow_vectors_layer_api_v1_runs__run_id__layers_flow_vectors_png_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Run Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "time_index",
-            "required": true,
-            "schema": {
-              "title": "Time Index",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "max_px",
-            "required": false,
-            "schema": {
-              "default": 4096,
-              "title": "Max Px",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Flow Vectors Layer",
-        "tags": [
-          "results"
-        ]
-      }
-    },
     "/api/v1/runs/{run_id}/layers/grid-resolution.png": {
       "get": {
         "operationId": "grid_resolution_layer_api_v1_runs__run_id__layers_grid_resolution_png_get",
