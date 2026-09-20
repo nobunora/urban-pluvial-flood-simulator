@@ -110,6 +110,8 @@ def test_native_point_inspection_does_not_sample_display_png() -> None:
     assert inspected["column"] == 1
     assert inspected["depth_m"] == pytest.approx(1.20)
     assert inspected["max_depth_m"] == pytest.approx(1.20)
+    assert inspected["max_time_index"] == 1
+    assert inspected["max_time_value"] == "60"
     assert inspected["terrain_elevation_m"] == pytest.approx(4.0)
     assert inspected["grid_resolution_m"] == pytest.approx(1.0)
     assert inspected["time_value"] == "60"
@@ -189,6 +191,16 @@ class _ResultCoordinator:
                 "sfincs_engine_source": "SFINCS_BIN",
                 "hydromt_sfincs_version": "2.0.0rc3",
             },
+            "run_summary": {
+                "application_version": "0.1.0",
+                "requested_accuracy_mode": "full_1m",
+                "rainfall_source": {"mode": "constant", "intensity_mm_per_h": 10.0},
+                "elevation_provider_counts": {"gsi_1m": 4},
+                "elevation_source_summary": {"primary": "GSI"},
+                "manning_defaults": {"general": 0.03, "road": 0.02},
+                "boundary_policy": "test boundary",
+                "roof_rain_mass_diagnostic": {"relative_mass_error": 0.0},
+            },
             "no_data_policy": "test",
             "limitations": {
                 "infiltration_modelled": False,
@@ -219,6 +231,8 @@ def test_result_api_exposes_png_metadata_and_native_inspection(
     assert metadata.status_code == 200
     assert metadata.json()["provider_summary"]["building_provider"] == "osm"
     assert metadata.json()["engine_summary"]["sfincs_version"] == "2.4.0 Galibier"
+    assert metadata.json()["run_summary"]["requested_accuracy_mode"] == "full_1m"
+    assert metadata.json()["run_summary"]["manning_defaults"]["road"] == pytest.approx(0.02)
 
     max_depth = client.get(f"/api/v1/runs/{coordinator.run_id}/layers/max-depth.png")
     assert max_depth.status_code == 200
@@ -247,6 +261,8 @@ def test_result_api_exposes_png_metadata_and_native_inspection(
     )
     assert inspection.status_code == 200
     assert inspection.json()["depth_m"] == pytest.approx(1.20)
+    assert inspection.json()["max_time_index"] == 1
+    assert inspection.json()["max_time_value"] == "60"
 
     outside = client.get(
         f"/api/v1/runs/{coordinator.run_id}/inspect",
