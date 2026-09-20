@@ -29,12 +29,12 @@ describe("RunProgress", () => {
     expect(screen.getByText("現在: 1 m計算格子を構築中")).toBeVisible();
     expect(screen.getByText("工程 3 / 5")).toBeVisible();
     expect(screen.getByText("準備")).toBeVisible();
-    expect(screen.getByText("地図データ")).toBeVisible();
+    expect(screen.getByText("データ取得")).toBeVisible();
     expect(screen.getByText("解析格子")).toBeVisible();
     expect(screen.getByText("SFINCS計算")).toBeVisible();
     expect(screen.getByText("結果")).toBeVisible();
-    expect(screen.getByText("⛰ ▦")).toBeInTheDocument();
-    expect(screen.getByText("▤ ▱")).toBeInTheDocument();
+    expect(screen.getByText("⛰ ▦ ☂")).toBeInTheDocument();
+    expect(screen.getByText("▤ ▱ ⚙")).toBeInTheDocument();
     expect(screen.queryByLabelText("取得・生成データ")).not.toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "アプリケーション工程の進捗" })).toHaveValue(3);
   });
