@@ -5,7 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Query
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from floodsim.api.errors import ApiContractError
 from floodsim.api.routes_runs import coordinator
@@ -15,6 +15,7 @@ from floodsim.results.view import (
     PointOutsideResult,
     ResultTimeIndexInvalid,
     ResultViewError,
+    flow_vectors_geojson,
     inspect_native_point,
     load_normalized_arrays,
     render_flow_vectors_png,
@@ -90,6 +91,29 @@ def grid_resolution_layer(run_id: UUID, max_px: int = 4096) -> Response:
         raise _map_result_error(exc) from exc
     return Response(content=content, media_type="image/png")
 
+
+
+@router.get(
+    "/runs/{run_id}/layers/flow-vectors.geojson",
+    include_in_schema=False,
+)
+def flow_vectors_geojson_layer(
+    run_id: UUID,
+    time_index: int,
+    max_vectors: int = Query(default=900, ge=1, le=2500),
+) -> JSONResponse:
+    arrays = _arrays_for_run(run_id)
+    try:
+        record = coordinator.get(run_id)
+        payload = flow_vectors_geojson(
+            arrays,
+            area=record.config.analysis_area,
+            time_index=time_index,
+            max_vectors=max_vectors,
+        )
+    except (RunNotFound, ResultViewError) as exc:
+        raise _map_result_error(exc) from exc
+    return JSONResponse(content=payload)
 
 
 @router.get("/runs/{run_id}/layers/flow-vectors.png")
