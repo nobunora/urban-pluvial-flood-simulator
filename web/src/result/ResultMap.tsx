@@ -52,6 +52,23 @@ export default function ResultMap({
             url: imageUrl,
             coordinates: resultImageCoordinates(metadata.bounds),
           },
+          "analysis-boundary": {
+            type: "geojson",
+            data: {
+              type: "Feature",
+              properties: {},
+              geometry: {
+                type: "Polygon",
+                coordinates: [[
+                  [metadata.bounds.west_deg, metadata.bounds.south_deg],
+                  [metadata.bounds.east_deg, metadata.bounds.south_deg],
+                  [metadata.bounds.east_deg, metadata.bounds.north_deg],
+                  [metadata.bounds.west_deg, metadata.bounds.north_deg],
+                  [metadata.bounds.west_deg, metadata.bounds.south_deg],
+                ]],
+              },
+            },
+          },
         },
         layers: [
           {
@@ -65,6 +82,24 @@ export default function ResultMap({
             source: "result-overlay",
             paint: {
               "raster-opacity": 0.82,
+            },
+          },
+          {
+            id: "analysis-boundary-fill",
+            type: "fill",
+            source: "analysis-boundary",
+            paint: {
+              "fill-color": "#2563eb",
+              "fill-opacity": 0.04,
+            },
+          },
+          {
+            id: "analysis-boundary-outline",
+            type: "line",
+            source: "analysis-boundary",
+            paint: {
+              "line-color": "#1e3a8a",
+              "line-width": 2,
             },
           },
         ],
