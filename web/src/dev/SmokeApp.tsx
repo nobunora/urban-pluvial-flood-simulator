@@ -66,13 +66,10 @@ export default function SmokeApp() {
 
   const latValue = parseNumber(lat);
   const lonValue = parseNumber(lon);
-  const validCenter =
-    latValue !== null &&
-    lonValue !== null &&
-    latValue >= -90 &&
-    latValue <= 90 &&
-    lonValue >= -180 &&
-    lonValue <= 180;
+  const mapCenterLat =
+    latValue !== null && latValue >= -90 && latValue <= 90 ? latValue : DEFAULT_LAT;
+  const mapCenterLon =
+    lonValue !== null && lonValue >= -180 && lonValue <= 180 ? lonValue : DEFAULT_LON;
 
   const area = useMemo(() => {
     const parsedLat = parseNumber(lat);
@@ -302,8 +299,8 @@ export default function SmokeApp() {
             <div className="smoke-card smoke-map-card">
               <h2>場所と解析範囲</h2>
               <SetupMap
-                centerLat={validCenter ? latValue : DEFAULT_LAT}
-                centerLon={validCenter ? lonValue : DEFAULT_LON}
+                centerLat={mapCenterLat}
+                centerLon={mapCenterLon}
                 area={area}
                 disabled={runActive}
                 onSelect={updateLocation}
