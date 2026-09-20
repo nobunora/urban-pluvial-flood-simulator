@@ -43,22 +43,27 @@ No SFINCS download, installation, copying, or redistribution is authorized.
 
 A **reviewable Full 1 m vertical slice** has priority over deeper Adaptive work.
 
-Review scope:
+The Full 1 m execution slice has passed local Windows validation through `COMPLETE`. By explicit user direction, the next implementation phase is now the v0.1 result-view contract already defined in the canonical product/UI specifications.
 
-- location / area / rainfall input;
-- Full 1 m resource estimate;
-- run creation;
-- visible run stages;
-- cancellation;
-- honest provider/engine failure state;
-- real tiny Full 1 m execution when providers and the permitted SFINCS executable are available.
+Current result-view scope:
 
-Deferred until user review:
+- automatic RESULT entry after a completed Full 1 m run;
+- GSI standard background map through MapLibre GL JS;
+- backend-rendered maximum-depth PNG placed on exact result bounds;
+- time-depth and grid-resolution result layers using the existing result APIs;
+- timeline over actual output indices only;
+- native backend point inspection (never sample the display PNG);
+- backend depth legend;
+- provider/engine provenance;
+- backend-sourced limitations;
+- “new analysis” returning to editable setup while retaining the previous setup values.
+
+Still deferred:
 
 - Adaptive enablement;
 - Adaptive subgrid/forcing/result normalization;
 - Full-vs-Adaptive benchmark acceptance;
-- final result-map UX;
+- rainbow color mode until the backend exposes its canonical palette/legend contract;
 - packaging/installer.
 
 Adaptive remains disabled by `GRID_ADAPTIVE_NOT_AVAILABLE`.
@@ -104,39 +109,32 @@ Normal frontend rebuild requires Node.js >=22.12. Node.js 24 is supported.
 
 Codex must not duplicate these checks merely to compensate for missing local dependencies. Use CI evidence first.
 
-## Current local-review status
+## Current implementation status
 
-The latest Codex Windows cycle isolated the fresh-run BUILDING_GRID failure and repaired the exact cause within the authorized tiny-fix scope.
+Full 1 m execution is locally validated and `local-review-ready` at the pre-result-UI baseline.
 
-Starting from Web head `0421bfbe870132c85f8e3f7d3c0b038ab43e5740`:
-
-- existing-run BUILDING_GRID replay for `f2dc662c-f445-4f6d-af75-223bb8c2f16c`: PASS;
-- replay input provider: OSM;
-- building features: 86;
-- road-line features: 1,003;
-- road polygons: 0;
-- 250,000-cell grid, 89,449 building cells, 42,228 road cells;
-- roof-rain redistribution mass error: 0.
-
-A fresh live run then produced the newly persistent exact exception:
+The canonical documents identify result visualization as the next incomplete v0.1 outcome:
 
 ```text
-AttributeError: 'OsmVectors' object has no attribute 'road_polygons'
+run -> read results -> display maximum flood depth on map -> inspect time-dependent depth and point values
 ```
 
-Root cause: the Full 1 m grid consumes one common vector contract. PLATEAU exposes `road_polygons`; OSM intentionally supplies road lines only, but its result type omitted the empty `road_polygons` member.
+Web ChatGPT has started this phase on the persistent PR:
 
-Codex repaired this mechanically:
+- result metadata and native inspection APIs were already implemented in the backend;
+- MapLibre 6.10.0 was already present in the frontend dependencies;
+- frontend API client now exposes result metadata, inspection and layer URLs;
+- RESULT mode now loads automatically after run `COMPLETE`;
+- GSI standard raster tiles are the base map with attribution;
+- backend-rendered result PNG is placed using exact geographic result bounds;
+- maximum-depth, time-depth and grid-resolution layer selectors are implemented;
+- time-depth timeline snaps to actual output indices;
+- map clicks use backend native point inspection;
+- backend provenance, warnings, depth legend and limitations are displayed;
+- “new analysis” clears result/run state while retaining setup inputs;
+- result geometry and result-panel behavior have deterministic frontend tests.
 
-- `OsmVectors.road_polygons` now returns an explicit empty list;
-- no OSM polygon data is invented;
-- focused provider regression passes.
-
-Codex also discovered one Windows-only portability defect in Web's new failure-diagnostic contract: the manifest wrote `logs\\failure_diagnostic.json` instead of the portable `logs/failure_diagnostic.json`.
-
-Web has now repaired that final deterministic issue by serializing the relative path with `Path.as_posix()`.
-
-At this point no known repository defect remains in the Full 1 m review path. The next Codex cycle should perform one fresh end-to-end Windows run on the newest exact head and continue all the way through SFINCS, result reading and normalization. If a new failure occurs, the durable failure diagnostics must be reported and a bounded tiny fix may be applied in the same cycle when permitted.
+No Codex task is active while deterministic CI for the Web-owned result-view implementation is pending. After CI is green, Codex should be used only for the strongest host-local browser/SFINCS result-view smoke that Web cannot perform.
 
 ## Preserved validated history
 
