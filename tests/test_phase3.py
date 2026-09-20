@@ -49,6 +49,7 @@ from floodsim.sfincs.runner import (
     SfincsProgress,
     SfincsRunResult,
     parse_sfincs_progress_line,
+    sfincs_process_environment,
 )
 
 
@@ -135,6 +136,18 @@ def test_full_grid_skips_malformed_vector_features() -> None:
 
     assert grid.cell_count == 16
     assert np.any(grid.building_mask)
+
+
+def test_full_grid_blocks_tiny_building_touching_single_cell() -> None:
+    area = _area()
+    tiny = np.asarray(box(0.10, 0.10, 0.20, 0.20).exterior.coords, dtype=float)
+    vectors = _vectors(area, with_building=False)
+    vectors.buildings = [tiny]
+
+    grid = build_full_1m_grid(area, _elevation(area), vectors)
+
+    assert np.count_nonzero(grid.building_mask) >= 1
+    assert np.all(grid.sfincs_mask[grid.building_mask] == 0)
 
 
 def test_full_grid_sets_building_boundary_and_manning() -> None:
@@ -390,6 +403,17 @@ def test_sfincs_progress_parser_uses_official_percent_line() -> None:
     assert parse_sfincs_progress_line("Starting computation ...") is None
 
 
+def test_sfincs_process_environment_requests_all_logical_cpus(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(os, "cpu_count", lambda: 12)
+    env = sfincs_process_environment({"PATH": "test"})
+    assert env["PATH"] == "test"
+    assert env["OMP_NUM_THREADS"] == "12"
+    assert env["OMP_DYNAMIC"] == "FALSE"
+
+
+
 
 class _FakeElevationProvider:
     def acquire(self, area: AnalysisArea, **_: object) -> ElevationProduct:
@@ -427,6 +451,7 @@ class _FakeRunner:
         engine: ResolvedEngine,
         cancel_event: object,
         progress_callback=None,
+        line_callback=None,
     ) -> SfincsRunResult:
         logs_dir.mkdir(parents=True, exist_ok=True)
         result = model_dir / "sfincs_map.nc"
@@ -435,6 +460,9 @@ class _FakeRunner:
         stderr = logs_dir / "sfincs.stderr.log"
         stdout.write_text("ok\n", encoding="utf-8")
         stderr.write_text("", encoding="utf-8")
+        if line_callback is not None:
+            line_callback("---- Using 8 of 8 available threads ----")
+            line_callback("50% complete, 1.0 s remaining")
         if progress_callback is not None:
             progress_callback(SfincsProgress(0.5, 1.0))
         return SfincsRunResult(0, result, stdout, stderr, engine, elapsed_seconds=2.0)
@@ -472,6 +500,8 @@ def test_coordinator_runs_full_1m_to_normalized_result(tmp_path: Path) -> None:
     assert manifest["run_status"] == "COMPLETE"
     assert manifest["limitations"]["infiltration_modelled"] is False
     assert manifest["limitations"]["sewer_network_modelled"] is False
+    assert any("Using 8 of 8 available threads" in line for line in record.activity_lines)
+    assert any("50% complete" in line for line in record.activity_lines)
     assert manifest["roof_rain_mass_diagnostic"]["relative_error"] <= 1e-9
     assert [event.sequence for event in record.events] == list(range(1, len(record.events) + 1))
 
@@ -592,6 +622,7 @@ def test_phase3_api_accepts_run_and_exposes_result(
     status = client.get(f"/api/v1/runs/{run_id}")
     assert status.status_code == 200
     assert status.json()["state"] == "COMPLETE"
+    assert any("Using 8 of 8 available threads" in line for line in status.json()["activity_lines"])
     metadata = client.get(f"/api/v1/runs/{run_id}/result-metadata")
     assert metadata.status_code == 200
     assert metadata.json()["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.05)
