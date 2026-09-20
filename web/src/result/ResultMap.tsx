@@ -155,6 +155,7 @@ export default function ResultMap({
     <div
       ref={containerRef}
       className="result-map"
+      role="region"
       aria-label={mapLabel}
     />
   );
