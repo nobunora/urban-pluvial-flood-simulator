@@ -246,6 +246,9 @@ out geom;'''
                 "road_lines": len(roads),
                 "query_margin_m": margin_m,
                 "tags": ["building", "building:part", "building relation", "building:part relation", "highway"],
+                "building_geometry_detail": "native-full-detail",
+                "map_zoom_dependent": False,
+                "geometry_simplification": "none",
             },
             acquired_at_utc=acquired_at_utc,
         )
