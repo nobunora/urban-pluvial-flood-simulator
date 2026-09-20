@@ -5,11 +5,14 @@ import {
   createRun,
   estimateResources,
   getHealth,
+  getResultMetadata,
   getRun,
   type AnalysisArea,
   type ResourceEstimateResponse,
+  type ResultMetadataResponse,
   type RunStatusResponse,
 } from "../api/client";
+import ResultPanel from "../result/ResultPanel";
 import "./smoke.css";
 
 const TERMINAL = new Set<RunStatusResponse["state"]>(["COMPLETE", "FAILED", "CANCELLED"]);
@@ -51,6 +54,8 @@ export default function SmokeApp() {
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<RunStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resultMetadata, setResultMetadata] = useState<ResultMetadataResponse | null>(null);
+  const [resultError, setResultError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const area = useMemo(() => {
@@ -97,6 +102,22 @@ export default function SmokeApp() {
     };
   }, [runId, status]);
 
+  useEffect(() => {
+    if (!runId || status?.state !== "COMPLETE" || resultMetadata) return;
+    let closed = false;
+    setResultError(null);
+    getResultMetadata(runId)
+      .then((metadata) => {
+        if (!closed) setResultMetadata(metadata);
+      })
+      .catch((cause: unknown) => {
+        if (!closed) setResultError(String(cause));
+      });
+    return () => {
+      closed = true;
+    };
+  }, [resultMetadata, runId, status]);
+
   const handleEstimate = async () => {
     if (!area) return;
     setBusy(true);
@@ -129,6 +150,8 @@ export default function SmokeApp() {
     setBusy(true);
     setError(null);
     setStatus(null);
+    setResultMetadata(null);
+    setResultError(null);
     try {
       const created = await createRun({
         analysis_area: area,
@@ -157,6 +180,16 @@ export default function SmokeApp() {
     }
   };
 
+  const handleNewAnalysis = () => {
+    setRunId(null);
+    setStatus(null);
+    setResultMetadata(null);
+    setResultError(null);
+    setError(null);
+  };
+
+  const rainfallSummary = `${intensity} mm/h × ${duration}分`;
+
   return (
     <main className="smoke-shell">
       <header>
@@ -164,7 +197,7 @@ export default function SmokeApp() {
           <h1>Urban Pluvial Flood Simulator</h1>
           <p className="smoke-kicker">ローカルレビュー版 — Full 1 m</p>
           <p>
-            まず操作フローと実行経路をレビューするための縦切り版です。Adaptiveと結果地図はまだ未実装です。
+            Full 1 mの条件入力からSFINCS実行、最大浸水深の結果地図までをレビューできます。Adaptiveはまだ無効です。
           </p>
         </div>
         <div className="smoke-health">Backend: {backend}</div>
@@ -220,12 +253,25 @@ export default function SmokeApp() {
               {!TERMINAL.has(status.state) && <button onClick={() => void handleCancel()}>キャンセル</button>}
             </div>
           )}
+          {status?.state === "COMPLETE" && !resultMetadata && !resultError && (
+            <p>結果地図を読み込んでいます…</p>
+          )}
+          {resultError && <pre className="smoke-error">{resultError}</pre>}
           {error && <pre className="smoke-error">{error}</pre>}
         </div>
       </section>
 
+      {runId && resultMetadata && (
+        <ResultPanel
+          runId={runId}
+          metadata={resultMetadata}
+          rainfallSummary={rainfallSummary}
+          onNewAnalysis={handleNewAnalysis}
+        />
+      )}
+
       <footer>
-        レビュー対象: 条件入力・負荷見積り・Full 1 m実行・進捗・キャンセル / 下水・浸透は未考慮 / 雨は解析範囲内で一様 / 公的な洪水予報・避難情報ではありません
+        レビュー対象: 条件入力・負荷見積り・Full 1 m実行・進捗・キャンセル・最大浸水深地図・地点確認 / 下水・浸透は未考慮 / 雨は解析範囲内で一様 / 公的な洪水予報・避難情報ではありません
       </footer>
     </main>
   );
