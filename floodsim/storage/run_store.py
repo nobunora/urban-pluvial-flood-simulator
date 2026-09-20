@@ -54,6 +54,16 @@ class RunStore:
         atomic_write_json(path, payload)
         return path
 
+    def write_diagnostic(
+        self,
+        run_id: UUID | str,
+        filename: str,
+        payload: dict[str, Any],
+    ) -> Path:
+        path = self.ensure_run(run_id) / "logs" / filename
+        atomic_write_json(path, payload)
+        return path
+
     def read_manifest(self, run_id: UUID | str) -> dict[str, Any] | None:
         path = self.run_dir(run_id) / "manifest.json"
         if not path.is_file():
