@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import {
-  ImageSource,
   Map as MapLibreMap,
   Marker,
   NavigationControl,
@@ -14,6 +13,8 @@ import { resultBounds, resultImageCoordinates } from "./resultGeometry";
 type Props = {
   metadata: ResultMetadataResponse;
   imageUrl: string;
+  flowImageUrl: string | null;
+  overlayOpacity: number;
   mapLabel: string;
   onInspect: (lon: number, lat: number) => void;
 };
@@ -21,6 +22,8 @@ type Props = {
 export default function ResultMap({
   metadata,
   imageUrl,
+  flowImageUrl,
+  overlayOpacity,
   mapLabel,
   onInspect,
 }: Props) {
@@ -47,11 +50,6 @@ export default function ResultMap({
             tileSize: 256,
             attribution: "国土地理院",
           },
-          "result-overlay": {
-            type: "image",
-            url: imageUrl,
-            coordinates: resultImageCoordinates(metadata.bounds),
-          },
           "analysis-boundary": {
             type: "geojson",
             data: {
@@ -77,20 +75,12 @@ export default function ResultMap({
             source: "gsi",
           },
           {
-            id: "result-overlay",
-            type: "raster",
-            source: "result-overlay",
-            paint: {
-              "raster-opacity": 0.82,
-            },
-          },
-          {
             id: "analysis-boundary-fill",
             type: "fill",
             source: "analysis-boundary",
             paint: {
-              "fill-color": "#2563eb",
-              "fill-opacity": 0.04,
+              "fill-color": "#DC2626",
+              "fill-opacity": 0.02,
             },
           },
           {
@@ -98,8 +88,8 @@ export default function ResultMap({
             type: "line",
             source: "analysis-boundary",
             paint: {
-              "line-color": "#1e3a8a",
-              "line-width": 2,
+              "line-color": "#DC2626",
+              "line-width": 4,
             },
           },
         ],
@@ -132,24 +122,80 @@ export default function ResultMap({
     const map = mapRef.current;
     if (!map) return;
 
-    const updateImage = () => {
-      const source = map.getSource("result-overlay") as ImageSource | undefined;
-      source?.updateImage({
+    const replaceResult = () => {
+      if (map.getLayer("result-overlay")) map.removeLayer("result-overlay");
+      if (map.getSource("result-overlay")) map.removeSource("result-overlay");
+      map.addSource("result-overlay", {
+        type: "image",
         url: imageUrl,
         coordinates: resultImageCoordinates(metadata.bounds),
       });
+      map.addLayer(
+        {
+          id: "result-overlay",
+          type: "raster",
+          source: "result-overlay",
+          paint: {
+            "raster-opacity": overlayOpacity,
+          },
+        },
+        "analysis-boundary-fill",
+      );
+      map.triggerRepaint();
     };
 
     if (map.isStyleLoaded()) {
-      updateImage();
+      replaceResult();
       return;
     }
+    map.once("load", replaceResult);
+    return () => map.off("load", replaceResult);
+  }, [imageUrl, metadata, overlayOpacity]);
 
-    map.once("load", updateImage);
-    return () => {
-      map.off("load", updateImage);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const replaceFlow = () => {
+      if (map.getLayer("flow-overlay")) map.removeLayer("flow-overlay");
+      if (map.getSource("flow-overlay")) map.removeSource("flow-overlay");
+      if (!flowImageUrl) {
+        map.triggerRepaint();
+        return;
+      }
+      map.addSource("flow-overlay", {
+        type: "image",
+        url: flowImageUrl,
+        coordinates: resultImageCoordinates(metadata.bounds),
+      });
+      map.addLayer(
+        {
+          id: "flow-overlay",
+          type: "raster",
+          source: "flow-overlay",
+          paint: {
+            "raster-opacity": 0.95,
+          },
+        },
+        "analysis-boundary-fill",
+      );
+      map.triggerRepaint();
     };
-  }, [imageUrl, metadata]);
+
+    if (map.isStyleLoaded()) {
+      replaceFlow();
+      return;
+    }
+    map.once("load", replaceFlow);
+    return () => map.off("load", replaceFlow);
+  }, [flowImageUrl, metadata]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer("result-overlay")) return;
+    map.setPaintProperty("result-overlay", "raster-opacity", overlayOpacity);
+    map.triggerRepaint();
+  }, [overlayOpacity]);
 
   return (
     <div
