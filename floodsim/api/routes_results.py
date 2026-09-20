@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -15,6 +16,7 @@ from floodsim.api.schemas import PointInspectionResponse, ResultMetadataResponse
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.orchestration.run_coordinator import ResultNotReady, RunNotFound
 from floodsim.results.view import (
+    NormalizedArrays,
     PointOutsideResult,
     ResultTimeIndexInvalid,
     ResultViewError,
@@ -29,7 +31,7 @@ from floodsim.results.view import (
 router = APIRouter()
 
 
-def _map_result_error(exc: RuntimeError) -> ApiContractError:
+def _map_result_error(exc: Exception) -> ApiContractError:
     if isinstance(exc, RunNotFound):
         return ApiContractError(404, exc.code, "指定された計算が見つかりません。")
     if isinstance(exc, ResultNotReady):
@@ -44,7 +46,7 @@ def _map_result_error(exc: RuntimeError) -> ApiContractError:
 
 
 @lru_cache(maxsize=16)
-def _load_arrays_cached(path_text: str, mtime_ns: int):
+def _load_arrays_cached(path_text: str, mtime_ns: int) -> NormalizedArrays:
     del mtime_ns
     return load_normalized_arrays(Path(path_text))
 
@@ -67,7 +69,7 @@ def _flow_geojson_cached(
     area_json: str,
     time_index: int,
     max_vectors: int,
-) -> dict:
+) -> dict[str, Any]:
     arrays = _load_arrays_cached(path_text, mtime_ns)
     return flow_vectors_geojson(
         arrays,
@@ -82,7 +84,7 @@ def _arrays_path_for_run(run_id: UUID) -> tuple[Path, int]:
     return path, path.stat().st_mtime_ns
 
 
-def _arrays_for_run(run_id: UUID):
+def _arrays_for_run(run_id: UUID) -> NormalizedArrays:
     try:
         path, mtime_ns = _arrays_path_for_run(run_id)
         return _load_arrays_cached(str(path), mtime_ns)
