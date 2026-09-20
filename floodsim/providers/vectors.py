@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Event
 
 from floodsim.domain.geometry import AnalysisArea
-from floodsim.providers.common import ProviderError, ProviderUnavailableError
+from floodsim.providers.common import ProviderError, ProviderTimeoutError, ProviderUnavailableError
 from floodsim.providers.osm import OsmProvider, OsmVectors
 from floodsim.providers.plateau import PlateauProvider, PlateauVectors
 
@@ -101,6 +101,9 @@ def acquire_vectors(
             time_budget_s=plateau_budget_s,
             progress_callback=progress_callback,
         )
+
+    if cancel_event is not None and cancel_event.is_set():
+        raise ProviderTimeoutError("vector acquisition cancelled before provider requests")
 
     plateau_progress = 0.0
     osm_progress = 0.0
