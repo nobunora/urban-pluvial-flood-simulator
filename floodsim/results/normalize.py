@@ -61,6 +61,7 @@ def normalize_regular_result(
             "negative_depth_clipped_values": result.negative_depth_clipped_values,
             "negative_max_depth_clipped_cells": result.negative_max_depth_clipped_cells,
             "min_raw_active_depth_m": result.min_raw_active_depth_m,
+            "excluded_boundary_cells": result.excluded_boundary_cells,
         },
         "grid_level_summary": {
             "1m": int(np.count_nonzero(result.active_mask)),
@@ -70,10 +71,11 @@ def normalize_regular_result(
         "engine_summary": dict(engine_summary or {}),
         "run_summary": dict(run_summary or {}),
         "no_data_policy": (
-            "inactive/blocked SFINCS cells are NaN in normalized arrays; "
-            "active cells with missing hmax are reconstructed from finite h time output; "
-            "finite negative depth excursions within the SFINCS 0.01 m default wet-cell "
-            "threshold are clipped to zero and reported in metadata"
+            "inactive/blocked and SFINCS boundary-control cells are NaN in normalized arrays; "
+            "regular-grid SFINCS h is an unfiltered signed zs-zb output, so finite negative "
+            "time-depth values represent dry-state output and are normalized to zero while "
+            "remaining visible in diagnostics; missing wet-filtered hmax is reconstructed from "
+            "the normalized time-depth series; finite negative hmax remains invalid"
         ),
         "limitations": limitations.model_dump(),
     }
