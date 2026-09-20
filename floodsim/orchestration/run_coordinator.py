@@ -231,6 +231,27 @@ class RunCoordinator:
         if log:
             self._append_activity(record, detail)
 
+    def _acquire_vectors_with_progress(
+        self,
+        record: RunRecord,
+        area: Any,
+        **kwargs: Any,
+    ) -> Any:
+        callback = lambda fraction, detail: self._update_work_progress(
+            record, fraction, detail
+        )
+        signature = inspect.signature(self.vector_acquirer)
+        accepts_progress = (
+            "progress_callback" in signature.parameters
+            or any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in signature.parameters.values()
+            )
+        )
+        if accepts_progress:
+            kwargs["progress_callback"] = callback
+        return self.vector_acquirer(area, **kwargs)
+
     def _build_grid_with_progress(
         self,
         record: RunRecord,
@@ -460,7 +481,8 @@ class RunCoordinator:
                 "準備済み建物・道路データを再利用しています。" if cache_hit else "PLATEAU優先で建物・道路を取得しています。",
             )
             if not cache_hit:
-                vectors = self.vector_acquirer(
+                vectors = self._acquire_vectors_with_progress(
+                    record,
                     record.config.analysis_area,
                     mode="auto",
                     cache_dir=str(run_root.parent.parent / "cache"),
@@ -468,9 +490,6 @@ class RunCoordinator:
                     plateau_budget_s=self.plateau_vector_budget_s,
                     osm_budget_s=self.osm_vector_budget_s,
                     cancel_event=record.cancel_event,
-                    progress_callback=lambda fraction, detail: self._update_work_progress(
-                        record, fraction, detail
-                    ),
                 )
                 runtime_diagnostic["grid_input"] = self._grid_input_diagnostic(
                     record,
