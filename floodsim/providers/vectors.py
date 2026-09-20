@@ -6,7 +6,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
-from threading import Event
+from threading import Event, Lock
 
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.providers.common import ProviderError, ProviderTimeoutError, ProviderUnavailableError
@@ -107,16 +107,18 @@ def acquire_vectors(
 
     plateau_progress = 0.0
     osm_progress = 0.0
+    progress_lock = Lock()
 
     def emit_combined_progress(provider: str, fraction: float, message: str) -> None:
         nonlocal plateau_progress, osm_progress
         bounded = max(0.0, min(1.0, fraction))
-        if provider == "plateau":
-            plateau_progress = bounded
-        else:
-            osm_progress = bounded
-        if progress_callback is not None:
+        with progress_lock:
+            if provider == "plateau":
+                plateau_progress = bounded
+            else:
+                osm_progress = bounded
             combined_fraction = 0.5 * plateau_progress + 0.5 * osm_progress
+        if progress_callback is not None:
             progress_callback(combined_fraction, message)
 
     def acquire_plateau() -> PlateauVectors:
