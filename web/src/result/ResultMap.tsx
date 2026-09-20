@@ -149,7 +149,9 @@ export default function ResultMap({
       return;
     }
     map.once("load", replaceResult);
-    return () => map.off("load", replaceResult);
+    return () => {
+      map.off("load", replaceResult);
+    };
   }, [imageUrl, metadata, overlayOpacity]);
 
   useEffect(() => {
@@ -187,7 +189,9 @@ export default function ResultMap({
       return;
     }
     map.once("load", replaceFlow);
-    return () => map.off("load", replaceFlow);
+    return () => {
+      map.off("load", replaceFlow);
+    };
   }, [flowImageUrl, metadata]);
 
   useEffect(() => {
