@@ -55,6 +55,22 @@ function canonicalText(path) {
   return readFileSync(path, "utf8").replace(/\r\n?/g, "\n");
 }
 
+function reportFirstDifference(label, expectedText, actualText) {
+  const expected = expectedText.split("\n");
+  const actual = actualText.split("\n");
+  const length = Math.max(expected.length, actual.length);
+  let index = 0;
+  while (index < length && expected[index] === actual[index]) index += 1;
+  if (index >= length) return;
+  const start = Math.max(0, index - 4);
+  const end = Math.min(length, index + 5);
+  console.error(`${label}: first difference at line ${index + 1}`);
+  for (let line = start; line < end; line += 1) {
+    console.error(`${line === index ? ">" : " "} expected ${line + 1}: ${expected[line] ?? "<EOF>"}`);
+    console.error(`${line === index ? ">" : " "} actual   ${line + 1}: ${actual[line] ?? "<EOF>"}`);
+  }
+}
+
 if (!python) {
   console.error("No project Python interpreter was found.");
   process.exit(1);
@@ -71,13 +87,19 @@ const temporaryOpenApi = join(temporaryDirectory, "openapi.json");
 const temporaryGenerated = join(temporaryDirectory, "generated.ts");
 try {
   currentOpenApi(temporaryOpenApi);
-  if (!existsSync(openapiPath) || canonicalText(temporaryOpenApi) !== canonicalText(openapiPath)) {
+  const generatedOpenApi = canonicalText(temporaryOpenApi);
+  const committedOpenApi = existsSync(openapiPath) ? canonicalText(openapiPath) : "";
+  if (!existsSync(openapiPath) || generatedOpenApi !== committedOpenApi) {
     console.error("web/openapi.json is out of date; run npm run api:generate.");
+    reportFirstDifference("OpenAPI drift", generatedOpenApi, committedOpenApi);
     process.exit(1);
   }
   generateTypes(temporaryOpenApi, temporaryGenerated);
-  if (!existsSync(generatedPath) || canonicalText(temporaryGenerated) !== canonicalText(generatedPath)) {
+  const generatedTypes = canonicalText(temporaryGenerated);
+  const committedTypes = existsSync(generatedPath) ? canonicalText(generatedPath) : "";
+  if (!existsSync(generatedPath) || generatedTypes !== committedTypes) {
     console.error("web/src/api/generated.ts is out of date; run npm run api:generate.");
+    reportFirstDifference("Generated type drift", generatedTypes, committedTypes);
     process.exit(1);
   }
 } finally {
