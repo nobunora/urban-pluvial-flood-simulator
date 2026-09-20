@@ -75,6 +75,7 @@ def _cache_path(cache_dir: Path, area: AnalysisArea, margin_m: float) -> Path:
         "width_m": area.width_m,
         "height_m": area.height_m,
         "margin_m": margin_m,
+        "query_revision": "building-part-v2",
     }
     digest = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:20]
     return cache_dir / "osm" / f"{digest}.json"
@@ -110,6 +111,7 @@ class OsmProvider:
         query = f'''[out:json][timeout:{query_timeout_s}];
 (
   way["building"]({bbox});
+  way["building:part"]({bbox});
   way["highway"]({bbox});
 );
 out geom;'''
