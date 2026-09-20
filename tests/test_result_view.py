@@ -20,6 +20,7 @@ from floodsim.results.view import (
     ResultTimeIndexInvalid,
     inspect_native_point,
     load_normalized_arrays,
+    render_flow_vectors_png,
     render_grid_resolution_png,
     render_max_depth_png,
     render_time_depth_png,
@@ -53,6 +54,20 @@ def _arrays() -> NormalizedArrays:
     max_depth = np.asarray([[0.005, 0.06], [0.20, 1.20]], dtype=np.float32)
     terrain = np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
     active = np.asarray([[True, True], [False, True]])
+    velocity_u = np.asarray(
+        [
+            [[0.0, 0.20], [0.0, 0.10]],
+            [[0.0, 0.30], [0.0, 0.40]],
+        ],
+        dtype=np.float32,
+    )
+    velocity_v = np.asarray(
+        [
+            [[0.0, 0.0], [0.0, 0.10]],
+            [[0.0, 0.10], [0.0, 0.20]],
+        ],
+        dtype=np.float32,
+    )
     return NormalizedArrays(
         depth_time_m=depth,
         max_depth_m=max_depth,
@@ -60,6 +75,8 @@ def _arrays() -> NormalizedArrays:
         active_mask=active,
         time_values=("0", "60"),
         grid_resolution_m=1.0,
+        velocity_u_mps=velocity_u,
+        velocity_v_mps=velocity_v,
     )
 
 
@@ -111,6 +128,29 @@ def test_time_depth_png_validates_time_index() -> None:
 
     with pytest.raises(ResultTimeIndexInvalid):
         render_time_depth_png(_arrays(), time_index=2)
+
+
+def test_time_depth_frames_and_grid_layer_are_visibly_distinct() -> None:
+    arrays = _arrays()
+    first = render_time_depth_png(arrays, time_index=0)
+    second = render_time_depth_png(arrays, time_index=1)
+    grid = render_grid_resolution_png(arrays)
+
+    assert first != second
+    assert second != grid
+    assert _rgba(first).tobytes() != _rgba(second).tobytes()
+
+
+def test_flow_vector_png_uses_saved_velocity_and_time_index() -> None:
+    arrays = _arrays()
+    first = render_flow_vectors_png(arrays, time_index=0)
+    second = render_flow_vectors_png(arrays, time_index=1)
+
+    assert first.startswith(b"\x89PNG")
+    assert second.startswith(b"\x89PNG")
+    assert np.any(_rgba(first)[..., 3] > 0)
+    assert np.any(_rgba(second)[..., 3] > 0)
+
 
 
 def test_grid_resolution_png_uses_native_active_mask() -> None:
@@ -185,6 +225,8 @@ class _ResultCoordinator:
             active_mask=arrays.active_mask,
             time_values=np.asarray(arrays.time_values),
             grid_resolution_m=np.float32(1.0),
+            velocity_u_mps=arrays.velocity_u_mps,
+            velocity_v_mps=arrays.velocity_v_mps,
         )
 
     def result_arrays_path(self, run_id: UUID) -> Path:
@@ -203,6 +245,7 @@ class _ResultCoordinator:
             },
             "available_time_indices": [0, 1],
             "time_values": ["0", "60"],
+            "flow_vectors_available": True,
             "max_depth_summary": {"global_max_depth_m": 1.2},
             "grid_level_summary": {"1m": 3},
             "depth_legend": [band.to_metadata() for band in DEPTH_BANDS],
@@ -280,6 +323,16 @@ def test_result_api_exposes_png_metadata_and_native_inspection(
 
     grid = client.get(f"/api/v1/runs/{coordinator.run_id}/layers/grid-resolution.png")
     assert grid.status_code == 200
+
+    assert time_depth.content != grid.content
+
+    flow = client.get(
+        f"/api/v1/runs/{coordinator.run_id}/layers/flow-vectors.png",
+        params={"time_index": 1},
+    )
+    assert flow.status_code == 200
+    assert flow.headers["content-type"] == "image/png"
+    assert flow.content.startswith(b"\x89PNG")
 
     inspection = client.get(
         f"/api/v1/runs/{coordinator.run_id}/inspect",
