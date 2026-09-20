@@ -150,6 +150,25 @@ def test_full_grid_blocks_tiny_building_touching_single_cell() -> None:
     assert np.all(grid.sfincs_mask[grid.building_mask] == 0)
 
 
+def test_full_grid_reports_remaining_preprocessing_and_roof_work() -> None:
+    area = _area()
+    updates: list[tuple[float, str]] = []
+
+    grid = build_full_1m_grid(
+        area,
+        _elevation(area),
+        _vectors(area),
+        progress_callback=lambda fraction, message: updates.append((fraction, message)),
+    )
+
+    assert grid.cell_count == 16
+    assert any("残り3処理" in message for _, message in updates)
+    assert any("残り0処理" in message for _, message in updates)
+    assert any("屋根雨水配分" in message and "残り" in message for _, message in updates)
+    assert updates[-1][0] == pytest.approx(1.0)
+    assert updates[-1][1] == "Full 1 m格子・建物マスク・粗度の構築完了"
+
+
 def test_full_grid_sets_building_boundary_and_manning() -> None:
     area = _area()
     grid = build_full_1m_grid(area, _elevation(area), _vectors(area))
