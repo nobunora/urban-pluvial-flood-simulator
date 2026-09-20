@@ -24,6 +24,7 @@ EXPECTED_PACKAGES = {
     "hydromt-sfincs": "2.0.0rc3",
     "netCDF4": "1.7.4",
     "numpy": "2.5.2",
+    "Pillow": "11.3.0",
     "platformdirs": "4.4.0",
     "pyproj": "3.7.2",
     "rasterio": "1.5.1",
