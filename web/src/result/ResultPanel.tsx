@@ -63,18 +63,22 @@ export default function ResultPanel({
   onNewAnalysis,
 }: Props) {
   const [layer, setLayer] = useState<ResultLayer>("max_depth");
-  const [timeIndex, setTimeIndex] = useState(metadata.available_time_indices[0] ?? 0);
+  const [timePosition, setTimePosition] = useState(0);
   const [inspection, setInspection] = useState<PointInspectionResponse | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionError, setInspectionError] = useState<string | null>(null);
   const inspectionController = useRef<AbortController | null>(null);
 
-  const activeTimeIndex = layer === "time_depth" ? timeIndex : null;
+  const selectedTimeIndex = metadata.available_time_indices[timePosition] ?? null;
+  const activeTimeIndex = layer === "time_depth" ? selectedTimeIndex : null;
   const imageUrl = useMemo(() => {
-    if (layer === "time_depth") return resultLayerUrl(runId, "depth", timeIndex);
+    if (layer === "time_depth") {
+      if (selectedTimeIndex === null) return resultLayerUrl(runId, "max-depth");
+      return resultLayerUrl(runId, "depth", selectedTimeIndex);
+    }
     if (layer === "grid_resolution") return resultLayerUrl(runId, "grid-resolution");
     return resultLayerUrl(runId, "max-depth");
-  }, [layer, runId, timeIndex]);
+  }, [layer, runId, selectedTimeIndex]);
 
   const mapLabel =
     layer === "time_depth"
@@ -112,7 +116,7 @@ export default function ResultPanel({
   const provider = metadata.provider_summary;
   const engine = metadata.engine_summary;
   const globalMax = metadata.max_depth_summary.global_max_depth_m;
-  const maxTimeIndex = Math.max(0, metadata.available_time_indices.length - 1);
+  const maxTimePosition = Math.max(0, metadata.available_time_indices.length - 1);
 
   return (
     <section className="result-shell" aria-labelledby="result-title">
@@ -161,8 +165,8 @@ export default function ResultPanel({
         <div className="result-timeline">
           <button
             type="button"
-            disabled={timeIndex <= 0}
-            onClick={() => setTimeIndex((value) => Math.max(0, value - 1))}
+            disabled={timePosition <= 0}
+            onClick={() => setTimePosition((value) => Math.max(0, value - 1))}
             aria-label="前の時刻"
           >
             ◀
@@ -171,20 +175,20 @@ export default function ResultPanel({
             aria-label="結果時刻"
             type="range"
             min={0}
-            max={maxTimeIndex}
+            max={maxTimePosition}
             step={1}
-            value={timeIndex}
-            onChange={(event) => setTimeIndex(Number(event.target.value))}
+            value={timePosition}
+            onChange={(event) => setTimePosition(Number(event.target.value))}
           />
           <button
             type="button"
-            disabled={timeIndex >= maxTimeIndex}
-            onClick={() => setTimeIndex((value) => Math.min(maxTimeIndex, value + 1))}
+            disabled={timePosition >= maxTimePosition}
+            onClick={() => setTimePosition((value) => Math.min(maxTimePosition, value + 1))}
             aria-label="次の時刻"
           >
             ▶
           </button>
-          <strong>現在: {elapsedLabel(metadata.time_values, timeIndex)}</strong>
+          <strong>現在: {elapsedLabel(metadata.time_values, timePosition)}</strong>
         </div>
       )}
 
@@ -239,7 +243,7 @@ export default function ResultPanel({
                 {layer === "time_depth" && (
                   <>
                     <dt>現在水深</dt><dd>{metres(inspection.depth_m)}</dd>
-                    <dt>時刻</dt><dd>{inspection.time_value ?? elapsedLabel(metadata.time_values, timeIndex)}</dd>
+                    <dt>時刻</dt><dd>{inspection.time_value ?? elapsedLabel(metadata.time_values, timePosition)}</dd>
                   </>
                 )}
                 <dt>格子</dt><dd>{metres(inspection.grid_resolution_m)}</dd>
