@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 import traceback
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -29,10 +30,12 @@ from floodsim.sfincs.model_builder import SfincsModelBuilder
 from floodsim.sfincs.output_reader import read_regular_result
 from floodsim.sfincs.runner import (
     ResolvedEngine,
+    SfincsProgress,
     SfincsRunCancelled,
     SfincsRunner,
     resolve_sfincs_executable,
 )
+from floodsim.storage.prepared_grid_cache import PreparedGridCache
 from floodsim.storage.run_store import RunStore
 
 
@@ -116,6 +119,8 @@ class RunRecord:
     result_metadata: dict[str, Any] | None = None
     future: Future[None] | None = None
     runner: SfincsRunner | None = None
+    progress_fraction: float | None = None
+    estimated_remaining_seconds: float | None = None
     lock: threading.RLock = field(default_factory=threading.RLock)
 
 
@@ -155,6 +160,7 @@ class RunCoordinator:
         self.runner_factory = runner_factory
         self.result_reader = result_reader
         self.result_normalizer = result_normalizer
+        self.prepared_cache = PreparedGridCache(self.store.root.parent / "cache")
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="floodsim-run")
         self._records: dict[UUID, RunRecord] = {}
         self._active_run_id: UUID | None = None
