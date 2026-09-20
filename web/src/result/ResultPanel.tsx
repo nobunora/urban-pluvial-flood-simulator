@@ -64,7 +64,7 @@ export default function ResultPanel({
 }: Props) {
   const [layer, setLayer] = useState<ResultLayer>("max_depth");
   const [timePosition, setTimePosition] = useState(0);
-  const [backgroundOpacity, setBackgroundOpacity] = useState(55);
+  const [backgroundTransparency, setBackgroundTransparency] = useState(45);
   const [flowVisible, setFlowVisible] = useState(false);
   const [inspection, setInspection] = useState<PointInspectionResponse | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
@@ -197,10 +197,10 @@ export default function ResultPanel({
             min={0}
             max={100}
             step={1}
-            value={backgroundOpacity}
-            onChange={(event) => setBackgroundOpacity(Number(event.target.value))}
+            value={backgroundTransparency}
+            onChange={(event) => setBackgroundTransparency(Number(event.target.value))}
           />
-          <span>{backgroundOpacity}%</span>
+          <span>{backgroundTransparency}%</span>
         </label>
         {!metadata.flow_vectors_available && (
           <span className="result-muted">この解析には流れベクトルデータがありません。</span>
@@ -244,7 +244,7 @@ export default function ResultPanel({
             metadata={metadata}
             imageUrl={imageUrl}
             flowImageUrl={flowImageUrl}
-            backgroundOpacity={backgroundOpacity / 100}
+            backgroundOpacity={(100 - backgroundTransparency) / 100}
             mapLabel={mapLabel}
             onInspect={handleInspect}
           />
