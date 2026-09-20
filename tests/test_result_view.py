@@ -18,9 +18,9 @@ from floodsim.results.view import (
     NormalizedArrays,
     PointOutsideResult,
     ResultTimeIndexInvalid,
+    flow_vectors_geojson,
     inspect_native_point,
     load_normalized_arrays,
-    render_flow_vectors_png,
     render_grid_resolution_png,
     render_max_depth_png,
     render_time_depth_png,
@@ -141,16 +141,23 @@ def test_time_depth_frames_and_grid_layer_are_visibly_distinct() -> None:
     assert _rgba(first).tobytes() != _rgba(second).tobytes()
 
 
-def test_flow_vector_png_uses_saved_velocity_and_time_index() -> None:
+def test_flow_vector_geojson_uses_saved_velocity_and_speed_properties() -> None:
     arrays = _arrays()
-    first = render_flow_vectors_png(arrays, time_index=0)
-    second = render_flow_vectors_png(arrays, time_index=1)
+    payload = flow_vectors_geojson(
+        arrays,
+        area=_area(),
+        time_index=1,
+        max_vectors=50,
+    )
 
-    assert first.startswith(b"\x89PNG")
-    assert second.startswith(b"\x89PNG")
-    assert np.any(_rgba(first)[..., 3] > 0)
-    assert np.any(_rgba(second)[..., 3] > 0)
-
+    assert payload["type"] == "FeatureCollection"
+    assert payload["metadata"]["speed_unit"] == "m/s"
+    assert payload["metadata"]["arrow_count"] >= 1
+    feature = payload["features"][0]
+    assert feature["geometry"]["type"] == "MultiLineString"
+    assert feature["properties"]["speed_mps"] > 0
+    assert feature["properties"]["u_mps"] == pytest.approx(0.3, abs=0.2)
+    assert feature["properties"]["time_index"] == 1
 
 
 def test_grid_resolution_png_uses_native_active_mask() -> None:
@@ -326,13 +333,37 @@ def test_result_api_exposes_png_metadata_and_native_inspection(
 
     assert time_depth.content != grid.content
 
+    routes_results._render_time_depth_cached.cache_clear()
+    first_cached = client.get(
+        f"/api/v1/runs/{coordinator.run_id}/layers/depth.png",
+        params={"time_index": 1},
+    )
+    second_cached = client.get(
+        f"/api/v1/runs/{coordinator.run_id}/layers/depth.png",
+        params={"time_index": 1},
+    )
+    assert first_cached.status_code == 200
+    assert second_cached.status_code == 200
+    assert "immutable" in second_cached.headers["cache-control"]
+    assert routes_results._render_time_depth_cached.cache_info().hits >= 1
+
     flow = client.get(
+        f"/api/v1/runs/{coordinator.run_id}/layers/flow-vectors.geojson",
+        params={"time_index": 1, "max_vectors": 50},
+    )
+    assert flow.status_code == 200
+    assert flow.headers["content-type"].startswith("application/json")
+    assert "immutable" in flow.headers["cache-control"]
+    flow_payload = flow.json()
+    assert flow_payload["type"] == "FeatureCollection"
+    assert flow_payload["metadata"]["speed_unit"] == "m/s"
+    assert flow_payload["features"][0]["properties"]["speed_mps"] > 0
+
+    old_flow_png = client.get(
         f"/api/v1/runs/{coordinator.run_id}/layers/flow-vectors.png",
         params={"time_index": 1},
     )
-    assert flow.status_code == 200
-    assert flow.headers["content-type"] == "image/png"
-    assert flow.content.startswith(b"\x89PNG")
+    assert old_flow_png.status_code == 404
 
     inspection = client.get(
         f"/api/v1/runs/{coordinator.run_id}/inspect",
