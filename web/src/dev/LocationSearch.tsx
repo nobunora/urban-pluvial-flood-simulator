@@ -41,6 +41,7 @@ export default function LocationSearch({ disabled, onSelect }: Props) {
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
+    setResult(null);
     setLoading(true);
 
     try {
@@ -83,7 +84,14 @@ export default function LocationSearch({ disabled, onSelect }: Props) {
             onChange={(event) => setQuery(event.target.value)}
           />
           <button type="submit" disabled={disabled || loading}>
-            {loading ? "検索中…" : "検索"}
+            {loading ? (
+              <>
+                <span className="location-search-spinner" aria-hidden="true" />
+                検索中…
+              </>
+            ) : (
+              "検索"
+            )}
           </button>
         </div>
       </form>
