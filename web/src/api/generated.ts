@@ -177,6 +177,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect Result */
+        get: operations["inspect_result_api_v1_runs__run_id__inspect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/layers/depth.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Time Depth Layer */
+        get: operations["time_depth_layer_api_v1_runs__run_id__layers_depth_png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/layers/grid-resolution.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Grid Resolution Layer */
+        get: operations["grid_resolution_layer_api_v1_runs__run_id__layers_grid_resolution_png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/layers/max-depth.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Max Depth Layer */
+        get: operations["max_depth_layer_api_v1_runs__run_id__layers_max_depth_png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/result-metadata": {
         parameters: {
             query?: never;
@@ -350,6 +418,31 @@ export interface components {
             /** Lon Deg */
             lon_deg: number;
         };
+        /** PointInspectionResponse */
+        PointInspectionResponse: {
+            /** Column */
+            column: number;
+            /** Depth M */
+            depth_m?: number | null;
+            /** Grid Resolution M */
+            grid_resolution_m?: number | null;
+            /** Has Data */
+            has_data: boolean;
+            /** Lat Deg */
+            lat_deg: number;
+            /** Lon Deg */
+            lon_deg: number;
+            /** Max Depth M */
+            max_depth_m?: number | null;
+            /** Row */
+            row: number;
+            /** Terrain Elevation M */
+            terrain_elevation_m?: number | null;
+            /** Time Index */
+            time_index?: number | null;
+            /** Time Value */
+            time_value?: string | null;
+        };
         /** RainfallEventResponse */
         RainfallEventResponse: {
             /** Catalog Generated At Utc */
@@ -442,11 +535,36 @@ export interface components {
             /** Warnings */
             warnings: string[];
         };
+        /** ResultDepthLegendItem */
+        ResultDepthLegendItem: {
+            /** Color */
+            color: string;
+            /** Label */
+            label: string;
+            /** Max M */
+            max_m?: number | null;
+            /** Min M */
+            min_m: number;
+        };
+        /** ResultEngineSummary */
+        ResultEngineSummary: {
+            /** Hydromt Sfincs Version */
+            hydromt_sfincs_version?: string | null;
+            /** Sfincs Build Sha256 */
+            sfincs_build_sha256?: string | null;
+            /** Sfincs Engine Source */
+            sfincs_engine_source?: string | null;
+            /** Sfincs Version */
+            sfincs_version?: string | null;
+        };
         /** ResultMetadataResponse */
         ResultMetadataResponse: {
             /** Available Time Indices */
             available_time_indices: number[];
             bounds: components["schemas"]["GeoBounds"];
+            /** Depth Legend */
+            depth_legend?: components["schemas"]["ResultDepthLegendItem"][];
+            engine_summary?: components["schemas"]["ResultEngineSummary"];
             /** Grid Level Summary */
             grid_level_summary: {
                 [key: string]: number;
@@ -461,6 +579,7 @@ export interface components {
             };
             /** No Data Policy */
             no_data_policy: string;
+            provider_summary?: components["schemas"]["ResultProviderSummary"];
             /** Schema Version */
             schema_version: string;
             /** Time Values */
@@ -469,6 +588,15 @@ export interface components {
             units: {
                 [key: string]: string;
             };
+        };
+        /** ResultProviderSummary */
+        ResultProviderSummary: {
+            /** Building Provider */
+            building_provider?: string | null;
+            /** Road Provider */
+            road_provider?: string | null;
+            /** Warnings */
+            warnings?: string[];
         };
         /** RunConfig */
         RunConfig: {
@@ -813,6 +941,141 @@ export interface operations {
         parameters: {
             query?: {
                 after?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_result_api_v1_runs__run_id__inspect_get: {
+        parameters: {
+            query: {
+                lon: number;
+                lat: number;
+                time_index?: number | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PointInspectionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    time_depth_layer_api_v1_runs__run_id__layers_depth_png_get: {
+        parameters: {
+            query: {
+                time_index: number;
+                max_px?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grid_resolution_layer_api_v1_runs__run_id__layers_grid_resolution_png_get: {
+        parameters: {
+            query?: {
+                max_px?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    max_depth_layer_api_v1_runs__run_id__layers_max_depth_png_get: {
+        parameters: {
+            query?: {
+                max_px?: number;
             };
             header?: never;
             path: {
