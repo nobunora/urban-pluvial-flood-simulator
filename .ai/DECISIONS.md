@@ -25,6 +25,17 @@
 - A real SFINCS Full 1 m smoke must use only an already-permitted local executable.
 - Provider or engine outages must be reported at the real stopping stage; the UI must never fake completion.
 
+## Result-view implementation decision
+
+- The canonical product and UI specifications explicitly make geographic result visualization part of the v0.1 end-to-end flow.
+- After the Full 1 m execution path reached `COMPLETE` on Windows, the user explicitly directed implementation to proceed to the next documented phase.
+- Implement result visualization before resuming Adaptive.
+- Backend-rendered PNG remains the numerical/color authority; frontend MUST NOT reclassify depth values from the PNG.
+- MapLibre image sources place result PNGs on exact backend metadata bounds over the GSI standard raster base map.
+- Native point inspection comes from the backend inspection endpoint, not display-image sampling.
+- Initial result-view implementation includes max depth, time-depth, grid-resolution, actual-index timeline, provenance and backend limitations.
+- Rainbow depth mode remains deferred until the backend provides an explicit canonical palette/legend contract; do not invent a competing frontend scalar mapping.
+
 ## Canonical environment decision
 
 - `environment.yml` is the sole canonical Python environment for local review and validation.
