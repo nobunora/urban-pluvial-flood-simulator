@@ -14,20 +14,20 @@ vi.mock("./ResultMap", () => ({
     mapLabel,
     imageUrl,
     flowImageUrl,
-    overlayOpacity,
+    backgroundOpacity,
     onInspect,
   }: {
     mapLabel: string;
     imageUrl: string;
     flowImageUrl: string | null;
-    overlayOpacity: number;
+    backgroundOpacity: number;
     onInspect: (lon: number, lat: number) => void;
   }) => (
     <div
       data-testid="result-map"
       data-image-url={imageUrl}
       data-flow-image-url={flowImageUrl ?? ""}
-      data-overlay-opacity={String(overlayOpacity)}
+      data-background-opacity={String(backgroundOpacity)}
     >
       {mapLabel}
       <button type="button" onClick={() => onInspect(139.75, 35.65)}>地点を確認</button>
@@ -301,12 +301,12 @@ describe("ResultPanel", () => {
       />,
     );
 
-    expect(screen.getByTestId("result-map")).toHaveAttribute("data-overlay-opacity", "0.82");
+    expect(screen.getByTestId("result-map")).toHaveAttribute("data-background-opacity", "0.55");
 
-    fireEvent.change(screen.getByRole("slider", { name: "解析結果の透明度" }), {
+    fireEvent.change(screen.getByRole("slider", { name: "背景地図の透明度" }), {
       target: { value: "35" },
     });
-    expect(screen.getByTestId("result-map")).toHaveAttribute("data-overlay-opacity", "0.35");
+    expect(screen.getByTestId("result-map")).toHaveAttribute("data-background-opacity", "0.35");
     expect(screen.getByText("35%")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "流れベクトル" }));
