@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 from pyproj import CRS, Transformer
 
 from floodsim.domain.geometry import AnalysisArea
@@ -81,6 +81,8 @@ class NormalizedArrays:
     active_mask: np.ndarray
     time_values: tuple[str, ...]
     grid_resolution_m: np.ndarray | float
+    velocity_u_mps: np.ndarray | None = None
+    velocity_v_mps: np.ndarray | None = None
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -103,6 +105,16 @@ def load_normalized_arrays(path: str | Path) -> NormalizedArrays:
             active = np.asarray(archive["active_mask"], dtype=bool)
             time_values = tuple(str(value) for value in np.asarray(archive["time_values"]).tolist())
             raw_resolution = np.asarray(archive["grid_resolution_m"], dtype=np.float32)
+            has_u = "velocity_u_mps" in archive.files
+            has_v = "velocity_v_mps" in archive.files
+            if has_u != has_v:
+                raise ResultViewError("normalized velocity arrays must contain both u and v")
+            velocity_u = (
+                np.asarray(archive["velocity_u_mps"], dtype=np.float32) if has_u else None
+            )
+            velocity_v = (
+                np.asarray(archive["velocity_v_mps"], dtype=np.float32) if has_v else None
+            )
     except (KeyError, OSError, ValueError) as exc:
         raise ResultViewError("normalized result file is invalid") from exc
 
@@ -112,6 +124,10 @@ def load_normalized_arrays(path: str | Path) -> NormalizedArrays:
         raise ResultViewError("normalized result grid shapes are inconsistent")
     if depth.shape[0] != len(time_values):
         raise ResultViewError("normalized result time axis is inconsistent")
+    if velocity_u is not None and (
+        velocity_u.shape != depth.shape or velocity_v is None or velocity_v.shape != depth.shape
+    ):
+        raise ResultViewError("normalized velocity grid/time shape is inconsistent")
 
     if raw_resolution.ndim == 0:
         resolution: np.ndarray | float = float(raw_resolution)
@@ -127,6 +143,8 @@ def load_normalized_arrays(path: str | Path) -> NormalizedArrays:
         active_mask=active,
         time_values=time_values,
         grid_resolution_m=resolution,
+        velocity_u_mps=velocity_u,
+        velocity_v_mps=velocity_v,
     )
 
 
@@ -206,6 +224,77 @@ def render_grid_resolution_png(
     for level, color in GRID_RESOLUTION_COLORS.items():
         rgba[arrays.active_mask & np.isclose(values, float(level))] = color
     return _png_bytes(rgba, max_px=max_px, categorical=True)
+
+
+
+def render_flow_vectors_png(
+    arrays: NormalizedArrays,
+    *,
+    time_index: int,
+    max_px: int = MAX_RENDER_PX,
+    min_speed_mps: float = 0.01,
+) -> bytes:
+    if time_index < 0 or time_index >= arrays.depth_time_m.shape[0]:
+        raise ResultTimeIndexInvalid(f"time_index {time_index} is outside available output")
+    if arrays.velocity_u_mps is None or arrays.velocity_v_mps is None:
+        raise ResultArtifactMissing("flow-vector output is not available for this run")
+
+    height, width = arrays.shape
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    stride = max(6, int(np.ceil(max(width, height) / 36)))
+    depth = arrays.depth_time_m[time_index]
+    u = arrays.velocity_u_mps[time_index]
+    v = arrays.velocity_v_mps[time_index]
+
+    for row0 in range(0, height, stride):
+        row1 = min(height, row0 + stride)
+        for col0 in range(0, width, stride):
+            col1 = min(width, col0 + stride)
+            wet = (
+                arrays.active_mask[row0:row1, col0:col1]
+                & np.isfinite(depth[row0:row1, col0:col1])
+                & (depth[row0:row1, col0:col1] >= DISPLAY_DRY_THRESHOLD_M)
+            )
+            if not np.any(wet):
+                continue
+            block_u = u[row0:row1, col0:col1][wet]
+            block_v = v[row0:row1, col0:col1][wet]
+            mean_u = float(np.mean(block_u))
+            mean_v = float(np.mean(block_v))
+            speed = float(np.hypot(mean_u, mean_v))
+            if not np.isfinite(speed) or speed < min_speed_mps:
+                continue
+
+            dx = mean_u / speed
+            dy = mean_v / speed
+            cx = (col0 + col1 - 1) / 2.0
+            # Normalized arrays run south->north; PNG y increases north->south.
+            cy = height - 1 - ((row0 + row1 - 1) / 2.0)
+            length = min(16.0, 8.0 + 6.0 * min(speed, 1.0))
+            x2 = cx + dx * length
+            y2 = cy - dy * length
+            x1 = cx - dx * length * 0.35
+            y1 = cy + dy * length * 0.35
+
+            draw.line((x1, y1, x2, y2), fill=(17, 24, 39, 235), width=2)
+            head = 4.0
+            perp_x, perp_y = -dy, -dx
+            base_x = x2 - dx * head
+            base_y = y2 + dy * head
+            draw.polygon(
+                [
+                    (x2, y2),
+                    (base_x + perp_x * head * 0.6, base_y + perp_y * head * 0.6),
+                    (base_x - perp_x * head * 0.6, base_y - perp_y * head * 0.6),
+                ],
+                fill=(17, 24, 39, 235),
+            )
+
+    image = _resize_png(image, max_px=max_px, categorical=False)
+    buffer = BytesIO()
+    image.save(buffer, format="PNG", optimize=False, compress_level=6)
+    return buffer.getvalue()
 
 
 def inspect_native_point(
