@@ -211,6 +211,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/layers/flow-vectors.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Flow Vectors Layer */
+        get: operations["flow_vectors_layer_api_v1_runs__run_id__layers_flow_vectors_png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/layers/grid-resolution.png": {
         parameters: {
             query?: never;
@@ -577,6 +594,11 @@ export interface components {
             limitations: {
                 [key: string]: boolean;
             };
+            /**
+             * Flow Vectors Available
+             * @default false
+             */
+            flow_vectors_available?: boolean;
             /** Max Depth Summary */
             max_depth_summary: {
                 [key: string]: number;
@@ -667,6 +689,10 @@ export interface components {
             failure_code?: string | null;
             /** Failure Message */
             failure_message?: string | null;
+            /** Estimated Remaining Seconds */
+            estimated_remaining_seconds?: number | null;
+            /** Progress Fraction */
+            progress_fraction?: number | null;
             /**
              * Run Id
              * Format: uuid
@@ -1043,6 +1069,40 @@ export interface operations {
         };
     };
     time_depth_layer_api_v1_runs__run_id__layers_depth_png_get: {
+        parameters: {
+            query: {
+                time_index: number;
+                max_px?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    flow_vectors_layer_api_v1_runs__run_id__layers_flow_vectors_png_get: {
         parameters: {
             query: {
                 time_index: number;
