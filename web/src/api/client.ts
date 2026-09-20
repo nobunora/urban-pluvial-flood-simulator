@@ -89,15 +89,15 @@ export function inspectResult(
 
 export function resultLayerUrl(
   runId: string,
-  layer: "max-depth" | "grid-resolution" | "depth",
+  layer: "max-depth" | "grid-resolution" | "depth" | "flow-vectors",
   timeIndex: number | null = null,
 ): string {
   const encodedRunId = encodeURIComponent(runId);
-  if (layer === "depth") {
+  if (layer === "depth" || layer === "flow-vectors") {
     if (timeIndex === null) {
-      throw new Error("timeIndex is required for the time-depth layer");
+      throw new Error("timeIndex is required for time-dependent result layers");
     }
-    return `/api/v1/runs/${encodedRunId}/layers/depth.png?time_index=${timeIndex}`;
+    return `/api/v1/runs/${encodedRunId}/layers/${layer}.png?time_index=${timeIndex}`;
   }
   return `/api/v1/runs/${encodedRunId}/layers/${layer}.png`;
 }
