@@ -31,6 +31,8 @@ export default function ResultMap({
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
   const inspectRef = useRef(onInspect);
+  const opacityRef = useRef(overlayOpacity);
+  opacityRef.current = overlayOpacity;
 
   useEffect(() => {
     inspectRef.current = onInspect;
@@ -136,7 +138,7 @@ export default function ResultMap({
           type: "raster",
           source: "result-overlay",
           paint: {
-            "raster-opacity": overlayOpacity,
+            "raster-opacity": opacityRef.current,
           },
         },
         "analysis-boundary-fill",
@@ -152,7 +154,7 @@ export default function ResultMap({
     return () => {
       map.off("load", replaceResult);
     };
-  }, [imageUrl, metadata, overlayOpacity]);
+  }, [imageUrl, metadata]);
 
   useEffect(() => {
     const map = mapRef.current;
