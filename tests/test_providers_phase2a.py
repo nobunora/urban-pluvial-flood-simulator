@@ -142,6 +142,9 @@ def test_plateau_provider_writes_provenance_and_prefers_road_polygons(tmp_path):
     assert len(result.road_polygons) == 1
     assert len(result.road_lines) == 1
     assert result.provenance.source_details["feature_types"] == ["bldg", "tran"]
+    assert result.provenance.source_details["building_geometry_detail"] == "native-full-detail"
+    assert result.provenance.source_details["map_zoom_dependent"] is False
+    assert result.provenance.source_details["geometry_simplification"] == "none"
     assert json.loads((tmp_path / "vectors" / "vectors_manifest.json").read_text(encoding="utf-8"))["provider"] == "PLATEAU"
 
 
@@ -183,6 +186,9 @@ def test_osm_rectangular_parsing_and_provenance(tmp_path):
     assert result.provenance.provider_id == "osm"
     assert result.provenance.attribution == "© OpenStreetMap contributors"
     assert result.provenance.terms_url == "https://www.openstreetmap.org/copyright"
+    assert result.provenance.source_details["building_geometry_detail"] == "native-full-detail"
+    assert result.provenance.source_details["map_zoom_dependent"] is False
+    assert result.provenance.source_details["geometry_simplification"] == "none"
     json.dumps(result.provenance.to_dict(), ensure_ascii=False)
 
 
