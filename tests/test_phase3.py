@@ -43,11 +43,7 @@ from floodsim.sfincs.model_builder import (
     SfincsModelBuilder,
     derive_output_interval_seconds,
 )
-from floodsim.sfincs.output_reader import (
-    SFINCS_DRY_DEPTH_TOLERANCE_M,
-    SfincsResultError,
-    read_regular_result,
-)
+from floodsim.sfincs.output_reader import SfincsResultError, read_regular_result
 from floodsim.sfincs.runner import ResolvedEngine, SfincsRunResult
 
 
@@ -249,36 +245,66 @@ def test_output_reader_reconstructs_missing_active_hmax_from_depth(tmp_path: Pat
     assert normalized.metadata["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.05)
 
 
-def test_output_reader_clips_tiny_negative_depth_but_rejects_material_negative_depth(
+def test_output_reader_normalizes_negative_regular_depth_but_keeps_hmax_strict(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "tiny_negative_depth.nc"
+    path = tmp_path / "dry_negative_depth.nc"
     _write_synthetic_result(path)
     with xr.open_dataset(path) as dataset:
         rewritten = dataset.load()
-    rewritten["h"].values[0, 0, 0] = -0.001
+
+    # SFINCS regular-grid h is written as unfiltered zs-zb. Reproduce the
+    # reported dry-cell excursion while keeping hmax absent for that never-wet cell.
+    rewritten["h"].values[0, 0, 0] = -0.050426
+    rewritten["hmax"].values[:, 0, 0] = np.nan
     rewritten.to_netcdf(path, mode="w")
 
     result = read_regular_result(path)
     assert result.depth_time_m[0, 0, 0] == 0.0
+    assert result.max_depth_m[0, 0] == 0.0
     assert result.negative_depth_clipped_values == 1
     assert result.negative_max_depth_clipped_cells == 0
-    assert result.min_raw_active_depth_m == pytest.approx(-0.001)
+    assert result.min_raw_active_depth_m == pytest.approx(-0.050426)
+    assert result.hmax_reconstructed_cells == 1
 
     normalized = normalize_regular_result(
         result,
         area=_area(2),
-        results_dir=tmp_path / "normalized_tiny_negative",
+        results_dir=tmp_path / "normalized_dry_negative",
         limitations=Limitations(),
     )
     summary = normalized.metadata["max_depth_summary"]
     assert summary["negative_depth_clipped_values"] == 1
-    assert summary["min_raw_active_depth_m"] == pytest.approx(-0.001)
+    assert summary["min_raw_active_depth_m"] == pytest.approx(-0.050426)
+    assert "unfiltered signed zs-zb" in normalized.metadata["no_data_policy"]
 
-    rewritten["h"].values[0, 0, 0] = -(SFINCS_DRY_DEPTH_TOLERANCE_M + 0.001)
+    # hmax is wet-filtered by SFINCS, so a finite negative maximum is still
+    # inconsistent and must remain a hard quality failure.
+    rewritten["hmax"].values[:, 0, 0] = -0.001
     rewritten.to_netcdf(path, mode="w")
-    with pytest.raises(SfincsResultError, match="materially negative"):
+    with pytest.raises(SfincsResultError, match="maximum depth contains negative"):
         read_regular_result(path)
+
+
+def test_output_reader_excludes_sfincs_boundary_control_cells(tmp_path: Path) -> None:
+    path = tmp_path / "boundary_depth.nc"
+    _write_synthetic_result(path)
+    with xr.open_dataset(path) as dataset:
+        rewritten = dataset.load()
+
+    rewritten["msk"].values[0, 0] = 3
+    rewritten["h"].values[:, 0, 0] = -5.0
+    rewritten["hmax"].values[:, 0, 0] = -5.0
+    rewritten.to_netcdf(path, mode="w")
+
+    result = read_regular_result(path)
+
+    assert not result.active_mask[0, 0]
+    assert np.isnan(result.depth_time_m[:, 0, 0]).all()
+    assert np.isnan(result.max_depth_m[0, 0])
+    assert np.isnan(result.terrain_elevation_m[0, 0])
+    assert result.excluded_boundary_cells == 1
+    assert result.negative_depth_clipped_values == 0
 
 
 def test_output_reader_rejects_nonfinite_active_depth(tmp_path: Path) -> None:
