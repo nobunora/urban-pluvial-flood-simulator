@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 from rasterio.features import rasterize  # type: ignore[import-untyped]
 from rasterio.transform import from_origin  # type: ignore[import-untyped]
+from shapely.errors import GEOSException  # type: ignore[import-untyped]
 from shapely.geometry import LineString, Polygon  # type: ignore[import-untyped]
 
 from floodsim.domain.geometry import AnalysisArea
@@ -71,10 +72,19 @@ def _cell_center_elevation(product: ElevationProduct, height: int, width: int) -
 def _polygon_shapes(items: list[np.ndarray]) -> list[tuple[Polygon, int]]:
     shapes: list[tuple[Polygon, int]] = []
     for coords in items:
-        points = np.asarray(coords, dtype=float)
+        try:
+            points = np.asarray(coords, dtype=float)
+        except (TypeError, ValueError):
+            continue
         if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] < 2:
             continue
-        polygon = Polygon(points[:, :2])
+        xy = points[:, :2]
+        if not np.isfinite(xy).all():
+            continue
+        try:
+            polygon = Polygon(xy)
+        except (GEOSException, TypeError, ValueError):
+            continue
         if polygon.is_valid and not polygon.is_empty and polygon.area > 0:
             shapes.append((polygon, 1))
     return shapes
@@ -83,11 +93,20 @@ def _polygon_shapes(items: list[np.ndarray]) -> list[tuple[Polygon, int]]:
 def _road_shapes(vectors: Any) -> list[tuple[object, int]]:
     shapes: list[tuple[object, int]] = list(_polygon_shapes(list(vectors.road_polygons)))
     for coords in vectors.road_lines:
-        points = np.asarray(coords, dtype=float)
+        try:
+            points = np.asarray(coords, dtype=float)
+        except (TypeError, ValueError):
+            continue
         if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 2:
             continue
-        line = LineString(points[:, :2])
-        if not line.is_empty and line.length > 0:
+        xy = points[:, :2]
+        if not np.isfinite(xy).all():
+            continue
+        try:
+            line = LineString(xy)
+        except (GEOSException, TypeError, ValueError):
+            continue
+        if line.is_valid and not line.is_empty and line.length > 0:
             shapes.append((line, 1))
     return shapes
 
