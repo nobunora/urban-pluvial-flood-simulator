@@ -1,6 +1,8 @@
 import type { components } from "./generated";
 
 export type HealthResponse = components["schemas"]["HealthResponse"];
+export type GeocodeResponse = components["schemas"]["GeocodeResponse"];
+export type GeocodeCandidateResponse = components["schemas"]["GeocodeCandidateResponse"];
 export type AnalysisArea = components["schemas"]["AnalysisArea"];
 export type ResourceEstimateResponse = components["schemas"]["ResourceEstimateResponse"];
 export type RunConfig = components["schemas"]["RunConfig"];
@@ -23,6 +25,11 @@ async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getHealth(): Promise<HealthResponse> {
   return jsonRequest<HealthResponse>("/api/v1/health");
+}
+
+export function searchLocation(query: string, signal?: AbortSignal): Promise<GeocodeResponse> {
+  const params = new URLSearchParams({ q: query });
+  return jsonRequest<GeocodeResponse>(`/api/v1/geocode?${params.toString()}`, { signal });
 }
 
 export function estimateResources(
