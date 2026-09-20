@@ -13,20 +13,20 @@ vi.mock("./ResultMap", () => ({
   default: ({
     mapLabel,
     imageUrl,
-    flowImageUrl,
+    flowVectorUrl,
     backgroundOpacity,
     onInspect,
   }: {
     mapLabel: string;
     imageUrl: string;
-    flowImageUrl: string | null;
+    flowVectorUrl: string | null;
     backgroundOpacity: number;
     onInspect: (lon: number, lat: number) => void;
   }) => (
     <div
       data-testid="result-map"
       data-image-url={imageUrl}
-      data-flow-image-url={flowImageUrl ?? ""}
+      data-flow-vector-url={flowVectorUrl ?? ""}
       data-background-opacity={String(backgroundOpacity)}
     >
       {mapLabel}
@@ -303,7 +303,7 @@ describe("ResultPanel", () => {
     expect(screen.getByText("32 m")).toBeVisible();
   });
 
-  it("passes opacity and actual selected time to the flow-vector overlay", () => {
+  it("passes opacity and actual selected time to the vector flow overlay with a separate speed legend", () => {
     render(
       <ResultPanel
         runId="run-1"
@@ -323,14 +323,18 @@ describe("ResultPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "流れベクトル" }));
     expect(screen.getByTestId("result-map")).toHaveAttribute(
-      "data-flow-image-url",
-      "/api/v1/runs/run-1/layers/flow-vectors.png?time_index=0",
+      "data-flow-vector-url",
+      "/api/v1/runs/run-1/layers/flow-vectors.geojson?time_index=0&max_vectors=900",
     );
+    expect(screen.getByLabelText("流速の凡例")).toBeVisible();
+    expect(screen.getByText("0.01–0.10 m/s")).toBeVisible();
+    expect(screen.getByText("2.00 m/s以上")).toBeVisible();
+    expect(screen.getByText("矢印の向き: 流向 / 色: 流速")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "次の時刻" }));
     expect(screen.getByTestId("result-map")).toHaveAttribute(
-      "data-flow-image-url",
-      "/api/v1/runs/run-1/layers/flow-vectors.png?time_index=3",
+      "data-flow-vector-url",
+      "/api/v1/runs/run-1/layers/flow-vectors.geojson?time_index=3&max_vectors=900",
     );
   });
 
