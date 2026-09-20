@@ -590,7 +590,7 @@ export interface components {
              * Flow Vectors Available
              * @default false
              */
-            flow_vectors_available?: boolean;
+            flow_vectors_available: boolean;
             /** Grid Level Summary */
             grid_level_summary: {
                 [key: string]: number;
