@@ -161,7 +161,11 @@ describe("local review UI", () => {
       expect(screen.getByTestId("setup-map")).toHaveAttribute("data-disabled", "true");
     });
     expect(screen.getByRole("button", { name: "地図で地点選択" })).toBeDisabled();
-    expect(screen.getByText(/SFINCS計算中/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "解析開始" })).toBeDisabled();
+
+    await waitFor(() => {
+      expect(screen.getByText(/SFINCS計算中/)).toBeVisible();
+    });
   });
 
   it("enters dedicated RESULT mode after a completed run and retains setup inputs for a new analysis", async () => {
