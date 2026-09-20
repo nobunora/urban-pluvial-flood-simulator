@@ -64,7 +64,7 @@ export default function ResultPanel({
 }: Props) {
   const [layer, setLayer] = useState<ResultLayer>("max_depth");
   const [timePosition, setTimePosition] = useState(0);
-  const [overlayOpacity, setOverlayOpacity] = useState(82);
+  const [backgroundOpacity, setBackgroundOpacity] = useState(55);
   const [flowVisible, setFlowVisible] = useState(false);
   const [inspection, setInspection] = useState<PointInspectionResponse | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
@@ -190,17 +190,17 @@ export default function ResultPanel({
 
       <div className="result-display-controls">
         <label>
-          解析結果の透明度
+          背景地図の透明度
           <input
-            aria-label="解析結果の透明度"
+            aria-label="背景地図の透明度"
             type="range"
             min={0}
             max={100}
             step={1}
-            value={overlayOpacity}
-            onChange={(event) => setOverlayOpacity(Number(event.target.value))}
+            value={backgroundOpacity}
+            onChange={(event) => setBackgroundOpacity(Number(event.target.value))}
           />
-          <span>{overlayOpacity}%</span>
+          <span>{backgroundOpacity}%</span>
         </label>
         {!metadata.flow_vectors_available && (
           <span className="result-muted">この解析には流れベクトルデータがありません。</span>
@@ -244,7 +244,7 @@ export default function ResultPanel({
             metadata={metadata}
             imageUrl={imageUrl}
             flowImageUrl={flowImageUrl}
-            overlayOpacity={overlayOpacity / 100}
+            backgroundOpacity={backgroundOpacity / 100}
             mapLabel={mapLabel}
             onInspect={handleInspect}
           />
