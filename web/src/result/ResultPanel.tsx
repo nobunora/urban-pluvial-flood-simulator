@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  flowVectorsGeoJsonUrl,
+  getFlowVectors,
   inspectResult,
   resultLayerUrl,
+  type FlowVectorFeatureCollection,
   type PointInspectionResponse,
   type ResultMetadataResponse,
 } from "../api/client";
@@ -40,7 +41,7 @@ const GRID_LEGEND = [
 ] as const;
 
 const FLOW_SPEED_LEGEND = [
-  ["0.01–0.10 m/s", "#2DC4B2"],
+  ["0.001–0.10 m/s", "#2DC4B2"],
   ["0.10–0.30 m/s", "#3BB2D0"],
   ["0.30–0.50 m/s", "#3F51B5"],
   ["0.50–1.00 m/s", "#8E44AD"],
@@ -76,6 +77,10 @@ export default function ResultPanel({
   const [timePosition, setTimePosition] = useState(0);
   const [backgroundTransparency, setBackgroundTransparency] = useState(45);
   const [flowVisible, setFlowVisible] = useState(false);
+  const [flowVectorData, setFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
+  const [flowLoading, setFlowLoading] = useState(false);
+  const [flowError, setFlowError] = useState<string | null>(null);
+  const flowAutoLocateRef = useRef(false);
   const [inspection, setInspection] = useState<PointInspectionResponse | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionError, setInspectionError] = useState<string | null>(null);
@@ -116,16 +121,100 @@ export default function ResultPanel({
     return resultLayerUrl(runId, "max-depth");
   }, [layer, runId, selectedTimeIndex]);
 
-  const flowVectorUrl = useMemo(() => {
+  const handleFlowToggle = useCallback(() => {
+    if (flowVisible) {
+      flowAutoLocateRef.current = false;
+      setFlowVisible(false);
+      setFlowVectorData(null);
+      setFlowError(null);
+      return;
+    }
+    flowAutoLocateRef.current = true;
+    setFlowVisible(true);
+  }, [flowVisible]);
+
+  useEffect(() => {
     if (
       !flowVisible ||
       !metadata.flow_vectors_available ||
       selectedTimeIndex === null
     ) {
-      return null;
+      setFlowVectorData(null);
+      setFlowLoading(false);
+      setFlowError(null);
+      return;
     }
-    return flowVectorsGeoJsonUrl(runId, selectedTimeIndex);
-  }, [flowVisible, metadata.flow_vectors_available, runId, selectedTimeIndex]);
+
+    const controller = new AbortController();
+    let disposed = false;
+
+    const load = async () => {
+      setFlowLoading(true);
+      setFlowError(null);
+      try {
+        const current = await getFlowVectors(
+          runId,
+          selectedTimeIndex,
+          900,
+          controller.signal,
+        );
+        if (disposed) return;
+
+        if (current.metadata.arrow_count > 0 || !flowAutoLocateRef.current) {
+          flowAutoLocateRef.current = false;
+          setFlowVectorData(current);
+          return;
+        }
+
+        const positions = metadata.available_time_indices
+          .map((_, position) => position)
+          .filter((position) => position !== timePosition)
+          .sort((a, b) => Math.abs(a - timePosition) - Math.abs(b - timePosition));
+
+        for (const position of positions) {
+          const candidateIndex = metadata.available_time_indices[position];
+          if (candidateIndex == null) continue;
+          const candidate = await getFlowVectors(
+            runId,
+            candidateIndex,
+            900,
+            controller.signal,
+          );
+          if (disposed) return;
+          if (candidate.metadata.arrow_count > 0) {
+            flowAutoLocateRef.current = false;
+            setFlowVectorData(candidate);
+            setTimePosition(position);
+            return;
+          }
+        }
+
+        flowAutoLocateRef.current = false;
+        setFlowVectorData(current);
+      } catch (cause: unknown) {
+        if (!controller.signal.aborted && !disposed) {
+          flowAutoLocateRef.current = false;
+          setFlowVectorData(null);
+          setFlowError(String(cause));
+        }
+      } finally {
+        if (!controller.signal.aborted && !disposed) setFlowLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  }, [
+    flowVisible,
+    metadata.available_time_indices,
+    metadata.flow_vectors_available,
+    runId,
+    selectedTimeIndex,
+    timePosition,
+  ]);
 
   useEffect(() => {
     const cache = depthFrameCacheRef.current;
@@ -273,7 +362,7 @@ export default function ResultPanel({
           className={flowVisible ? "is-active" : ""}
           aria-pressed={flowVisible}
           disabled={!metadata.flow_vectors_available}
-          onClick={() => setFlowVisible((value) => !value)}
+          onClick={handleFlowToggle}
         >
           流れベクトル
         </button>
@@ -344,7 +433,7 @@ export default function ResultPanel({
             <ResultMap
               metadata={metadata}
               imageUrl={imageUrl}
-              flowVectorUrl={flowVectorUrl}
+              flowVectorData={flowVectorData}
               backgroundOpacity={(100 - backgroundTransparency) / 100}
               mapLabel={mapLabel}
               onInspect={handleInspect}
@@ -421,6 +510,19 @@ export default function ResultPanel({
                   </span>
                 ))}
                 <span className="result-vector-note">矢印の向き: 流向 / 色: 流速</span>
+                {flowLoading && <span className="result-vector-note">流れベクトルを読み込み中…</span>}
+                {flowError && <span className="result-warning">流れベクトルを読み込めません: {flowError}</span>}
+                {!flowLoading && !flowError && flowVectorData && (
+                  <span className="result-vector-note">
+                    表示矢印: {flowVectorData.metadata.arrow_count.toLocaleString()}本
+                  </span>
+                )}
+                {!flowLoading &&
+                  !flowError &&
+                  flowVectorData &&
+                  flowVectorData.metadata.arrow_count === 0 && (
+                    <span className="result-vector-note">この時刻には表示可能な流れがありません。</span>
+                  )}
               </section>
             )}
 

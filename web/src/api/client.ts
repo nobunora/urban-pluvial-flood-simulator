@@ -114,3 +114,42 @@ export function flowVectorsGeoJsonUrl(
   });
   return `/api/v1/runs/${encodeURIComponent(runId)}/layers/flow-vectors.geojson?${params.toString()}`;
 }
+
+
+export type FlowVectorFeatureCollection = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: {
+      type: "MultiLineString";
+      coordinates: number[][][];
+    };
+    properties: {
+      speed_mps: number;
+      u_mps: number;
+      v_mps: number;
+      time_index: number;
+      row: number;
+      column: number;
+    };
+  }>;
+  metadata: {
+    speed_unit: string;
+    min_speed_mps: number;
+    sample_stride_cells: number;
+    arrow_count: number;
+    sampling_method?: string;
+  };
+};
+
+export function getFlowVectors(
+  runId: string,
+  timeIndex: number,
+  maxVectors = 900,
+  signal?: AbortSignal,
+): Promise<FlowVectorFeatureCollection> {
+  return jsonRequest<FlowVectorFeatureCollection>(
+    flowVectorsGeoJsonUrl(runId, timeIndex, maxVectors),
+    { signal },
+  );
+}

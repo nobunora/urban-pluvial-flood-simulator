@@ -1,32 +1,38 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { inspectResult, type ResultMetadataResponse } from "../api/client";
+import {
+  getFlowVectors,
+  inspectResult,
+  type FlowVectorFeatureCollection,
+  type ResultMetadataResponse,
+} from "../api/client";
 import ResultPanel from "./ResultPanel";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
-  return { ...actual, inspectResult: vi.fn() };
+  return { ...actual, getFlowVectors: vi.fn(), inspectResult: vi.fn() };
 });
 
 vi.mock("./ResultMap", () => ({
   default: ({
     mapLabel,
     imageUrl,
-    flowVectorUrl,
+    flowVectorData,
     backgroundOpacity,
     onInspect,
   }: {
     mapLabel: string;
     imageUrl: string;
-    flowVectorUrl: string | null;
+    flowVectorData: FlowVectorFeatureCollection | null;
     backgroundOpacity: number;
     onInspect: (lon: number, lat: number) => void;
   }) => (
     <div
       data-testid="result-map"
       data-image-url={imageUrl}
-      data-flow-vector-url={flowVectorUrl ?? ""}
+      data-flow-arrow-count={String(flowVectorData?.metadata.arrow_count ?? 0)}
+      data-flow-time-index={String(flowVectorData?.features[0]?.properties.time_index ?? "")}
       data-background-opacity={String(backgroundOpacity)}
     >
       {mapLabel}
@@ -105,6 +111,7 @@ const metadata: ResultMetadataResponse = {
 describe("ResultPanel", () => {
   beforeEach(() => {
     vi.mocked(inspectResult).mockReset();
+    vi.mocked(getFlowVectors).mockReset();
     Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
       configurable: true,
       value: vi.fn(),
@@ -303,7 +310,47 @@ describe("ResultPanel", () => {
     expect(screen.getByText("32 m")).toBeVisible();
   });
 
-  it("passes opacity and actual selected time to the vector flow overlay with a separate speed legend", () => {
+  it("auto-selects the nearest output with visible flow and shows the separate speed legend", async () => {
+    const emptyFlow: FlowVectorFeatureCollection = {
+      type: "FeatureCollection",
+      features: [],
+      metadata: {
+        speed_unit: "m/s",
+        min_speed_mps: 0.001,
+        sample_stride_cells: 8,
+        arrow_count: 0,
+        sampling_method: "max-speed-wet-cell-per-block",
+      },
+    };
+    const visibleFlow: FlowVectorFeatureCollection = {
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        geometry: {
+          type: "MultiLineString",
+          coordinates: [[[139.74, 35.64], [139.75, 35.65]]],
+        },
+        properties: {
+          speed_mps: 0.4,
+          u_mps: 0.4,
+          v_mps: 0,
+          time_index: 3,
+          row: 10,
+          column: 20,
+        },
+      }],
+      metadata: {
+        speed_unit: "m/s",
+        min_speed_mps: 0.001,
+        sample_stride_cells: 8,
+        arrow_count: 1,
+        sampling_method: "max-speed-wet-cell-per-block",
+      },
+    };
+    vi.mocked(getFlowVectors).mockImplementation(async (_runId, timeIndex) => (
+      timeIndex === 0 ? emptyFlow : visibleFlow
+    ));
+
     render(
       <ResultPanel
         runId="run-1"
@@ -313,28 +360,27 @@ describe("ResultPanel", () => {
       />,
     );
 
-    expect(screen.getByTestId("result-map")).toHaveAttribute("data-background-opacity", "0.55");
-
-    fireEvent.change(screen.getByRole("slider", { name: "背景地図の透明度" }), {
-      target: { value: "80" },
-    });
-    expect(screen.getByTestId("result-map")).toHaveAttribute("data-background-opacity", "0.2");
-    expect(screen.getByText("80%")).toBeVisible();
-
     fireEvent.click(screen.getByRole("button", { name: "流れベクトル" }));
-    expect(screen.getByTestId("result-map")).toHaveAttribute(
-      "data-flow-vector-url",
-      "/api/v1/runs/run-1/layers/flow-vectors.geojson?time_index=0&max_vectors=900",
-    );
+
+    expect(await screen.findByText("現在: 00:30")).toBeVisible();
+    expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-arrow-count", "1");
+    expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-time-index", "3");
     expect(screen.getByLabelText("流速の凡例")).toBeVisible();
-    expect(screen.getByText("0.01–0.10 m/s")).toBeVisible();
+    expect(screen.getByText("0.001–0.10 m/s")).toBeVisible();
     expect(screen.getByText("2.00 m/s以上")).toBeVisible();
     expect(screen.getByText("矢印の向き: 流向 / 色: 流速")).toBeVisible();
-
-    fireEvent.click(screen.getByRole("button", { name: "次の時刻" }));
-    expect(screen.getByTestId("result-map")).toHaveAttribute(
-      "data-flow-vector-url",
-      "/api/v1/runs/run-1/layers/flow-vectors.geojson?time_index=3&max_vectors=900",
+    expect(screen.getByText("表示矢印: 1本")).toBeVisible();
+    expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
+      "run-1",
+      0,
+      900,
+      expect.any(AbortSignal),
+    );
+    expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
+      "run-1",
+      3,
+      900,
+      expect.any(AbortSignal),
     );
   });
 

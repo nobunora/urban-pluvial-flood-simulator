@@ -1,7 +1,10 @@
 import { render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ResultMetadataResponse } from "../api/client";
+import type {
+  FlowVectorFeatureCollection,
+  ResultMetadataResponse,
+} from "../api/client";
 import ResultMap from "./ResultMap";
 
 const mocks = vi.hoisted(() => ({
@@ -14,14 +17,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("maplibre-gl", () => {
-  class ImageSource {
-    updateImage(value: unknown) { mocks.updateImage(value); }
-  }
-
-  class GeoJSONSource {
-    setData(value: unknown) { mocks.setData(value); }
-  }
-
   class Map {
     sources = new globalThis.Map<string, unknown>();
 
@@ -31,8 +26,12 @@ vi.mock("maplibre-gl", () => {
         sources?: Record<string, { type?: string }>;
       };
       for (const [id, source] of Object.entries(style.sources ?? {})) {
-        if (source.type === "image") this.sources.set(id, new ImageSource());
-        if (source.type === "geojson") this.sources.set(id, new GeoJSONSource());
+        if (source.type === "image") {
+          this.sources.set(id, { updateImage: mocks.updateImage });
+        }
+        if (source.type === "geojson") {
+          this.sources.set(id, { setData: mocks.setData });
+        }
       }
     }
     addControl() {}
@@ -59,8 +58,6 @@ vi.mock("maplibre-gl", () => {
   class NavigationControl {}
 
   return {
-    GeoJSONSource,
-    ImageSource,
     Map,
     Marker,
     NavigationControl,
@@ -107,10 +104,36 @@ const metadata: ResultMetadataResponse = {
   limitations: {},
 };
 
+const flowData: FlowVectorFeatureCollection = {
+  type: "FeatureCollection",
+  features: [{
+    type: "Feature",
+    geometry: {
+      type: "MultiLineString",
+      coordinates: [[[139.74, 35.64], [139.75, 35.65]]],
+    },
+    properties: {
+      speed_mps: 0.4,
+      u_mps: 0.4,
+      v_mps: 0,
+      time_index: 3,
+      row: 10,
+      column: 20,
+    },
+  }],
+  metadata: {
+    speed_unit: "m/s",
+    min_speed_mps: 0.001,
+    sample_stride_cells: 8,
+    arrow_count: 1,
+    sampling_method: "max-speed-wet-cell-per-block",
+  },
+};
+
 function options(index: number) {
   return mocks.constructorOptions[index] as {
     style: {
-      sources: Record<string, { type?: string; url?: string }>;
+      sources: Record<string, { type?: string; url?: string; data?: unknown }>;
       layers: Array<{
         id: string;
         type: string;
@@ -131,55 +154,41 @@ describe("ResultMap", () => {
     mocks.triggerRepaint.mockClear();
   });
 
-  it("uses an independent CSS-faded basemap and a persistent analysis map", () => {
-    const view = render(
+  it("keeps the red analysis boundary visibly cased above the result raster", () => {
+    render(
       <ResultMap
         metadata={metadata}
         imageUrl="/api/result/max.png"
-        flowVectorUrl={null}
+        flowVectorData={null}
         backgroundOpacity={0.55}
         mapLabel="結果"
         onInspect={vi.fn()}
       />,
     );
 
-    expect(mocks.constructorOptions).toHaveLength(2);
-    const base = options(0);
     const overlay = options(1);
-    expect(base.style.sources.gsi).toBeDefined();
-    expect(overlay.style.sources["result-overlay"].url).toBe("/api/result/max.png");
-    expect(overlay.style.sources["flow-vectors"].type).toBe("geojson");
-    expect(
-      overlay.style.layers.find((layer) => layer.id === "result-overlay")?.paint?.["raster-opacity"],
-    ).toBe(1);
-    expect(
-      overlay.style.layers.find((layer) => layer.id === "flow-vectors")?.type,
-    ).toBe("line");
-
-    const baseElement = view.container.querySelector(".result-map-base") as HTMLElement;
-    expect(baseElement.style.opacity).toBe("0.55");
-
-    view.rerender(
-      <ResultMap
-        metadata={metadata}
-        imageUrl="/api/result/max.png"
-        flowVectorUrl={null}
-        backgroundOpacity={0.1}
-        mapLabel="結果"
-        onInspect={vi.fn()}
-      />,
+    expect(overlay.style.sources["analysis-boundary"].data).toEqual(
+      expect.objectContaining({
+        geometry: expect.objectContaining({ type: "LineString" }),
+      }),
     );
-
-    expect(mocks.constructorOptions).toHaveLength(2);
-    expect(baseElement.style.opacity).toBe("0.1");
+    const casing = overlay.style.layers.find(
+      (layer) => layer.id === "analysis-boundary-casing",
+    );
+    const outline = overlay.style.layers.find(
+      (layer) => layer.id === "analysis-boundary-outline",
+    );
+    expect(casing?.paint?.["line-width"]).toBe(8);
+    expect(outline?.paint?.["line-color"]).toBe("#DC2626");
+    expect(outline?.paint?.["line-opacity"]).toBe(1);
   });
 
-  it("switches time/grid images without recreating MapLibre and loads vector GeoJSON", () => {
+  it("updates result images without recreating MapLibre and renders vector data with halo", () => {
     const view = render(
       <ResultMap
         metadata={metadata}
         imageUrl="/api/result/max.png"
-        flowVectorUrl={null}
+        flowVectorData={null}
         backgroundOpacity={0.55}
         mapLabel="結果"
         onInspect={vi.fn()}
@@ -191,7 +200,7 @@ describe("ResultMap", () => {
       <ResultMap
         metadata={metadata}
         imageUrl="/api/result/depth.png?time_index=3"
-        flowVectorUrl="/api/result/flow-vectors.geojson?time_index=3"
+        flowVectorData={flowData}
         backgroundOpacity={0.55}
         mapLabel="結果"
         onInspect={vi.fn()}
@@ -202,8 +211,11 @@ describe("ResultMap", () => {
     expect(mocks.updateImage).toHaveBeenLastCalledWith(
       expect.objectContaining({ url: "/api/result/depth.png?time_index=3" }),
     );
-    expect(mocks.setData).toHaveBeenLastCalledWith(
-      "/api/result/flow-vectors.geojson?time_index=3",
+    expect(mocks.setData).toHaveBeenLastCalledWith(flowData);
+    expect(mocks.setLayoutProperty).toHaveBeenCalledWith(
+      "flow-vectors-halo",
+      "visibility",
+      "visible",
     );
     expect(mocks.setLayoutProperty).toHaveBeenCalledWith(
       "flow-vectors",
@@ -218,5 +230,8 @@ describe("ResultMap", () => {
     expect(vectorPaint?.["line-color"]).toEqual(
       expect.arrayContaining(["step", expect.anything()]),
     );
+    expect(
+      overlay.style.layers.find((layer) => layer.id === "flow-vectors-halo"),
+    ).toBeDefined();
   });
 });

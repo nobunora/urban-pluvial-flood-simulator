@@ -233,7 +233,7 @@ def flow_vectors_geojson(
     area: AnalysisArea,
     time_index: int,
     max_vectors: int = 900,
-    min_speed_mps: float = 0.01,
+    min_speed_mps: float = 0.001,
 ) -> dict[str, Any]:
     """Return sampled flow arrows as vector GeoJSON with speed metadata."""
     if time_index < 0 or time_index >= arrays.depth_time_m.shape[0]:
@@ -274,16 +274,25 @@ def flow_vectors_geojson(
             if not np.any(wet):
                 continue
 
-            mean_u = float(np.mean(u[row0:row1, col0:col1][wet]))
-            mean_v = float(np.mean(v[row0:row1, col0:col1][wet]))
-            speed = float(np.hypot(mean_u, mean_v))
-            if not np.isfinite(speed) or speed < min_speed_mps:
+            u_block = u[row0:row1, col0:col1]
+            v_block = v[row0:row1, col0:col1]
+            speed_block = np.hypot(u_block, v_block)
+            valid_flow = wet & np.isfinite(speed_block) & (speed_block >= min_speed_mps)
+            if not np.any(valid_flow):
                 continue
 
-            direction_x = mean_u / speed
-            direction_y = mean_v / speed
-            center_x = xmin + ((col0 + col1) / 2.0) * cell_width_m
-            center_y = ymin + ((row0 + row1) / 2.0) * cell_height_m
+            scored = np.where(valid_flow, speed_block, -np.inf)
+            local_row, local_col = np.unravel_index(int(np.argmax(scored)), scored.shape)
+            sample_u = float(u_block[local_row, local_col])
+            sample_v = float(v_block[local_row, local_col])
+            speed = float(speed_block[local_row, local_col])
+            row = row0 + int(local_row)
+            column = col0 + int(local_col)
+
+            direction_x = sample_u / speed
+            direction_y = sample_v / speed
+            center_x = xmin + (column + 0.5) * cell_width_m
+            center_y = ymin + (row + 0.5) * cell_height_m
             block_span_m = min(
                 max(cell_width_m, 1e-6) * (col1 - col0),
                 max(cell_height_m, 1e-6) * (row1 - row0),
@@ -340,11 +349,11 @@ def flow_vectors_geojson(
                     },
                     "properties": {
                         "speed_mps": speed,
-                        "u_mps": mean_u,
-                        "v_mps": mean_v,
+                        "u_mps": sample_u,
+                        "v_mps": sample_v,
                         "time_index": time_index,
-                        "row": int((row0 + row1 - 1) // 2),
-                        "column": int((col0 + col1 - 1) // 2),
+                        "row": row,
+                        "column": column,
                     },
                 }
             )
@@ -357,6 +366,7 @@ def flow_vectors_geojson(
             "min_speed_mps": float(min_speed_mps),
             "sample_stride_cells": stride,
             "arrow_count": len(features),
+            "sampling_method": "max-speed-wet-cell-per-block",
         },
     }
 

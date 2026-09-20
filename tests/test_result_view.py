@@ -156,8 +156,51 @@ def test_flow_vector_geojson_uses_saved_velocity_and_speed_properties() -> None:
     feature = payload["features"][0]
     assert feature["geometry"]["type"] == "MultiLineString"
     assert feature["properties"]["speed_mps"] > 0
-    assert feature["properties"]["u_mps"] == pytest.approx(0.3, abs=0.2)
+    assert feature["properties"]["u_mps"] == pytest.approx(0.4)
+    assert feature["properties"]["v_mps"] == pytest.approx(0.2)
+    assert feature["properties"]["speed_mps"] == pytest.approx(np.hypot(0.4, 0.2))
     assert feature["properties"]["time_index"] == 1
+    assert payload["metadata"]["sampling_method"] == "max-speed-wet-cell-per-block"
+
+
+def test_flow_vector_sampling_does_not_cancel_opposite_local_directions() -> None:
+    depth = np.full((1, 4, 4), 0.2, dtype=np.float32)
+    u = np.zeros_like(depth)
+    v = np.zeros_like(depth)
+    u[0, 1, 1] = 0.8
+    u[0, 1, 2] = -0.8
+    arrays = NormalizedArrays(
+        depth_time_m=depth,
+        max_depth_m=depth[0],
+        terrain_elevation_m=np.zeros((4, 4), dtype=np.float32),
+        active_mask=np.ones((4, 4), dtype=bool),
+        time_values=("0",),
+        grid_resolution_m=1.0,
+        velocity_u_mps=u,
+        velocity_v_mps=v,
+    )
+
+    payload = flow_vectors_geojson(
+        arrays,
+        area=AnalysisArea(
+            mode="rectangle",
+            bounds=GeoBounds(
+                west_deg=138.999,
+                south_deg=34.999,
+                east_deg=139.001,
+                north_deg=35.001,
+            ),
+            center=LonLat(lon_deg=139.0, lat_deg=35.0),
+            width_m=4.0,
+            height_m=4.0,
+            area_m2=16.0,
+        ),
+        time_index=0,
+        max_vectors=1,
+    )
+
+    assert payload["metadata"]["arrow_count"] == 1
+    assert payload["features"][0]["properties"]["speed_mps"] == pytest.approx(0.8)
 
 
 def test_grid_resolution_png_uses_native_active_mask() -> None:
