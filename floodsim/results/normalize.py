@@ -31,6 +31,7 @@ def normalize_regular_result(
     limitations: Limitations,
     provider_summary: Mapping[str, Any] | None = None,
     engine_summary: Mapping[str, Any] | None = None,
+    run_summary: Mapping[str, Any] | None = None,
 ) -> NormalizedResult:
     root = Path(results_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -67,6 +68,7 @@ def normalize_regular_result(
         "depth_legend": depth_legend_metadata(),
         "provider_summary": dict(provider_summary or {}),
         "engine_summary": dict(engine_summary or {}),
+        "run_summary": dict(run_summary or {}),
         "no_data_policy": (
             "inactive/blocked SFINCS cells are NaN in normalized arrays; "
             "active cells with missing hmax are reconstructed from finite h time output; "
