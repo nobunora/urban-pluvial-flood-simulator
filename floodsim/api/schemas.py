@@ -178,6 +178,19 @@ class ResultEngineSummary(BaseModel):
     hydromt_sfincs_version: str | None = None
 
 
+class ResultRunSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    application_version: str
+    requested_accuracy_mode: Literal["full_1m", "adaptive"]
+    rainfall_source: dict[str, Any] = Field(default_factory=dict)
+    elevation_provider_counts: dict[str, int] = Field(default_factory=dict)
+    elevation_source_summary: dict[str, Any] = Field(default_factory=dict)
+    manning_defaults: dict[str, float] = Field(default_factory=dict)
+    boundary_policy: str
+    roof_rain_mass_diagnostic: dict[str, float | int] = Field(default_factory=dict)
+
+
 class ResultMetadataResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -191,6 +204,7 @@ class ResultMetadataResponse(BaseModel):
     depth_legend: list[ResultDepthLegendItem] = Field(default_factory=list)
     provider_summary: ResultProviderSummary = Field(default_factory=ResultProviderSummary)
     engine_summary: ResultEngineSummary = Field(default_factory=ResultEngineSummary)
+    run_summary: ResultRunSummary
     no_data_policy: str
     limitations: dict[str, bool]
 
@@ -207,6 +221,8 @@ class PointInspectionResponse(BaseModel):
     time_value: str | None = None
     depth_m: float | None = None
     max_depth_m: float | None = None
+    max_time_index: int | None = Field(default=None, ge=0)
+    max_time_value: str | None = None
     terrain_elevation_m: float | None = None
     grid_resolution_m: float | None = None
 
