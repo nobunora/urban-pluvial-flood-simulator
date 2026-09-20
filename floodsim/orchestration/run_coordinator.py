@@ -372,7 +372,7 @@ class RunCoordinator:
                 RunState.ACQUIRING_TERRAIN,
                 "準備済み地図データを再利用しています。" if cache_hit else "地理院標高タイルを取得しています。",
             )
-            if cache_hit:
+            if cache_entry is not None:
                 grid = cache_entry.grid
                 cache_metadata = cache_entry.metadata
                 runtime_diagnostic["prepared_grid_cache"] = {
