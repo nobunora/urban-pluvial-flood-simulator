@@ -127,6 +127,8 @@ def get_run(run_id: UUID) -> RunStatusResponse:
             stage_label=STAGE_LABELS[state],
             failure_code=record.failure_code,
             failure_message="計算に失敗しました。" if record.failure_code else None,
+            progress_fraction=record.progress_fraction,
+            estimated_remaining_seconds=record.estimated_remaining_seconds,
         )
 
 
