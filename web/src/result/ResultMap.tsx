@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
+  GeoJSONSource,
+  ImageSource,
   Map as MapLibreMap,
   Marker,
   NavigationControl,
@@ -14,103 +16,119 @@ import { resultBounds, resultImageCoordinates } from "./resultGeometry";
 type Props = {
   metadata: ResultMetadataResponse;
   imageUrl: string;
-  flowImageUrl: string | null;
+  flowVectorUrl: string | null;
   backgroundOpacity: number;
   mapLabel: string;
   onInspect: (lon: number, lat: number) => void;
 };
 
+const EMPTY_FLOW: GeoJSON.FeatureCollection = {
+  type: "FeatureCollection",
+  features: [],
+};
+
 function overlayStyle(
   metadata: ResultMetadataResponse,
   imageUrl: string,
-  flowImageUrl: string | null,
 ): StyleSpecification {
   const coordinates = resultImageCoordinates(metadata.bounds);
-  const sources: StyleSpecification["sources"] = {
-    "result-overlay": {
-      type: "image",
-      url: imageUrl,
-      coordinates,
-    },
-    "analysis-boundary": {
-      type: "geojson",
-      data: {
-        type: "Feature",
-        properties: {},
-        geometry: {
-          type: "Polygon",
-          coordinates: [[
-            [metadata.bounds.west_deg, metadata.bounds.south_deg],
-            [metadata.bounds.east_deg, metadata.bounds.south_deg],
-            [metadata.bounds.east_deg, metadata.bounds.north_deg],
-            [metadata.bounds.west_deg, metadata.bounds.north_deg],
-            [metadata.bounds.west_deg, metadata.bounds.south_deg],
-          ]],
+  return {
+    version: 8,
+    sources: {
+      "result-overlay": {
+        type: "image",
+        url: imageUrl,
+        coordinates,
+      },
+      "flow-vectors": {
+        type: "geojson",
+        data: EMPTY_FLOW,
+      },
+      "analysis-boundary": {
+        type: "geojson",
+        data: {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [metadata.bounds.west_deg, metadata.bounds.south_deg],
+              [metadata.bounds.east_deg, metadata.bounds.south_deg],
+              [metadata.bounds.east_deg, metadata.bounds.north_deg],
+              [metadata.bounds.west_deg, metadata.bounds.north_deg],
+              [metadata.bounds.west_deg, metadata.bounds.south_deg],
+            ]],
+          },
         },
       },
     },
-  };
-  const layers: StyleSpecification["layers"] = [
-    {
-      id: "result-overlay",
-      type: "raster",
-      source: "result-overlay",
-      paint: {
-        "raster-opacity": 1,
-        "raster-fade-duration": 0,
+    layers: [
+      {
+        id: "result-overlay",
+        type: "raster",
+        source: "result-overlay",
+        paint: {
+          "raster-opacity": 1,
+          "raster-fade-duration": 0,
+        },
       },
-    },
-  ];
-
-  if (flowImageUrl) {
-    sources["flow-overlay"] = {
-      type: "image",
-      url: flowImageUrl,
-      coordinates,
-    };
-    layers.push({
-      id: "flow-overlay",
-      type: "raster",
-      source: "flow-overlay",
-      paint: {
-        "raster-opacity": 1,
-        "raster-fade-duration": 0,
+      {
+        id: "flow-vectors",
+        type: "line",
+        source: "flow-vectors",
+        layout: {
+          visibility: "none",
+          "line-cap": "round",
+          "line-join": "round",
+        },
+        paint: {
+          "line-color": [
+            "step",
+            ["get", "speed_mps"],
+            "#2DC4B2",
+            0.10, "#3BB2D0",
+            0.30, "#3F51B5",
+            0.50, "#8E44AD",
+            1.00, "#E74C3C",
+            2.00, "#7F0000",
+          ],
+          "line-width": [
+            "interpolate",
+            ["linear"],
+            ["get", "speed_mps"],
+            0.01, 1.6,
+            0.50, 2.2,
+            2.00, 3.2,
+          ],
+          "line-opacity": 0.95,
+        },
       },
-    });
-  }
-
-  layers.push(
-    {
-      id: "analysis-boundary-fill",
-      type: "fill",
-      source: "analysis-boundary",
-      paint: {
-        "fill-color": "#DC2626",
-        "fill-opacity": 0.02,
+      {
+        id: "analysis-boundary-fill",
+        type: "fill",
+        source: "analysis-boundary",
+        paint: {
+          "fill-color": "#DC2626",
+          "fill-opacity": 0.02,
+        },
       },
-    },
-    {
-      id: "analysis-boundary-outline",
-      type: "line",
-      source: "analysis-boundary",
-      paint: {
-        "line-color": "#DC2626",
-        "line-width": 4,
+      {
+        id: "analysis-boundary-outline",
+        type: "line",
+        source: "analysis-boundary",
+        paint: {
+          "line-color": "#DC2626",
+          "line-width": 4,
+        },
       },
-    },
-  );
-
-  return {
-    version: 8,
-    sources,
-    layers,
+    ],
   };
 }
 
 export default function ResultMap({
   metadata,
   imageUrl,
-  flowImageUrl,
+  flowVectorUrl,
   backgroundOpacity,
   mapLabel,
   onInspect,
@@ -121,12 +139,7 @@ export default function ResultMap({
   const overlayMapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
   const inspectRef = useRef(onInspect);
-  const viewRef = useRef<{
-    center: [number, number];
-    zoom: number;
-    bearing: number;
-    pitch: number;
-  } | null>(null);
+  const initialImageUrlRef = useRef(imageUrl);
 
   useEffect(() => {
     inspectRef.current = onInspect;
@@ -160,7 +173,7 @@ export default function ResultMap({
 
     const overlayMap = new MapLibreMap({
       container: overlayContainer,
-      style: overlayStyle(metadata, imageUrl, flowImageUrl),
+      style: overlayStyle(metadata, initialImageUrlRef.current),
       bounds,
       fitBoundsOptions: { padding: 32, maxZoom: 18 },
       attributionControl: false,
@@ -170,14 +183,12 @@ export default function ResultMap({
 
     const syncBase = () => {
       const center = overlayMap.getCenter();
-      const view = {
-        center: [center.lng, center.lat] as [number, number],
+      baseMap.jumpTo({
+        center: [center.lng, center.lat],
         zoom: overlayMap.getZoom(),
         bearing: overlayMap.getBearing(),
         pitch: overlayMap.getPitch(),
-      };
-      viewRef.current = view;
-      baseMap.jumpTo(view);
+      });
     };
 
     const handleClick = (event: MapMouseEvent) => {
@@ -202,16 +213,49 @@ export default function ResultMap({
       overlayMapRef.current = null;
       baseMapRef.current = null;
     };
-  }, [metadata, imageUrl, flowImageUrl]);
+  }, [metadata]);
 
   useEffect(() => {
-    const view = viewRef.current;
-    const overlayMap = overlayMapRef.current;
-    const baseMap = baseMapRef.current;
-    if (!view || !overlayMap || !baseMap) return;
-    overlayMap.jumpTo(view);
-    baseMap.jumpTo(view);
-  }, [imageUrl, flowImageUrl]);
+    const map = overlayMapRef.current;
+    if (!map) return;
+    const update = () => {
+      const source = map.getSource("result-overlay");
+      if (!(source instanceof ImageSource)) return;
+      source.updateImage({
+        url: imageUrl,
+        coordinates: resultImageCoordinates(metadata.bounds),
+      });
+      map.triggerRepaint();
+    };
+    if (map.getSource("result-overlay")) {
+      update();
+      return;
+    }
+    map.once("load", update);
+    return () => map.off("load", update);
+  }, [imageUrl, metadata.bounds]);
+
+  useEffect(() => {
+    const map = overlayMapRef.current;
+    if (!map) return;
+    const update = () => {
+      const source = map.getSource("flow-vectors");
+      if (!(source instanceof GeoJSONSource)) return;
+      source.setData(flowVectorUrl ?? EMPTY_FLOW);
+      map.setLayoutProperty(
+        "flow-vectors",
+        "visibility",
+        flowVectorUrl ? "visible" : "none",
+      );
+      map.triggerRepaint();
+    };
+    if (map.getSource("flow-vectors")) {
+      update();
+      return;
+    }
+    map.once("load", update);
+    return () => map.off("load", update);
+  }, [flowVectorUrl]);
 
   return (
     <div className="result-map-stack" role="region" aria-label={mapLabel}>
