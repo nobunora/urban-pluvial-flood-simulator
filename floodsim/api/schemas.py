@@ -125,6 +125,8 @@ class RunStatusResponse(BaseModel):
     stage_label: str
     failure_code: str | None = None
     failure_message: str | None = None
+    progress_fraction: float | None = Field(default=None, ge=0, le=1)
+    estimated_remaining_seconds: float | None = Field(default=None, ge=0)
 
 
 class CancelRunResponse(BaseModel):
@@ -199,6 +201,7 @@ class ResultMetadataResponse(BaseModel):
     units: dict[str, str]
     available_time_indices: list[int]
     time_values: list[str]
+    flow_vectors_available: bool = False
     max_depth_summary: dict[str, float]
     grid_level_summary: dict[str, int]
     depth_legend: list[ResultDepthLegendItem] = Field(default_factory=list)
