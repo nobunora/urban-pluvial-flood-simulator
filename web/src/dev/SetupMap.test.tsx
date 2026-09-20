@@ -7,6 +7,8 @@ import SetupMap from "./SetupMap";
 const mocks = vi.hoisted(() => ({
   fitBounds: vi.fn(),
   jumpTo: vi.fn(),
+  easeTo: vi.fn(),
+  stop: vi.fn(),
   resize: vi.fn(),
   setData: vi.fn(),
   markerSetLngLat: vi.fn(),
@@ -24,6 +26,8 @@ vi.mock("maplibre-gl", () => {
     getSource() { return { setData: mocks.setData }; }
     fitBounds(...args: unknown[]) { mocks.fitBounds(...args); }
     jumpTo(...args: unknown[]) { mocks.jumpTo(...args); }
+    easeTo(...args: unknown[]) { mocks.easeTo(...args); }
+    stop() { mocks.stop(); }
     resize() { mocks.resize(); }
   }
 
@@ -94,15 +98,14 @@ describe("SetupMap", () => {
       selected.center.lon_deg,
       selected.center.lat_deg,
     ]);
-    expect(mocks.jumpTo).toHaveBeenLastCalledWith({
-      center: [selected.center.lon_deg, selected.center.lat_deg],
-    });
+    expect(mocks.stop).toHaveBeenCalled();
+    expect(mocks.resize).toHaveBeenCalled();
     expect(mocks.fitBounds).toHaveBeenLastCalledWith(
       [
         [selected.bounds.west_deg, selected.bounds.south_deg],
         [selected.bounds.east_deg, selected.bounds.north_deg],
       ],
-      { padding: 40, maxZoom: 17, duration: 0 },
+      { padding: 40, maxZoom: 17, duration: 350 },
     );
   });
 });
