@@ -64,6 +64,8 @@ export default function ResultPanel({
 }: Props) {
   const [layer, setLayer] = useState<ResultLayer>("max_depth");
   const [timePosition, setTimePosition] = useState(0);
+  const [overlayOpacity, setOverlayOpacity] = useState(82);
+  const [flowVisible, setFlowVisible] = useState(false);
   const [inspection, setInspection] = useState<PointInspectionResponse | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionError, setInspectionError] = useState<string | null>(null);
@@ -79,6 +81,21 @@ export default function ResultPanel({
     if (layer === "grid_resolution") return resultLayerUrl(runId, "grid-resolution");
     return resultLayerUrl(runId, "max-depth");
   }, [layer, runId, selectedTimeIndex]);
+
+  const flowImageUrl = useMemo(() => {
+    if (
+      !flowVisible ||
+      !metadata.flow_vectors_available ||
+      selectedTimeIndex === null
+    ) {
+      return null;
+    }
+    return resultLayerUrl(runId, "flow-vectors", selectedTimeIndex);
+  }, [flowVisible, metadata.flow_vectors_available, runId, selectedTimeIndex]);
+
+  const showTimeline =
+    metadata.available_time_indices.length > 0 &&
+    (layer === "time_depth" || flowVisible);
 
   const mapLabel =
     layer === "time_depth"
@@ -160,9 +177,37 @@ export default function ResultPanel({
         >
           計算格子
         </button>
+        <button
+          type="button"
+          className={flowVisible ? "is-active" : ""}
+          aria-pressed={flowVisible}
+          disabled={!metadata.flow_vectors_available}
+          onClick={() => setFlowVisible((value) => !value)}
+        >
+          流れベクトル
+        </button>
       </div>
 
-      {layer === "time_depth" && metadata.available_time_indices.length > 0 && (
+      <div className="result-display-controls">
+        <label>
+          解析結果の透明度
+          <input
+            aria-label="解析結果の透明度"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={overlayOpacity}
+            onChange={(event) => setOverlayOpacity(Number(event.target.value))}
+          />
+          <span>{overlayOpacity}%</span>
+        </label>
+        {!metadata.flow_vectors_available && (
+          <span className="result-muted">この解析には流れベクトルデータがありません。</span>
+        )}
+      </div>
+
+      {showTimeline && (
         <div className="result-timeline">
           <button
             type="button"
@@ -198,6 +243,8 @@ export default function ResultPanel({
           <ResultMap
             metadata={metadata}
             imageUrl={imageUrl}
+            flowImageUrl={flowImageUrl}
+            overlayOpacity={overlayOpacity / 100}
             mapLabel={mapLabel}
             onInspect={handleInspect}
           />
@@ -210,6 +257,9 @@ export default function ResultPanel({
                   {item.label}
                 </span>
               ))}
+              {flowVisible && metadata.flow_vectors_available && (
+                <span className="result-vector-note">矢印: 選択時刻の流向</span>
+              )}
             </div>
           ) : (
             <div className="result-legend" aria-label="計算格子の凡例">
@@ -220,6 +270,7 @@ export default function ResultPanel({
                   {label}
                 </span>
               ))}
+              <span className="result-vector-note">実計算格子: 1 m</span>
             </div>
           )}
         </div>
@@ -286,6 +337,7 @@ export default function ResultPanel({
             </p>
             <p>Application: {runSummary.application_version}</p>
             <p>Accuracy: {runSummary.requested_accuracy_mode}</p>
+            <p>Flow vectors: {metadata.flow_vectors_available ? "available" : "not stored"}</p>
             <p>
               Rainfall: <code>{JSON.stringify(runSummary.rainfall_source)}</code>
             </p>
