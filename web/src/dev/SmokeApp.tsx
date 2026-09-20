@@ -91,6 +91,9 @@ export default function SmokeApp() {
   }, [lat, lon, halfSize]);
 
   const runActive = status !== null && !TERMINAL.has(status.state);
+  const setupLocked =
+    busy ||
+    (runId !== null && status?.state !== "FAILED" && status?.state !== "CANCELLED");
 
   useEffect(() => {
     getHealth()
@@ -145,7 +148,7 @@ export default function SmokeApp() {
   }, [resultMetadata, runId, status]);
 
   const updateLocation = (nextLon: number, nextLat: number) => {
-    if (runActive) return;
+    if (setupLocked) return;
     setLat(nextLat.toFixed(6));
     setLon(nextLon.toFixed(6));
     setEstimate(null);
@@ -250,7 +253,7 @@ export default function SmokeApp() {
               緯度
               <input
                 value={lat}
-                disabled={runActive}
+                disabled={setupLocked}
                 onChange={(event) => {
                   setLat(event.target.value);
                   setEstimate(null);
@@ -261,7 +264,7 @@ export default function SmokeApp() {
               経度
               <input
                 value={lon}
-                disabled={runActive}
+                disabled={setupLocked}
                 onChange={(event) => {
                   setLon(event.target.value);
                   setEstimate(null);
@@ -272,7 +275,7 @@ export default function SmokeApp() {
               範囲
               <select
                 value={halfSize}
-                disabled={runActive}
+                disabled={setupLocked}
                 onChange={(event) => {
                   setHalfSize(event.target.value);
                   setEstimate(null);
@@ -284,11 +287,11 @@ export default function SmokeApp() {
                 <option value="2000">±2000 m</option>
               </select>
             </label>
-            <label>雨量強度 (mm/h)<input value={intensity} disabled={runActive} onChange={(event) => setIntensity(event.target.value)} /></label>
-            <label>継続時間 (min)<input value={duration} disabled={runActive} onChange={(event) => setDuration(event.target.value)} /></label>
+            <label>雨量強度 (mm/h)<input value={intensity} disabled={setupLocked} onChange={(event) => setIntensity(event.target.value)} /></label>
+            <label>継続時間 (min)<input value={duration} disabled={setupLocked} onChange={(event) => setDuration(event.target.value)} /></label>
             <p>精度: <strong>Full 1 m</strong>（Adaptiveはレビュー版では無効）</p>
             <div className="smoke-actions">
-              <button disabled={!area || busy || runActive} onClick={() => void handleEstimate()}>負荷を見積る</button>
+              <button disabled={!area || setupLocked} onClick={() => void handleEstimate()}>負荷を見積る</button>
               <button disabled={!area || busy || runActive} onClick={() => void handleRun()}>
                 解析開始
               </button>
@@ -302,7 +305,7 @@ export default function SmokeApp() {
                 centerLat={mapCenterLat}
                 centerLon={mapCenterLon}
                 area={area}
-                disabled={runActive}
+                disabled={setupLocked}
                 onSelect={updateLocation}
               />
             </div>
