@@ -13,13 +13,22 @@ vi.mock("./ResultMap", () => ({
   default: ({
     mapLabel,
     imageUrl,
+    flowImageUrl,
+    overlayOpacity,
     onInspect,
   }: {
     mapLabel: string;
     imageUrl: string;
+    flowImageUrl: string | null;
+    overlayOpacity: number;
     onInspect: (lon: number, lat: number) => void;
   }) => (
-    <div data-testid="result-map" data-image-url={imageUrl}>
+    <div
+      data-testid="result-map"
+      data-image-url={imageUrl}
+      data-flow-image-url={flowImageUrl ?? ""}
+      data-overlay-opacity={String(overlayOpacity)}
+    >
       {mapLabel}
       <button type="button" onClick={() => onInspect(139.75, 35.65)}>地点を確認</button>
     </div>
@@ -40,6 +49,7 @@ const metadata: ResultMetadataResponse = {
     grid_resolution: "m",
   },
   available_time_indices: [0, 3],
+  flow_vectors_available: true,
   time_values: [
     "2026-01-01T00:00:00",
     "2026-01-01T00:10:00",
@@ -273,6 +283,56 @@ describe("ResultPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "計算格子" }));
     expect(screen.getByTestId("result-map")).toHaveTextContent("計算格子解像度の地図");
+    expect(screen.getByTestId("result-map")).toHaveAttribute(
+      "data-image-url",
+      "/api/v1/runs/run-1/layers/grid-resolution.png",
+    );
+    expect(screen.getByText("実計算格子: 1 m")).toBeVisible();
     expect(screen.getByText("32 m")).toBeVisible();
+  });
+
+  it("passes opacity and actual selected time to the flow-vector overlay", () => {
+    render(
+      <ResultPanel
+        runId="run-1"
+        metadata={metadata}
+        rainfallSummary="10 mm/h × 1分"
+        onNewAnalysis={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("result-map")).toHaveAttribute("data-overlay-opacity", "0.82");
+
+    fireEvent.change(screen.getByRole("slider", { name: "解析結果の透明度" }), {
+      target: { value: "35" },
+    });
+    expect(screen.getByTestId("result-map")).toHaveAttribute("data-overlay-opacity", "0.35");
+    expect(screen.getByText("35%")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "流れベクトル" }));
+    expect(screen.getByTestId("result-map")).toHaveAttribute(
+      "data-flow-image-url",
+      "/api/v1/runs/run-1/layers/flow-vectors.png?time_index=0",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "次の時刻" }));
+    expect(screen.getByTestId("result-map")).toHaveAttribute(
+      "data-flow-image-url",
+      "/api/v1/runs/run-1/layers/flow-vectors.png?time_index=3",
+    );
+  });
+
+  it("shows vector unavailability for historical runs without stored velocities", () => {
+    render(
+      <ResultPanel
+        runId="run-1"
+        metadata={{ ...metadata, flow_vectors_available: false }}
+        rainfallSummary="10 mm/h × 1分"
+        onNewAnalysis={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "流れベクトル" })).toBeDisabled();
+    expect(screen.getByText("この解析には流れベクトルデータがありません。")).toBeVisible();
   });
 });
