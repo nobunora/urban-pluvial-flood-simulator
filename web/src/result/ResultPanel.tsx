@@ -80,6 +80,7 @@ export default function ResultPanel({
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionError, setInspectionError] = useState<string | null>(null);
   const inspectionController = useRef<AbortController | null>(null);
+  const depthFrameCacheRef = useRef<Map<number, string>>(new Map());
   const focusRegionRef = useRef<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -106,7 +107,10 @@ export default function ResultPanel({
   const imageUrl = useMemo(() => {
     if (layer === "time_depth") {
       if (selectedTimeIndex === null) return resultLayerUrl(runId, "max-depth");
-      return resultLayerUrl(runId, "depth", selectedTimeIndex);
+      return (
+        depthFrameCacheRef.current.get(selectedTimeIndex) ??
+        resultLayerUrl(runId, "depth", selectedTimeIndex)
+      );
     }
     if (layer === "grid_resolution") return resultLayerUrl(runId, "grid-resolution");
     return resultLayerUrl(runId, "max-depth");
@@ -124,33 +128,60 @@ export default function ResultPanel({
   }, [flowVisible, metadata.flow_vectors_available, runId, selectedTimeIndex]);
 
   useEffect(() => {
-    const indices = metadata.available_time_indices;
-    if (indices.length === 0) return;
+    const cache = depthFrameCacheRef.current;
+    for (const cachedUrl of cache.values()) {
+      if (cachedUrl.startsWith("blob:")) URL.revokeObjectURL(cachedUrl);
+    }
+    cache.clear();
 
-    const prioritized = indices.length <= 120
-      ? indices
-      : indices.slice(0, 24);
+    const indices = metadata.available_time_indices;
+    if (indices.length === 0 || typeof window.fetch !== "function") return;
+
     const controller = new AbortController();
+    const createdObjectUrls: string[] = [];
     let cursor = 0;
 
     const worker = async () => {
       while (!controller.signal.aborted) {
-        const index = prioritized[cursor];
+        const index = indices[cursor];
         cursor += 1;
         if (index == null) return;
+
+        const remoteUrl = resultLayerUrl(runId, "depth", index);
         try {
-          await window.fetch(resultLayerUrl(runId, "depth", index), {
+          const response = await window.fetch(remoteUrl, {
             cache: "force-cache",
             signal: controller.signal,
           });
+          if (!response.ok) continue;
+          const blob = await response.blob();
+          if (controller.signal.aborted) return;
+
+          if (typeof URL.createObjectURL === "function") {
+            const objectUrl = URL.createObjectURL(blob);
+            createdObjectUrls.push(objectUrl);
+            cache.set(index, objectUrl);
+          } else {
+            // The response is still warm in the HTTP cache even when Blob URLs
+            // are unavailable (for example, some test environments).
+            cache.set(index, remoteUrl);
+          }
         } catch {
           if (controller.signal.aborted) return;
         }
       }
     };
 
-    void Promise.allSettled([worker(), worker(), worker(), worker()]);
-    return () => controller.abort();
+    // RESULT opens on maximum depth, so use that dwell time to warm all
+    // time-depth frames. Eight bounded workers keep localhost latency low
+    // without recreating MapLibre or starting unbounded requests.
+    void Promise.allSettled(Array.from({ length: 8 }, () => worker()));
+
+    return () => {
+      controller.abort();
+      for (const objectUrl of createdObjectUrls) URL.revokeObjectURL(objectUrl);
+      cache.clear();
+    };
   }, [metadata.available_time_indices, runId]);
 
   const showTimeline =
