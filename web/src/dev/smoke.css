@@ -44,11 +44,17 @@
 
 .smoke-grid {
   display: grid;
-  grid-template-columns: minmax(300px, 420px) minmax(360px, 1fr);
+  grid-template-columns: minmax(300px, 390px) minmax(520px, 1fr);
   gap: 1rem;
   padding: 1rem;
-  max-width: 1200px;
+  max-width: 1320px;
   margin: 0 auto;
+}
+
+.smoke-main-column {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
 }
 
 .smoke-card {
@@ -78,6 +84,12 @@
   border: 1px solid #aeb8c4;
   border-radius: 8px;
   background: #ffffff;
+}
+
+.smoke-card input:disabled,
+.smoke-card select:disabled {
+  background: #f1f5f9;
+  color: #64748b;
 }
 
 .smoke-actions {
@@ -131,12 +143,216 @@
   color: #a61b1b;
 }
 
-@media (max-width: 800px) {
+.smoke-map-card {
+  min-width: 0;
+}
+
+.setup-map-wrap {
+  position: relative;
+}
+
+.setup-map-help {
+  margin-bottom: 0.6rem;
+  color: #475569;
+  font-size: 0.92rem;
+}
+
+.setup-map-canvas {
+  width: 100%;
+  min-height: 390px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+
+.setup-map-disabled {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  margin: 0;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #475569;
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.run-progress {
+  display: grid;
+  gap: 0.85rem;
+  margin: 1rem 0;
+}
+
+.run-progress-empty {
+  color: #64748b;
+}
+
+.run-progress-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.run-progress-summary > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.run-progress-summary span {
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.run-progress-overall {
+  width: 100%;
+  height: 0.65rem;
+  accent-color: #2563eb;
+}
+
+.run-progress-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 0.45rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.run-progress-stage {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.run-progress-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #cbd5e1;
+  flex: 0 0 auto;
+}
+
+.run-progress-stage.is-complete {
+  background: #ecfdf5;
+  color: #166534;
+}
+
+.run-progress-stage.is-complete .run-progress-dot {
+  background: #16a34a;
+}
+
+.run-progress-stage.is-current {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.run-progress-stage.is-current .run-progress-dot {
+  background: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+}
+
+.run-progress-artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.run-progress-artifact {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #d8dee6;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.run-progress-artifact.is-complete {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.run-progress-artifact.is-current {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.run-progress-engine {
+  padding: 0.8rem;
+  border: 1px solid #93c5fd;
+  border-radius: 10px;
+  background: #eff6ff;
+}
+
+.run-progress-engine p {
+  margin: 0.35rem 0 0;
+  color: #475569;
+  font-size: 0.88rem;
+}
+
+.run-progress-indeterminate {
+  height: 0.45rem;
+  margin-bottom: 0.65rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #dbeafe;
+}
+
+.run-progress-indeterminate span {
+  display: block;
+  width: 35%;
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+  animation: run-progress-slide 1.15s ease-in-out infinite;
+}
+
+@keyframes run-progress-slide {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(310%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-progress-indeterminate span {
+    animation: none;
+    width: 100%;
+    opacity: 0.55;
+  }
+}
+
+@media (max-width: 900px) {
   .smoke-grid {
     grid-template-columns: 1fr;
   }
 
   .smoke-shell header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .setup-map-canvas {
+    min-height: 330px;
+  }
+
+  .run-progress-summary {
     align-items: flex-start;
     flex-direction: column;
   }
