@@ -258,7 +258,7 @@ export default function ResultPanel({
         </div>
       )}
 
-      <div className="result-focus-region" ref={focusRegionRef}>
+      <div className="result-focus-region" ref={focusRegionRef} data-testid="result-focus-region">
         <button
           type="button"
           className="result-fullscreen-button"
