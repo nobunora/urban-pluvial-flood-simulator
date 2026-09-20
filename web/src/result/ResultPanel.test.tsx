@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { inspectResult, type ResultMetadataResponse } from "../api/client";
 import ResultPanel from "./ResultPanel";
@@ -89,6 +89,10 @@ const metadata: ResultMetadataResponse = {
 };
 
 describe("ResultPanel", () => {
+  beforeEach(() => {
+    vi.mocked(inspectResult).mockReset();
+  });
+
   it("shows native point values including maximum time", async () => {
     vi.mocked(inspectResult).mockResolvedValue({
       lon_deg: 139.75,
@@ -120,6 +124,40 @@ describe("ResultPanel", () => {
     expect(await screen.findByText("0.420 m")).toBeVisible();
     expect(screen.getByText("最大時刻")).toBeVisible();
     expect(screen.getByText("00:30")).toBeVisible();
+  });
+
+  it("shows no-data distinctly from zero depth", async () => {
+    vi.mocked(inspectResult).mockResolvedValue({
+      lon_deg: 139.75,
+      lat_deg: 35.65,
+      has_data: false,
+      row: 10,
+      column: 20,
+      time_index: null,
+      time_value: null,
+      depth_m: null,
+      max_depth_m: null,
+      max_time_index: null,
+      max_time_value: null,
+      terrain_elevation_m: null,
+      grid_resolution_m: null,
+    });
+
+    render(
+      <ResultPanel
+        runId="run-1"
+        metadata={metadata}
+        rainfallSummary="10 mm/h × 1分"
+        onNewAnalysis={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "地点を確認" }));
+
+    expect(
+      await screen.findByText("この地点には解析データがありません。"),
+    ).toBeVisible();
+    expect(screen.queryByText("0.000 m")).not.toBeInTheDocument();
   });
 
   it("shows maximum depth first and exposes backend provenance/limitations", () => {
