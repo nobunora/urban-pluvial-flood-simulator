@@ -304,10 +304,10 @@ describe("ResultPanel", () => {
     expect(screen.getByTestId("result-map")).toHaveAttribute("data-background-opacity", "0.55");
 
     fireEvent.change(screen.getByRole("slider", { name: "背景地図の透明度" }), {
-      target: { value: "35" },
+      target: { value: "80" },
     });
-    expect(screen.getByTestId("result-map")).toHaveAttribute("data-background-opacity", "0.35");
-    expect(screen.getByText("35%")).toBeVisible();
+    expect(screen.getByTestId("result-map")).toHaveAttribute("data-background-opacity", "0.2");
+    expect(screen.getByText("80%")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "流れベクトル" }));
     expect(screen.getByTestId("result-map")).toHaveAttribute(
