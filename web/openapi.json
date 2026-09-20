@@ -913,6 +913,11 @@
           "engine_summary": {
             "$ref": "#/components/schemas/ResultEngineSummary"
           },
+          "flow_vectors_available": {
+            "default": false,
+            "title": "Flow Vectors Available",
+            "type": "boolean"
+          },
           "grid_level_summary": {
             "additionalProperties": {
               "type": "integer"
