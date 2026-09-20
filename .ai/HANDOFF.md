@@ -106,31 +106,37 @@ Codex must not duplicate these checks merely to compensate for missing local dep
 
 ## Current local-review status
 
-Latest Windows validation on `017d3c0686490acfc55d20906d22434fd8c5de7e` proved the finalized result-reader policies against the previous real SFINCS artifact:
+The latest Codex Windows cycle isolated the fresh-run BUILDING_GRID failure and repaired the exact cause within the authorized tiny-fix scope.
 
-- previous `sfincs_map.nc` reader + normalizer: PASS;
-- raw minimum active depth: -0.0016127867 m;
-- one near-zero negative depth value clipped and audited;
-- 129,934 missing active `hmax` cells reconstructed;
-- normalized global max depth: 1.7509006262 m.
+Starting from Web head `0421bfbe870132c85f8e3f7d3c0b038ab43e5740`:
 
-A fresh Tokyo Station Full 1 m run then exposed a new repository failure:
+- existing-run BUILDING_GRID replay for `f2dc662c-f445-4f6d-af75-223bb8c2f16c`: PASS;
+- replay input provider: OSM;
+- building features: 86;
+- road-line features: 1,003;
+- road polygons: 0;
+- 250,000-cell grid, 89,449 building cells, 42,228 road cells;
+- roof-rain redistribution mass error: 0.
 
-- vector acquisition improved from the former 89.349 s to 24.411 s;
-- PLATEAU completed; OSM fallback was not used;
-- run advanced through rainfall/terrain/roof stages;
-- `BUILDING_GRID` failed immediately with generic `INTERNAL_RUN_FAILED`;
-- no model/SFINCS files were created;
-- the old manifest contract discarded the underlying exception type/message.
+A fresh live run then produced the newly persistent exact exception:
 
-Web has now addressed every repository-side issue that can be fixed without the missing host exception:
+```text
+AttributeError: 'OsmVectors' object has no attribute 'road_polygons'
+```
 
-- manifest persists `failure_exception_type`, `failure_message`, and `failure_diagnostic_file`;
-- every unexpected worker failure writes `logs/failure_diagnostic.json` with stage, exception, traceback, elevation shape/range and vector provider/counts;
-- Full 1 m vector rasterization now skips ragged, non-numeric, non-finite and invalid individual geometry features rather than letting one malformed feature abort the grid;
-- `scripts/diagnose_grid_run.py <run-id>` replays only BUILDING_GRID from an existing run's persisted config/source refs plus the normal elevation cache, avoiding another vector/SFINCS cycle while isolating the grid defect.
+Root cause: the Full 1 m grid consumes one common vector contract. PLATEAU exposes `road_polygons`; OSM intentionally supplies road lines only, but its result type omitted the empty `road_polygons` member.
 
-The next Codex cycle must first replay the previous failed run `f2dc662c-f445-4f6d-af75-223bb8c2f16c` with the diagnostic script. If it now passes, continue directly to one fresh end-to-end run. If it still fails, the new diagnostic contains the exact root cause; a tiny mechanical fix may be applied in the same cycle when permitted.
+Codex repaired this mechanically:
+
+- `OsmVectors.road_polygons` now returns an explicit empty list;
+- no OSM polygon data is invented;
+- focused provider regression passes.
+
+Codex also discovered one Windows-only portability defect in Web's new failure-diagnostic contract: the manifest wrote `logs\\failure_diagnostic.json` instead of the portable `logs/failure_diagnostic.json`.
+
+Web has now repaired that final deterministic issue by serializing the relative path with `Path.as_posix()`.
+
+At this point no known repository defect remains in the Full 1 m review path. The next Codex cycle should perform one fresh end-to-end Windows run on the newest exact head and continue all the way through SFINCS, result reading and normalization. If a new failure occurs, the durable failure diagnostics must be reported and a bounded tiny fix may be applied in the same cycle when permitted.
 
 ## Preserved validated history
 
