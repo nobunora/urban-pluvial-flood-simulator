@@ -434,6 +434,10 @@ export interface components {
             lon_deg: number;
             /** Max Depth M */
             max_depth_m?: number | null;
+            /** Max Time Index */
+            max_time_index?: number | null;
+            /** Max Time Value */
+            max_time_value?: string | null;
             /** Row */
             row: number;
             /** Terrain Elevation M */
@@ -580,6 +584,7 @@ export interface components {
             /** No Data Policy */
             no_data_policy: string;
             provider_summary?: components["schemas"]["ResultProviderSummary"];
+            run_summary: components["schemas"]["ResultRunSummary"];
             /** Schema Version */
             schema_version: string;
             /** Time Values */
@@ -597,6 +602,38 @@ export interface components {
             road_provider?: string | null;
             /** Warnings */
             warnings?: string[];
+        };
+        /** ResultRunSummary */
+        ResultRunSummary: {
+            /** Application Version */
+            application_version: string;
+            /** Boundary Policy */
+            boundary_policy: string;
+            /** Elevation Provider Counts */
+            elevation_provider_counts?: {
+                [key: string]: number;
+            };
+            /** Elevation Source Summary */
+            elevation_source_summary?: {
+                [key: string]: unknown;
+            };
+            /** Manning Defaults */
+            manning_defaults?: {
+                [key: string]: number;
+            };
+            /** Rainfall Source */
+            rainfall_source?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Requested Accuracy Mode
+             * @enum {string}
+             */
+            requested_accuracy_mode: "full_1m" | "adaptive";
+            /** Roof Rain Mass Diagnostic */
+            roof_rain_mass_diagnostic?: {
+                [key: string]: number;
+            };
         };
         /** RunConfig */
         RunConfig: {

@@ -432,6 +432,29 @@
             ],
             "title": "Max Depth M"
           },
+          "max_time_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Time Index"
+          },
+          "max_time_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Time Value"
+          },
           "row": {
             "minimum": 0.0,
             "title": "Row",
@@ -918,6 +941,9 @@
           "provider_summary": {
             "$ref": "#/components/schemas/ResultProviderSummary"
           },
+          "run_summary": {
+            "$ref": "#/components/schemas/ResultRunSummary"
+          },
           "schema_version": {
             "title": "Schema Version",
             "type": "string"
@@ -945,6 +971,7 @@
           "time_values",
           "max_depth_summary",
           "grid_level_summary",
+          "run_summary",
           "no_data_policy",
           "limitations"
         ],
@@ -985,6 +1012,72 @@
           }
         },
         "title": "ResultProviderSummary",
+        "type": "object"
+      },
+      "ResultRunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "application_version": {
+            "title": "Application Version",
+            "type": "string"
+          },
+          "boundary_policy": {
+            "title": "Boundary Policy",
+            "type": "string"
+          },
+          "elevation_provider_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Elevation Provider Counts",
+            "type": "object"
+          },
+          "elevation_source_summary": {
+            "additionalProperties": true,
+            "title": "Elevation Source Summary",
+            "type": "object"
+          },
+          "manning_defaults": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Manning Defaults",
+            "type": "object"
+          },
+          "rainfall_source": {
+            "additionalProperties": true,
+            "title": "Rainfall Source",
+            "type": "object"
+          },
+          "requested_accuracy_mode": {
+            "enum": [
+              "full_1m",
+              "adaptive"
+            ],
+            "title": "Requested Accuracy Mode",
+            "type": "string"
+          },
+          "roof_rain_mass_diagnostic": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Roof Rain Mass Diagnostic",
+            "type": "object"
+          }
+        },
+        "required": [
+          "application_version",
+          "requested_accuracy_mode",
+          "boundary_policy"
+        ],
+        "title": "ResultRunSummary",
         "type": "object"
       },
       "RunConfig": {
