@@ -111,30 +111,25 @@ Codex must not duplicate these checks merely to compensate for missing local dep
 
 ## Current implementation status
 
-Full 1 m execution is locally validated and `local-review-ready` at the pre-result-UI baseline.
+By explicit user direction, the documented v0.1 result-view phase is now the active implementation phase.
 
-The canonical documents identify result visualization as the next incomplete v0.1 outcome:
+Web implementation now covers the Full 1 m result-view task end to end:
 
-```text
-run -> read results -> display maximum flood depth on map -> inspect time-dependent depth and point values
-```
+- backend metadata and deterministic max-depth/time-depth/grid-resolution PNG APIs;
+- native point-inspection API;
+- MapLibre GL JS + GSI standard raster result map;
+- automatic dedicated RESULT mode after a completed run (SETUP controls are hidden until "新しい解析");
+- maximum-depth default layer with backend canonical legend;
+- time-depth selection using actual `available_time_indices`, not slider positions;
+- native point inspection including maximum time;
+- Full 1 m grid-resolution layer;
+- provider, engine and run provenance;
+- limitations and fallback warnings;
+- deterministic geometry/component/transition tests.
 
-Web ChatGPT has started this phase on the persistent PR:
+Web also removed `.github/workflows/generate-result-view-artifacts.yml`. Its GitHub Actions bot push created a bot-authored HEAD whose subsequent workflows concluded `action_required` before jobs started. Generated artifacts remain committed and normal deterministic CI verifies drift through `npm run api:check`.
 
-- result metadata and native inspection APIs were already implemented in the backend;
-- MapLibre 6.10.0 was already present in the frontend dependencies;
-- frontend API client now exposes result metadata, inspection and layer URLs;
-- RESULT mode now loads automatically after run `COMPLETE`;
-- GSI standard raster tiles are the base map with attribution;
-- backend-rendered result PNG is placed using exact geographic result bounds;
-- maximum-depth, time-depth and grid-resolution layer selectors are implemented;
-- time-depth timeline snaps to actual output indices;
-- map clicks use backend native point inspection;
-- backend provenance, warnings, depth legend and limitations are displayed;
-- “new analysis” clears result/run state while retaining setup inputs;
-- result geometry and result-panel behavior have deterministic frontend tests.
-
-No Codex task is active while deterministic CI for the Web-owned result-view implementation is pending. After CI is green, Codex should be used only for the strongest host-local browser/SFINCS result-view smoke that Web cannot perform.
+No Codex task is active until the newest exact-head deterministic CI is green. Once green, the only Codex task is the host-local Windows result-view acceptance smoke using the already-present permitted SFINCS executable: run one tiny Full 1 m case to `COMPLETE`, verify RESULT mode appears, max-depth/time/grid images are served, native point inspection works, and provenance/limitations are visible. Tiny mechanical fixes may be made within the established allowance; substantive UI/API changes return to Web.
 
 ## Preserved validated history
 
