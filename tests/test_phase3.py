@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import threading
 from pathlib import Path
@@ -111,6 +112,28 @@ def test_roof_rainfall_conserves_mass_and_blocks_roof() -> None:
 def test_roof_rainfall_fails_without_recipient() -> None:
     with pytest.raises(RoofRunoffNoRecipient):
         allocate_roof_rainfall(np.ones((3, 3), dtype=bool))
+
+
+def test_full_grid_skips_malformed_vector_features() -> None:
+    area = _area()
+    vectors = _vectors(area)
+    vectors.buildings.extend(
+        [
+            np.asarray([[np.nan, 0.0], [1.0, 0.0], [1.0, 1.0]]),
+            np.asarray([[0.0], [1.0], [2.0]]),
+        ]
+    )
+    vectors.road_lines.extend(
+        [
+            np.asarray([[0.0, np.inf], [1.0, 1.0]]),
+            np.asarray([[0.0], [1.0]]),
+        ]
+    )
+
+    grid = build_full_1m_grid(area, _elevation(area), vectors)
+
+    assert grid.cell_count == 16
+    assert np.any(grid.building_mask)
 
 
 def test_full_grid_sets_building_boundary_and_manning() -> None:
@@ -372,6 +395,36 @@ def test_coordinator_cancels_while_provider_is_blocked(tmp_path: Path) -> None:
     elevation_provider.release.set()
     record.future.result(timeout=5)
     assert record.machine.state is RunState.CANCELLED
+
+
+def test_coordinator_persists_unexpected_grid_failure_diagnostic(tmp_path: Path) -> None:
+    coordinator = _test_coordinator(tmp_path)
+
+    def fail_grid(*_args: object, **_kwargs: object) -> object:
+        raise ValueError("synthetic grid failure")
+
+    coordinator.grid_builder = fail_grid
+    record = coordinator.create_run(_config())
+    assert record.future is not None
+    record.future.result(timeout=10)
+
+    assert record.machine.state is RunState.FAILED
+    manifest = coordinator.store.read_manifest(record.run_id)
+    assert manifest is not None
+    assert manifest["failure_code"] == "INTERNAL_RUN_FAILED"
+    assert manifest["failing_stage"] == "BUILDING_GRID"
+    assert manifest["failure_exception_type"] == "ValueError"
+    assert manifest["failure_message"] == "synthetic grid failure"
+    assert manifest["failure_diagnostic_file"] == "logs/failure_diagnostic.json"
+
+    diagnostic_path = coordinator.store.run_dir(record.run_id) / manifest["failure_diagnostic_file"]
+    diagnostic = json.loads(diagnostic_path.read_text(encoding="utf-8"))
+    assert diagnostic["stage"] == "BUILDING_GRID"
+    assert diagnostic["exception_type"] == "ValueError"
+    assert diagnostic["message"] == "synthetic grid failure"
+    assert "synthetic grid failure" in diagnostic["traceback"]
+    assert diagnostic["runtime"]["grid_input"]["vectors"]["provider_id"] == "plateau"
+    assert diagnostic["runtime"]["grid_input"]["elevation"]["shape"] == [3, 3]
 
 
 def test_phase3_api_accepts_run_and_exposes_result(
