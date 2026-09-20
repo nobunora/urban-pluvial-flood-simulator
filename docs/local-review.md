@@ -139,6 +139,34 @@ SFINCS 2.4.0 defines a default `twet_threshold` of 0.01 m for deciding whether a
 
 This is intentionally separate from SFINCS `huthresh` (the flow-depth limiter) and keeps the original engine output available for audit.
 
+## Diagnosing a failed BUILDING_GRID stage
+
+Unexpected worker failures are persisted for review instead of being reduced to only `INTERNAL_RUN_FAILED`.
+
+The failed run's `manifest.json` records:
+
+- `failing_stage`;
+- `failure_code`;
+- `failure_exception_type`;
+- `failure_message`;
+- `failure_diagnostic_file`.
+
+The diagnostic JSON under `logs/` includes the traceback plus elevation/vector input summaries.
+
+To isolate BUILDING_GRID from an existing run without redoing vector acquisition or SFINCS, run:
+
+```bash
+python -m scripts.diagnose_grid_run <run-id>
+```
+
+For example:
+
+```text
+python -m scripts.diagnose_grid_run f2dc662c-f445-4f6d-af75-223bb8c2f16c
+```
+
+The command reuses the persisted run config and `source_refs`, uses the normal elevation cache path, writes `logs/grid_replay_diagnostic.json`, and reports building/road counts plus grid/roof-allocation diagnostics.
+
 ## Working-tree safety
 
 Before user review, run:
