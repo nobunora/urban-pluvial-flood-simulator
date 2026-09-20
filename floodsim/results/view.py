@@ -250,12 +250,17 @@ def inspect_native_point(
             "time_value": time_value,
             "depth_m": None,
             "max_depth_m": None,
+            "max_time_index": None,
+            "max_time_value": None,
             "terrain_elevation_m": None,
             "grid_resolution_m": None,
         }
 
+    depth_series = arrays.depth_time_m[:, row, col]
+    max_time_index = int(np.argmax(depth_series))
+    max_time_value = arrays.time_values[max_time_index]
     depth_m = (
-        float(arrays.depth_time_m[time_index, row, col])
+        float(depth_series[time_index])
         if time_index is not None
         else None
     )
@@ -270,6 +275,8 @@ def inspect_native_point(
         "time_value": time_value,
         "depth_m": depth_m,
         "max_depth_m": float(arrays.max_depth_m[row, col]),
+        "max_time_index": max_time_index,
+        "max_time_value": max_time_value,
         "terrain_elevation_m": float(arrays.terrain_elevation_m[row, col]),
         "grid_resolution_m": float(resolution_values[row, col]),
     }
