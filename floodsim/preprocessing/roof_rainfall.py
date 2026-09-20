@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -30,6 +31,7 @@ def allocate_roof_rainfall(
     cell_area_m2: float = 1.0,
     max_distance_cells: int = 5,
     tolerance: float = 1e-9,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> RoofRainAllocation:
     """Redistribute blocked-roof rainfall to nearest eligible ground cells.
 
@@ -50,6 +52,9 @@ def allocate_roof_rainfall(
     weights[mask] = 0.0
     components, count = label(mask, structure=np.ones((3, 3), dtype=np.uint8))
     redistributed = 0
+    if progress_callback is not None:
+        progress_callback(0, int(count))
+    callback_step = max(1, int(count) // 20) if count else 1
 
     for component_id in range(1, count + 1):
         component = components == component_id
@@ -75,6 +80,10 @@ def allocate_roof_rainfall(
         recipient_count = int(recipients.sum())
         weights[recipients] += roof_cells / recipient_count
         redistributed += roof_cells
+        if progress_callback is not None and (
+            component_id == count or component_id % callback_step == 0
+        ):
+            progress_callback(component_id, int(count))
 
     meteorological_area = float(mask.size) * cell_area_m2
     hydraulic_area = float(np.sum(weights) * cell_area_m2)
