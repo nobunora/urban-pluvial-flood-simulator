@@ -1,7 +1,8 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
   inspectResult,
+  resultLayerUrl,
   type PointInspectionResponse,
   type ResultMetadataResponse,
 } from "../api/client";
@@ -15,6 +16,8 @@ type Props = {
   onNewAnalysis: () => void;
 };
 
+type ResultLayer = "max_depth" | "time_depth" | "grid_resolution";
+
 const LIMITATION_LABELS: Record<string, string> = {
   infiltration_modelled: "浸透は考慮していません。",
   sewer_network_modelled: "下水道・雨水管は考慮していません。",
@@ -26,8 +29,31 @@ const LIMITATION_LABELS: Record<string, string> = {
   official_forecast: "この結果は数値シナリオであり、公的な洪水予報・避難情報ではありません。",
 };
 
+const GRID_LEGEND = [
+  ["1 m", "#264653"],
+  ["2 m", "#2A6F97"],
+  ["4 m", "#3D9180"],
+  ["8 m", "#7AA874"],
+  ["16 m", "#BABC7D"],
+  ["32 m", "#D0C8AD"],
+] as const;
+
 function metres(value: number | null | undefined): string {
   return value == null ? "—" : `${value.toFixed(3)} m`;
+}
+
+function elapsedLabel(values: string[], index: number): string {
+  const current = Date.parse(values[index] ?? "");
+  const start = Date.parse(values[0] ?? "");
+  if (Number.isFinite(current) && Number.isFinite(start)) {
+    const elapsedMinutes = Math.max(0, Math.round((current - start) / 60_000));
+    const days = Math.floor(elapsedMinutes / 1440);
+    const hours = Math.floor((elapsedMinutes % 1440) / 60);
+    const minutes = elapsedMinutes % 60;
+    if (days > 0) return `${days}日 ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  }
+  return values[index] ?? `index ${index}`;
 }
 
 export default function ResultPanel({
@@ -36,10 +62,26 @@ export default function ResultPanel({
   rainfallSummary,
   onNewAnalysis,
 }: Props) {
+  const [layer, setLayer] = useState<ResultLayer>("max_depth");
+  const [timeIndex, setTimeIndex] = useState(metadata.available_time_indices[0] ?? 0);
   const [inspection, setInspection] = useState<PointInspectionResponse | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionError, setInspectionError] = useState<string | null>(null);
   const inspectionController = useRef<AbortController | null>(null);
+
+  const activeTimeIndex = layer === "time_depth" ? timeIndex : null;
+  const imageUrl = useMemo(() => {
+    if (layer === "time_depth") return resultLayerUrl(runId, "depth", timeIndex);
+    if (layer === "grid_resolution") return resultLayerUrl(runId, "grid-resolution");
+    return resultLayerUrl(runId, "max-depth");
+  }, [layer, runId, timeIndex]);
+
+  const mapLabel =
+    layer === "time_depth"
+      ? "時刻別浸水深の地図"
+      : layer === "grid_resolution"
+        ? "計算格子解像度の地図"
+        : "最大浸水深の地図";
 
   const handleInspect = useCallback(
     (lon: number, lat: number) => {
@@ -49,7 +91,7 @@ export default function ResultPanel({
       setInspectionLoading(true);
       setInspectionError(null);
 
-      void inspectResult(runId, lon, lat, null, controller.signal)
+      void inspectResult(runId, lon, lat, activeTimeIndex, controller.signal)
         .then((next) => {
           if (!controller.signal.aborted) setInspection(next);
         })
@@ -60,7 +102,7 @@ export default function ResultPanel({
           if (!controller.signal.aborted) setInspectionLoading(false);
         });
     },
-    [runId],
+    [activeTimeIndex, runId],
   );
 
   const omittedLimitations = Object.entries(metadata.limitations)
@@ -70,6 +112,7 @@ export default function ResultPanel({
   const provider = metadata.provider_summary;
   const engine = metadata.engine_summary;
   const globalMax = metadata.max_depth_summary.global_max_depth_m;
+  const maxTimeIndex = Math.max(0, metadata.available_time_indices.length - 1);
 
   return (
     <section className="result-shell" aria-labelledby="result-title">
@@ -86,18 +129,94 @@ export default function ResultPanel({
         数値シナリオです。公的な洪水予報・避難判断の代替ではありません。
       </div>
 
+      <div className="result-layer-controls" aria-label="結果レイヤー">
+        <button
+          type="button"
+          className={layer === "max_depth" ? "is-active" : ""}
+          aria-pressed={layer === "max_depth"}
+          onClick={() => setLayer("max_depth")}
+        >
+          最大浸水深
+        </button>
+        <button
+          type="button"
+          className={layer === "time_depth" ? "is-active" : ""}
+          aria-pressed={layer === "time_depth"}
+          disabled={metadata.available_time_indices.length === 0}
+          onClick={() => setLayer("time_depth")}
+        >
+          時刻別の浸水深
+        </button>
+        <button
+          type="button"
+          className={layer === "grid_resolution" ? "is-active" : ""}
+          aria-pressed={layer === "grid_resolution"}
+          onClick={() => setLayer("grid_resolution")}
+        >
+          計算格子
+        </button>
+      </div>
+
+      {layer === "time_depth" && metadata.available_time_indices.length > 0 && (
+        <div className="result-timeline">
+          <button
+            type="button"
+            disabled={timeIndex <= 0}
+            onClick={() => setTimeIndex((value) => Math.max(0, value - 1))}
+            aria-label="前の時刻"
+          >
+            ◀
+          </button>
+          <input
+            aria-label="結果時刻"
+            type="range"
+            min={0}
+            max={maxTimeIndex}
+            step={1}
+            value={timeIndex}
+            onChange={(event) => setTimeIndex(Number(event.target.value))}
+          />
+          <button
+            type="button"
+            disabled={timeIndex >= maxTimeIndex}
+            onClick={() => setTimeIndex((value) => Math.min(maxTimeIndex, value + 1))}
+            aria-label="次の時刻"
+          >
+            ▶
+          </button>
+          <strong>現在: {elapsedLabel(metadata.time_values, timeIndex)}</strong>
+        </div>
+      )}
+
       <div className="result-layout">
         <div className="result-map-panel">
-          <ResultMap runId={runId} metadata={metadata} onInspect={handleInspect} />
-          <div className="result-legend" aria-label="最大浸水深の凡例">
-            <strong>最大浸水深 (m)</strong>
-            {metadata.depth_legend?.map((item) => (
-              <span key={item.label}>
-                <i style={{ backgroundColor: item.color }} aria-hidden="true" />
-                {item.label}
-              </span>
-            ))}
-          </div>
+          <ResultMap
+            metadata={metadata}
+            imageUrl={imageUrl}
+            mapLabel={mapLabel}
+            onInspect={handleInspect}
+          />
+          {layer !== "grid_resolution" ? (
+            <div className="result-legend" aria-label="浸水深の凡例">
+              <strong>{layer === "max_depth" ? "最大浸水深 (m)" : "浸水深 (m)"}</strong>
+              {metadata.depth_legend?.map((item) => (
+                <span key={item.label}>
+                  <i style={{ backgroundColor: item.color }} aria-hidden="true" />
+                  {item.label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="result-legend" aria-label="計算格子の凡例">
+              <strong>格子解像度</strong>
+              {GRID_LEGEND.map(([label, color]) => (
+                <span key={label}>
+                  <i style={{ backgroundColor: color }} aria-hidden="true" />
+                  {label}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <aside className="result-sidebar">
@@ -117,6 +236,12 @@ export default function ResultPanel({
                 <dt>経度</dt><dd>{inspection.lon_deg.toFixed(6)}</dd>
                 <dt>地盤高</dt><dd>{metres(inspection.terrain_elevation_m)}</dd>
                 <dt>最大浸水深</dt><dd>{metres(inspection.max_depth_m)}</dd>
+                {layer === "time_depth" && (
+                  <>
+                    <dt>現在水深</dt><dd>{metres(inspection.depth_m)}</dd>
+                    <dt>時刻</dt><dd>{inspection.time_value ?? elapsedLabel(metadata.time_values, timeIndex)}</dd>
+                  </>
+                )}
                 <dt>格子</dt><dd>{metres(inspection.grid_resolution_m)}</dd>
               </dl>
             )}
@@ -143,7 +268,11 @@ export default function ResultPanel({
               {" — "}
               {metadata.bounds.north_deg.toFixed(6)}, {metadata.bounds.east_deg.toFixed(6)}
             </p>
-            <p>Grid: {Object.entries(metadata.grid_level_summary).map(([level, count]) => `${level}: ${count.toLocaleString()}`).join(" / ")}</p>
+            <p>
+              Grid: {Object.entries(metadata.grid_level_summary)
+                .map(([level, count]) => `${level}: ${count.toLocaleString()}`)
+                .join(" / ")}
+            </p>
             <p>HydroMT-SFINCS: {engine?.hydromt_sfincs_version ?? "—"}</p>
             <p className="result-policy">{metadata.no_data_policy}</p>
           </details>
