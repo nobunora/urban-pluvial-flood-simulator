@@ -24,6 +24,28 @@ vi.mock("./api/client", async (importOriginal) => {
   };
 });
 
+vi.mock("./dev/SetupMap", () => ({
+  default: ({
+    area,
+    disabled,
+    onSelect,
+  }: {
+    area: { width_m: number } | null;
+    disabled: boolean;
+    onSelect: (lon: number, lat: number) => void;
+  }) => (
+    <div
+      data-testid="setup-map"
+      data-area-width={area?.width_m ?? ""}
+      data-disabled={String(disabled)}
+    >
+      <button type="button" disabled={disabled} onClick={() => onSelect(139.8, 35.7)}>
+        地図で地点選択
+      </button>
+    </div>
+  ),
+}));
+
 vi.mock("./result/ResultMap", () => ({
   default: ({ mapLabel }: { mapLabel: string }) => (
     <div data-testid="result-map">{mapLabel}</div>
@@ -107,10 +129,39 @@ describe("local review UI", () => {
     vi.mocked(getResultMetadata).mockResolvedValue(metadata);
   });
 
-  it("renders the Full 1 m controls", () => {
+  it("renders the Full 1 m controls and lets the setup map change location/range", () => {
     render(<App />);
+
     expect(screen.getByText("ローカルレビュー版 — Full 1 m")).toBeVisible();
     expect(screen.getByRole("button", { name: "解析開始" })).toBeVisible();
+    expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "500");
+
+    fireEvent.click(screen.getByRole("button", { name: "地図で地点選択" }));
+    expect(screen.getByLabelText("緯度")).toHaveValue("35.700000");
+    expect(screen.getByLabelText("経度")).toHaveValue("139.800000");
+
+    fireEvent.change(screen.getByLabelText("範囲"), { target: { value: "500" } });
+    expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "1000");
+  });
+
+  it("disables setup-map mutation while a run is active", async () => {
+    vi.mocked(getRun).mockResolvedValue({
+      run_id: "00000000-0000-0000-0000-000000000001",
+      state: "RUNNING_ENGINE",
+      stage_code: "RUNNING_ENGINE",
+      stage_label: "SFINCSを実行中",
+      failure_code: null,
+      failure_message: null,
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "解析開始" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("setup-map")).toHaveAttribute("data-disabled", "true");
+    });
+    expect(screen.getByRole("button", { name: "地図で地点選択" })).toBeDisabled();
+    expect(screen.getByText(/SFINCS計算中/)).toBeVisible();
   });
 
   it("enters dedicated RESULT mode after a completed run and retains setup inputs for a new analysis", async () => {
