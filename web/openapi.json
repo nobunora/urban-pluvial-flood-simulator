@@ -13,7 +13,7 @@
         "additionalProperties": false,
         "properties": {
           "area_m2": {
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Area M2",
             "type": "number"
           },
@@ -24,7 +24,7 @@
             "$ref": "#/components/schemas/LonLat"
           },
           "height_m": {
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Height M",
             "type": "number"
           },
@@ -37,7 +37,7 @@
             "type": "string"
           },
           "width_m": {
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Width M",
             "type": "number"
           }
@@ -77,14 +77,14 @@
         "properties": {
           "duration_minutes": {
             "default": 60,
-            "maximum": 10080.0,
-            "minimum": 1.0,
+            "maximum": 10080,
+            "minimum": 1,
             "title": "Duration Minutes",
             "type": "integer"
           },
           "intensity_mm_per_h": {
-            "maximum": 500.0,
-            "minimum": 0.0,
+            "maximum": 500,
+            "minimum": 0,
             "title": "Intensity Mm Per H",
             "type": "number"
           },
@@ -188,8 +188,8 @@
             "title": "Converted"
           },
           "lat": {
-            "maximum": 90.0,
-            "minimum": -90.0,
+            "maximum": 90,
+            "minimum": -90,
             "title": "Lat",
             "type": "number"
           },
@@ -205,8 +205,8 @@
             "title": "Level"
           },
           "lon": {
-            "maximum": 180.0,
-            "minimum": -180.0,
+            "maximum": 180,
+            "minimum": -180,
             "title": "Lon",
             "type": "number"
           },
@@ -356,14 +356,14 @@
         "additionalProperties": false,
         "properties": {
           "lat_deg": {
-            "maximum": 90.0,
-            "minimum": -90.0,
+            "maximum": 90,
+            "minimum": -90,
             "title": "Lat Deg",
             "type": "number"
           },
           "lon_deg": {
-            "maximum": 180.0,
-            "minimum": -180.0,
+            "maximum": 180,
+            "minimum": -180,
             "title": "Lon Deg",
             "type": "number"
           }
@@ -379,7 +379,7 @@
         "additionalProperties": false,
         "properties": {
           "column": {
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Column",
             "type": "integer"
           },
@@ -410,14 +410,14 @@
             "type": "boolean"
           },
           "lat_deg": {
-            "maximum": 90.0,
-            "minimum": -90.0,
+            "maximum": 90,
+            "minimum": -90,
             "title": "Lat Deg",
             "type": "number"
           },
           "lon_deg": {
-            "maximum": 180.0,
-            "minimum": -180.0,
+            "maximum": 180,
+            "minimum": -180,
             "title": "Lon Deg",
             "type": "number"
           },
@@ -435,7 +435,7 @@
           "max_time_index": {
             "anyOf": [
               {
-                "minimum": 0.0,
+                "minimum": 0,
                 "type": "integer"
               },
               {
@@ -456,7 +456,7 @@
             "title": "Max Time Value"
           },
           "row": {
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Row",
             "type": "integer"
           },
@@ -474,7 +474,7 @@
           "time_index": {
             "anyOf": [
               {
-                "minimum": 0.0,
+                "minimum": 0,
                 "type": "integer"
               },
               {
@@ -520,7 +520,7 @@
             "type": "array"
           },
           "duration_minutes": {
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Duration Minutes",
             "type": "integer"
           },
@@ -540,7 +540,7 @@
             "type": "string"
           },
           "intensity_mm_per_h": {
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Intensity Mm Per H",
             "type": "number"
           },
@@ -562,8 +562,8 @@
           "rank": {
             "anyOf": [
               {
-                "maximum": 10.0,
-                "minimum": 1.0,
+                "maximum": 10,
+                "minimum": 1,
                 "type": "integer"
               },
               {
@@ -581,14 +581,14 @@
             "type": "string"
           },
           "station_lat_deg": {
-            "maximum": 90.0,
-            "minimum": -90.0,
+            "maximum": 90,
+            "minimum": -90,
             "title": "Station Lat Deg",
             "type": "number"
           },
           "station_lon_deg": {
-            "maximum": 180.0,
-            "minimum": -180.0,
+            "maximum": 180,
+            "minimum": -180,
             "title": "Station Lon Deg",
             "type": "number"
           },
@@ -597,7 +597,7 @@
             "type": "string"
           },
           "total_precipitation_mm": {
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Total Precipitation Mm",
             "type": "number"
           }
@@ -646,7 +646,7 @@
           "distance_km": {
             "anyOf": [
               {
-                "minimum": 0.0,
+                "minimum": 0,
                 "type": "number"
               },
               {
@@ -656,14 +656,14 @@
             "title": "Distance Km"
           },
           "lat_deg": {
-            "maximum": 90.0,
-            "minimum": -90.0,
+            "maximum": 90,
+            "minimum": -90,
             "title": "Lat Deg",
             "type": "number"
           },
           "lon_deg": {
-            "maximum": 180.0,
-            "minimum": -180.0,
+            "maximum": 180,
+            "minimum": -180,
             "title": "Lon Deg",
             "type": "number"
           },
@@ -816,7 +816,7 @@
           "max_m": {
             "anyOf": [
               {
-                "exclusiveMinimum": 0.0,
+                "exclusiveMinimum": 0,
                 "type": "number"
               },
               {
@@ -826,7 +826,7 @@
             "title": "Max M"
           },
           "min_m": {
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Min M",
             "type": "number"
           }
@@ -912,6 +912,11 @@
           },
           "engine_summary": {
             "$ref": "#/components/schemas/ResultEngineSummary"
+          },
+          "flow_vectors_available": {
+            "default": false,
+            "title": "Flow Vectors Available",
+            "type": "boolean"
           },
           "grid_level_summary": {
             "additionalProperties": {
@@ -1166,6 +1171,18 @@
       "RunStatusResponse": {
         "additionalProperties": false,
         "properties": {
+          "estimated_remaining_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Remaining Seconds"
+          },
           "failure_code": {
             "anyOf": [
               {
@@ -1187,6 +1204,19 @@
               }
             ],
             "title": "Failure Message"
+          },
+          "progress_fraction": {
+            "anyOf": [
+              {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Fraction"
           },
           "run_id": {
             "format": "uuid",
@@ -1833,6 +1863,66 @@
           }
         },
         "summary": "Time Depth Layer",
+        "tags": [
+          "results"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/layers/flow-vectors.png": {
+      "get": {
+        "operationId": "flow_vectors_layer_api_v1_runs__run_id__layers_flow_vectors_png_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "time_index",
+            "required": true,
+            "schema": {
+              "title": "Time Index",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_px",
+            "required": false,
+            "schema": {
+              "default": 4096,
+              "title": "Max Px",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Flow Vectors Layer",
         "tags": [
           "results"
         ]
