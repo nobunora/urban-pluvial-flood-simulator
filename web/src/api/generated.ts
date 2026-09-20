@@ -693,6 +693,8 @@ export interface components {
             failure_code?: string | null;
             /** Failure Message */
             failure_message?: string | null;
+            /** Progress Detail */
+            progress_detail?: string | null;
             /** Progress Fraction */
             progress_fraction?: number | null;
             /**
