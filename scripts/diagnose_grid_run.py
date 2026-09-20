@@ -32,7 +32,7 @@ def _default_runs_root() -> Path:
 def _load_json(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError(f"{path.name} root must be an object")
+        raise TypeError(f"{path.name} root must be an object")
     return payload
 
 
@@ -46,7 +46,7 @@ def _load_vectors(source_refs: Path) -> SimpleNamespace:
     manifest = _load_json(source_refs / "vectors_manifest.json")
     provenance_payload = manifest.get("provenance")
     if not isinstance(provenance_payload, dict):
-        raise ValueError("vectors_manifest.json is missing provenance")
+        raise TypeError("vectors_manifest.json is missing provenance")
 
     buildings = _load_object_arrays(source_refs / "buildings.npz", "buildings")
     with np.load(source_refs / "basemap_vectors.npz", allow_pickle=True) as archive:
@@ -107,7 +107,7 @@ def main() -> None:
 
     try:
         grid = build_full_1m_grid(config.analysis_area, elevation, vectors)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         diagnostic.update(
             {
                 "result": "FAILED",
