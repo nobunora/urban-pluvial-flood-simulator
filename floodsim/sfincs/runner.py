@@ -78,6 +78,14 @@ def parse_sfincs_progress_line(line: str) -> SfincsProgress | None:
     return SfincsProgress(fraction, remaining)
 
 
+def sfincs_process_environment(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Return the SFINCS child environment with all logical CPUs requested."""
+    env = dict(os.environ if base is None else base)
+    env["OMP_NUM_THREADS"] = str(max(1, os.cpu_count() or 1))
+    env["OMP_DYNAMIC"] = "FALSE"
+    return env
+
+
 def sha256_file(path: str | Path) -> str:
     digest = hashlib.sha256()
     with Path(path).open("rb") as handle:
@@ -155,10 +163,7 @@ class SfincsRunner:
         resolved = engine or resolve_sfincs_executable()
         started = time.monotonic()
 
-        thread_count = max(1, os.cpu_count() or 1)
-        process_env = os.environ.copy()
-        process_env["OMP_NUM_THREADS"] = str(thread_count)
-        process_env["OMP_DYNAMIC"] = "FALSE"
+        process_env = sfincs_process_environment()
 
         process = subprocess.Popen(
             [str(resolved.executable)],
