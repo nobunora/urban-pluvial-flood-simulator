@@ -106,30 +106,31 @@ Codex must not duplicate these checks merely to compensate for missing local dep
 
 ## Current local-review status
 
-Latest Windows validation established substantially more than the earlier provider-only checks:
+Latest Windows validation on `017d3c0686490acfc55d20906d22434fd8c5de7e` proved the finalized result-reader policies against the previous real SFINCS artifact:
 
-- environment/bootstrap, Node.js 24, local UI, estimate and Adaptive rejection: PASS;
-- cancellation during provider acquisition: repaired and Windows-revalidated to terminal persisted/UI `CANCELLED`;
-- the real Tokyo Station ±250 m Full 1 m run reached **SFINCS 2.4.0 Galibier**, return code **0**, with `Simulation finished` and empty stderr;
-- `sfincs_map.nc` was produced and is structurally readable by xarray with `time=2`, `timemax=1`, `n=500`, `m=500`, and the required regular-grid variables;
-- two remaining repository defects were exposed by that run:
-  1. PLATEAU's 20-second budget was not enforced while parsing already-downloaded/cached CityGML, so vector acquisition still took 89.349 s;
-  2. the result reader rejected a completed SFINCS file because most active `hmax` cells were NaN even though the corresponding `h` time series was finite.
+- previous `sfincs_map.nc` reader + normalizer: PASS;
+- raw minimum active depth: -0.0016127867 m;
+- one near-zero negative depth value clipped and audited;
+- 129,934 missing active `hmax` cells reconstructed;
+- normalized global max depth: 1.7509006262 m.
 
-Web has now repaired both:
+A fresh Tokyo Station Full 1 m run then exposed a new repository failure:
 
-- PLATEAU and OSM budgets cover cache/response parsing and geometry processing, with repeated monotonic deadline checks;
-- PLATEAU CityGML parsing accepts the same deadline and aborts with typed `ProviderTimeoutError` so the existing OSM fallback can run;
-- active cells with missing `hmax` are reconstructed from finite `h` time output, while infinite `hmax`, non-finite active `h`, non-finite terrain, and materially negative depths remain rejected;
-- the number of reconstructed `hmax` cells is recorded in normalized result metadata;
-- the previous real artifact then exposed exactly one active `h` sample at -0.0016127867 m;
-- Codex's temporary 1 cm clip was reviewed by Web against SFINCS 2.4.0 documentation: `twet_threshold` defaults to 0.01 m for flooded/wet classification;
-- Web retained the 0.01 m magnitude as an explicit dry-output normalization band, not as an arbitrary physics tolerance, and added metadata for clipped-value count and minimum raw active depth;
-- raw `sfincs_map.nc` remains unchanged and values below -0.01 m are still rejected.
+- vector acquisition improved from the former 89.349 s to 24.411 s;
+- PLATEAU completed; OSM fallback was not used;
+- run advanced through rainfall/terrain/roof stages;
+- `BUILDING_GRID` failed immediately with generic `INTERNAL_RUN_FAILED`;
+- no model/SFINCS files were created;
+- the old manifest contract discarded the underlying exception type/message.
 
-The newest exact deterministic CI result on the current head is authoritative once green.
+Web has now addressed every repository-side issue that can be fixed without the missing host exception:
 
-The next Codex cycle is now narrowly host-local: rerun the same real Windows case, verify vector-stage budget/fallback behavior, then confirm the already-proven SFINCS engine result now passes repository reading/normalization to `COMPLETE`.
+- manifest persists `failure_exception_type`, `failure_message`, and `failure_diagnostic_file`;
+- every unexpected worker failure writes `logs/failure_diagnostic.json` with stage, exception, traceback, elevation shape/range and vector provider/counts;
+- Full 1 m vector rasterization now skips ragged, non-numeric, non-finite and invalid individual geometry features rather than letting one malformed feature abort the grid;
+- `scripts/diagnose_grid_run.py <run-id>` replays only BUILDING_GRID from an existing run's persisted config/source refs plus the normal elevation cache, avoiding another vector/SFINCS cycle while isolating the grid defect.
+
+The next Codex cycle must first replay the previous failed run `f2dc662c-f445-4f6d-af75-223bb8c2f16c` with the diagnostic script. If it now passes, continue directly to one fresh end-to-end run. If it still fails, the new diagnostic contains the exact root cause; a tiny mechanical fix may be applied in the same cycle when permitted.
 
 ## Preserved validated history
 
