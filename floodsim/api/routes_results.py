@@ -17,6 +17,7 @@ from floodsim.results.view import (
     ResultViewError,
     inspect_native_point,
     load_normalized_arrays,
+    render_flow_vectors_png,
     render_grid_resolution_png,
     render_max_depth_png,
     render_time_depth_png,
@@ -85,6 +86,21 @@ def grid_resolution_layer(run_id: UUID, max_px: int = 4096) -> Response:
     arrays = _arrays_for_run(run_id)
     try:
         content = render_grid_resolution_png(arrays, max_px=max_px)
+    except ResultViewError as exc:
+        raise _map_result_error(exc) from exc
+    return Response(content=content, media_type="image/png")
+
+
+
+@router.get("/runs/{run_id}/layers/flow-vectors.png")
+def flow_vectors_layer(
+    run_id: UUID,
+    time_index: int,
+    max_px: int = 4096,
+) -> Response:
+    arrays = _arrays_for_run(run_id)
+    try:
+        content = render_flow_vectors_png(arrays, time_index=time_index, max_px=max_px)
     except ResultViewError as exc:
         raise _map_result_error(exc) from exc
     return Response(content=content, media_type="image/png")
