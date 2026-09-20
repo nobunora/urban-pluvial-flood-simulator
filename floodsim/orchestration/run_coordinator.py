@@ -364,49 +364,82 @@ class RunCoordinator:
             self._set_state(record, RunState.VALIDATING, "Full 1 m入力条件を検証しています。")
             self._check_cancel(record)
 
-            self._set_state(record, RunState.ACQUIRING_TERRAIN, "地理院標高タイルを取得しています。")
-            elevation = self.elevation_provider.acquire(
-                record.config.analysis_area,
-                grid_m=1.0,
-                cache_dir=run_root.parent.parent / "cache",
+            cache_entry = self.prepared_cache.load(record.config.analysis_area)
+            cache_hit = cache_entry is not None
+
+            self._set_state(
+                record,
+                RunState.ACQUIRING_TERRAIN,
+                "準備済み地図データを再利用しています。" if cache_hit else "地理院標高タイルを取得しています。",
             )
-            runtime_diagnostic["elevation"] = self._array_summary(elevation.z)
+            if cache_hit:
+                grid = cache_entry.grid
+                cache_metadata = cache_entry.metadata
+                runtime_diagnostic["prepared_grid_cache"] = {
+                    "hit": True,
+                    "key": cache_entry.key,
+                }
+            else:
+                elevation = self.elevation_provider.acquire(
+                    record.config.analysis_area,
+                    grid_m=1.0,
+                    cache_dir=run_root.parent.parent / "cache",
+                )
+                runtime_diagnostic["elevation"] = self._array_summary(elevation.z)
             self._check_cancel(record)
 
-            self._set_state(record, RunState.ACQUIRING_VECTORS, "PLATEAU優先で建物・道路を取得しています。")
-            vectors = self.vector_acquirer(
-                record.config.analysis_area,
-                mode="auto",
-                cache_dir=str(run_root.parent.parent / "cache"),
-                out_dir=str(run_root / "source_refs"),
-                plateau_budget_s=self.plateau_vector_budget_s,
-                osm_budget_s=self.osm_vector_budget_s,
-                cancel_event=record.cancel_event,
-            )
-            runtime_diagnostic["grid_input"] = self._grid_input_diagnostic(
+            self._set_state(
                 record,
-                elevation,
-                vectors,
+                RunState.ACQUIRING_VECTORS,
+                "準備済み建物・道路データを再利用しています。" if cache_hit else "PLATEAU優先で建物・道路を取得しています。",
             )
+            if not cache_hit:
+                vectors = self.vector_acquirer(
+                    record.config.analysis_area,
+                    mode="auto",
+                    cache_dir=str(run_root.parent.parent / "cache"),
+                    out_dir=str(run_root / "source_refs"),
+                    plateau_budget_s=self.plateau_vector_budget_s,
+                    osm_budget_s=self.osm_vector_budget_s,
+                    cancel_event=record.cancel_event,
+                )
+                runtime_diagnostic["grid_input"] = self._grid_input_diagnostic(
+                    record,
+                    elevation,
+                    vectors,
+                )
             self._check_cancel(record)
 
             self._set_state(record, RunState.ACQUIRING_RAINFALL, "降雨シナリオを時間系列へ変換しています。")
             rainfall = self.rainfall_resolver(record.config, self.catalog_provider)
             self._check_cancel(record)
 
-            self._set_state(record, RunState.PREPROCESSING_TERRAIN, "1 m地形配列を検証しています。")
+            self._set_state(
+                record,
+                RunState.PREPROCESSING_TERRAIN,
+                "準備済み1 m地形を再利用しています。" if cache_hit else "1 m地形配列を検証しています。",
+            )
             self._check_cancel(record)
-            self._set_state(record, RunState.ALLOCATING_ROOF_RAIN, "建物屋根の降雨量を周辺地表へ保存的に配分します。")
+            self._set_state(
+                record,
+                RunState.ALLOCATING_ROOF_RAIN,
+                "準備済み屋根雨水重みを再利用しています。" if cache_hit else "建物屋根の降雨量を周辺地表へ保存的に配分します。",
+            )
             self._check_cancel(record)
-            self._set_state(record, RunState.BUILDING_GRID, "Full 1 m格子・建物マスク・粗度を構築しています。")
-            grid = self.grid_builder(record.config.analysis_area, elevation, vectors)
+            self._set_state(
+                record,
+                RunState.BUILDING_GRID,
+                "準備済みFull 1 m格子を再利用しています。" if cache_hit else "Full 1 m格子・建物マスク・粗度を構築しています。",
+            )
 
-            elevation_details = elevation.provenance.source_details
-            vector_provenance = vectors.provenance
-            record.manifest = record.manifest.model_copy(
-                update={
-                    "projected_crs": grid.crs_wkt,
-                    "final_grid_level_counts": {"1m": grid.cell_count},
+            if cache_hit:
+                assert cache_entry is not None
+                cache_metadata = cache_entry.metadata
+            else:
+                grid = self.grid_builder(record.config.analysis_area, elevation, vectors)
+                elevation_details = elevation.provenance.source_details
+                vector_provenance = vectors.provenance
+                cache_metadata = {
                     "elevation_provider_counts": dict(elevation_details.get("provider_counts", {})),
                     "elevation_source_summary": {
                         "grid_m": 1.0,
@@ -416,6 +449,33 @@ class RunCoordinator:
                     "building_provider": vector_provenance.provider_id,
                     "road_provider": vector_provenance.provider_id,
                     "provider_warnings": list(vector_provenance.warnings),
+                }
+                saved_entry = self.prepared_cache.save(
+                    record.config.analysis_area,
+                    grid,
+                    metadata=cache_metadata,
+                )
+                runtime_diagnostic["prepared_grid_cache"] = {
+                    "hit": False,
+                    "key": saved_entry.key,
+                }
+
+            elevation_summary = dict(cache_metadata.get("elevation_source_summary", {}))
+            elevation_summary.update(
+                {
+                    "prepared_cache_hit": cache_hit,
+                    "prepared_cache_key": self.prepared_cache.key_for(record.config.analysis_area),
+                }
+            )
+            record.manifest = record.manifest.model_copy(
+                update={
+                    "projected_crs": grid.crs_wkt,
+                    "final_grid_level_counts": {"1m": grid.cell_count},
+                    "elevation_provider_counts": dict(cache_metadata.get("elevation_provider_counts", {})),
+                    "elevation_source_summary": elevation_summary,
+                    "building_provider": cache_metadata.get("building_provider"),
+                    "road_provider": cache_metadata.get("road_provider"),
+                    "provider_warnings": list(cache_metadata.get("provider_warnings", [])),
                     "rainfall_source": dict(rainfall.source_metadata),
                     "roof_rain_mass_diagnostic": {
                         "relative_error": grid.roof_allocation.relative_mass_error,
@@ -448,12 +508,29 @@ class RunCoordinator:
             self._set_state(record, RunState.RUNNING_ENGINE, "SFINCSを実行しています。")
             runner = self.runner_factory()
             record.runner = runner
+            engine_started = time.monotonic()
+
+            def update_engine_progress(progress: SfincsProgress) -> None:
+                elapsed = max(0.0, time.monotonic() - engine_started)
+                remaining = None
+                if progress.fraction > 0.0:
+                    estimated_total = elapsed / progress.fraction
+                    remaining = max(0.0, estimated_total - elapsed)
+                with record.lock:
+                    record.progress_fraction = progress.fraction
+                    record.estimated_remaining_seconds = remaining
+
             execution = runner.run(
                 build.model_dir,
                 logs_dir=run_root / "logs",
                 engine=engine,
                 cancel_event=record.cancel_event,
+                progress_callback=update_engine_progress,
             )
+            with record.lock:
+                record.progress_fraction = 1.0
+                record.estimated_remaining_seconds = 0.0
+            runtime_diagnostic["sfincs_elapsed_seconds"] = execution.elapsed_seconds
             record.runner = None
             self._check_cancel(record)
 
