@@ -161,17 +161,24 @@ def test_osm_rectangular_parsing_and_provenance(tmp_path):
     building_ll = [to_ll.transform(x, y) for x, y in ((-15, -5), (-15, 5), (15, 5), (15, -5), (-15, -5))]
     road_ll = [to_ll.transform(x, y) for x, y in ((-20, 0), (20, 0))]
     tiny_ll = [to_ll.transform(x, y) for x, y in ((1.0, 1.0), (1.0, 1.2), (1.2, 1.2), (1.2, 1.0), (1.0, 1.0))]
+    relation_ll = [to_ll.transform(x, y) for x, y in ((-2.0, 1.0), (-2.0, 1.3), (-1.7, 1.3), (-1.7, 1.0), (-2.0, 1.0))]
     payload = {"elements": [
         {"type": "way", "id": 1, "tags": {"building": "yes"}, "geometry": [{"lon": lon, "lat": lat} for lon, lat in building_ll]},
         {"type": "way", "id": 2, "tags": {"highway": "residential"}, "geometry": [{"lon": lon, "lat": lat} for lon, lat in road_ll]},
         {"type": "way", "id": 3, "tags": {"building:part": "yes"}, "geometry": [{"lon": lon, "lat": lat} for lon, lat in tiny_ll]},
+        {"type": "relation", "id": 4, "tags": {"building": "yes"}, "members": [
+            {"type": "way", "role": "outer", "geometry": [{"lon": lon, "lat": lat} for lon, lat in relation_ll]}
+        ]},
     ]}
     session = Session([Response(payload=payload)])
     result = OsmProvider(session=session).acquire(
         area, cache_dir=tmp_path, acquired_at_utc="2026-09-02T00:00:00+00:00"
     )
-    assert len(result.buildings) == 2
-    assert 'way["building:part"]' in session.calls[0][2]["data"]["data"]
+    assert len(result.buildings) == 3
+    query = session.calls[0][2]["data"]["data"]
+    assert 'way["building:part"]' in query
+    assert 'relation["building"]' in query
+    assert 'relation["building:part"]' in query
     assert len(result.road_lines) == 1
     assert result.provenance.provider_id == "osm"
     assert result.provenance.attribution == "© OpenStreetMap contributors"
@@ -213,7 +220,9 @@ def test_auto_fallback_is_disclosed_and_unexpected_errors_do_not_fallback():
     osm = FakeOsm(osm_result)
     with pytest.raises(RuntimeError):
         acquire_vectors(rectangle(), "auto", plateau=plateau, osm=osm)
-    assert osm.calls == 0
+    # Auto mode starts PLATEAU and the OSM completeness supplement concurrently,
+    # but an unexpected PLATEAU defect still propagates instead of silently falling back.
+    assert osm.calls == 1
 
     plateau = FakePlateau(ProviderParseError("catalog malformed"))
     osm = FakeOsm(osm_result)
@@ -249,6 +258,50 @@ def test_auto_supplements_plateau_buildings_with_osm() -> None:
     assert result.provenance.provider_id == "plateau+osm"
     assert result.provenance.source_details["osm_supplement"]["building_polygons"] == 1
     assert "supplement" in result.provenance.warnings[-1].lower()
+
+
+def test_auto_vector_progress_reports_provider_work() -> None:
+    plateau_result = PlateauVectors(
+        buildings=[np.asarray([[-2.0, -2.0], [-2.0, -1.0], [-1.0, -1.0], [-1.0, -2.0], [-2.0, -2.0]])],
+        road_lines=[],
+        road_polygons=[],
+        provenance=provenance("plateau"),
+    )
+    osm_result = OsmVectors(
+        [np.asarray([[1.0, 1.0], [1.0, 1.2], [1.2, 1.2], [1.2, 1.0], [1.0, 1.0]])],
+        [],
+        provenance("osm"),
+    )
+
+    class ProgressPlateau(FakePlateau):
+        def acquire(self, *args, **kwargs):
+            callback = kwargs.get("progress_callback")
+            if callback is not None:
+                callback(0.5, "PLATEAU 1/2ファイル処理済み / 残り1ファイル")
+                callback(1.0, "PLATEAU取得完了")
+            return super().acquire(*args, **kwargs)
+
+    class ProgressOsm(FakeOsm):
+        def acquire(self, *args, **kwargs):
+            callback = kwargs.get("progress_callback")
+            if callback is not None:
+                callback(0.5, "OSM 50/100要素処理済み / 残り50要素")
+                callback(1.0, "OSM取得完了")
+            return super().acquire(*args, **kwargs)
+
+    updates: list[tuple[float, str]] = []
+    result = acquire_vectors(
+        rectangle(),
+        "auto",
+        plateau=ProgressPlateau(plateau_result),
+        osm=ProgressOsm(osm_result),
+        progress_callback=lambda fraction, message: updates.append((fraction, message)),
+    )
+
+    assert result.provenance.provider_id == "plateau+osm"
+    assert any("残り1ファイル" in message for _, message in updates)
+    assert any("残り50要素" in message for _, message in updates)
+    assert updates[-1][0] == pytest.approx(1.0)
 
 
 def test_osm_vectors_expose_empty_road_polygon_contract():
@@ -303,6 +356,7 @@ def test_vector_auto_fallback_preserves_budgets_and_skips_fallback_on_cancel():
             osm_budget_s=30.0,
             cancel_event=CancelEvent(),
         )
+    assert plateau.calls == 0
     assert osm.calls == 0
 
 
