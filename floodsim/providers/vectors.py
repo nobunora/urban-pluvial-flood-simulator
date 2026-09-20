@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from threading import Event
@@ -72,6 +74,7 @@ def acquire_vectors(
     plateau_budget_s: float | None = None,
     osm_budget_s: float | None = None,
     cancel_event: Event | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> PlateauVectors | OsmVectors:
     if mode not in {"auto", "plateau", "osm"}:
         raise ValueError("mode must be auto, plateau, or osm")
@@ -86,6 +89,7 @@ def acquire_vectors(
             margin_m,
             acquired_at_utc,
             time_budget_s=osm_budget_s,
+            progress_callback=progress_callback,
         )
     if mode == "plateau":
         return plateau_provider.acquire(
@@ -95,35 +99,88 @@ def acquire_vectors(
             margin_m,
             acquired_at_utc,
             time_budget_s=plateau_budget_s,
+            progress_callback=progress_callback,
         )
 
-    try:
-        plateau_result = plateau_provider.acquire(
+    plateau_progress = 0.0
+    osm_progress = 0.0
+
+    def emit_combined_progress(provider: str, fraction: float, message: str) -> None:
+        nonlocal plateau_progress, osm_progress
+        bounded = max(0.0, min(1.0, fraction))
+        if provider == "plateau":
+            plateau_progress = bounded
+        else:
+            osm_progress = bounded
+        if progress_callback is not None:
+            combined_fraction = 0.5 * plateau_progress + 0.5 * osm_progress
+            progress_callback(combined_fraction, message)
+
+    def acquire_plateau() -> PlateauVectors:
+        return plateau_provider.acquire(
             area,
             cache_dir,
             None,
             margin_m,
             acquired_at_utc,
             time_budget_s=plateau_budget_s,
+            progress_callback=lambda fraction, message: emit_combined_progress(
+                "plateau", fraction, message
+            ),
         )
-    except ProviderError as plateau_error:
-        if cancel_event is not None and cancel_event.is_set():
-            raise
+
+    def acquire_osm() -> OsmVectors:
+        return osm_provider.acquire(
+            area,
+            cache_dir,
+            None,
+            margin_m,
+            acquired_at_utc,
+            time_budget_s=osm_budget_s,
+            progress_callback=lambda fraction, message: emit_combined_progress(
+                "osm", fraction, message
+            ),
+        )
+
+    if progress_callback is not None:
+        progress_callback(0.0, "PLATEAU優先 + OSM補完を並行取得開始")
+
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="vector-acquire") as executor:
+        plateau_future = executor.submit(acquire_plateau)
+        osm_future = executor.submit(acquire_osm)
+        plateau_error: ProviderError | None = None
+        osm_error: ProviderError | None = None
+
         try:
-            osm_result = osm_provider.acquire(
-                area,
-                cache_dir,
-                None,
-                margin_m,
-                acquired_at_utc,
-                time_budget_s=osm_budget_s,
-            )
-        except ProviderError as osm_error:
+            plateau_result = plateau_future.result()
+        except ProviderError as exc:
+            plateau_result = None
+            plateau_error = exc
+
+        if cancel_event is not None and cancel_event.is_set():
+            osm_future.cancel()
+            if plateau_error is not None:
+                raise plateau_error
+            assert plateau_result is not None
+            _write_result(plateau_result, out_dir)
+            return plateau_result
+
+        try:
+            osm_result = osm_future.result()
+        except ProviderError as exc:
+            osm_result = None
+            osm_error = exc
+
+    if plateau_result is None:
+        if osm_result is None:
+            assert plateau_error is not None
+            assert osm_error is not None
             raise ProviderUnavailableError(
                 "PLATEAU and OSM vector acquisition failed: "
                 f"PLATEAU [{type(plateau_error).__name__}] {plateau_error}; "
                 f"OSM [{type(osm_error).__name__}] {osm_error}"
             ) from osm_error
+        assert plateau_error is not None
         warning = (
             f"PLATEAU unavailable ({type(plateau_error).__name__}: {plateau_error}); "
             "used OSM fallback."
@@ -141,22 +198,12 @@ def acquire_vectors(
             },
         )
         _write_result(osm_result, out_dir)
+        if progress_callback is not None:
+            progress_callback(1.0, "OSM fallback取得完了")
         return osm_result
 
-    if cancel_event is not None and cancel_event.is_set():
-        _write_result(plateau_result, out_dir)
-        return plateau_result
-
-    try:
-        osm_supplement = osm_provider.acquire(
-            area,
-            cache_dir,
-            None,
-            margin_m,
-            acquired_at_utc,
-            time_budget_s=osm_budget_s,
-        )
-    except ProviderError as osm_error:
+    if osm_result is None:
+        assert osm_error is not None
         supplement_warning = (
             "OSM small-building supplement unavailable "
             f"({type(osm_error).__name__}: {osm_error}); using PLATEAU only."
@@ -177,8 +224,15 @@ def acquire_vectors(
             },
         )
         _write_result(plateau_result, out_dir)
+        if progress_callback is not None:
+            progress_callback(1.0, "PLATEAU取得完了 / OSM補完なし")
         return plateau_result
 
-    combined = _supplement_plateau_with_osm(plateau_result, osm_supplement)
+    combined = _supplement_plateau_with_osm(plateau_result, osm_result)
     _write_result(combined, out_dir)
+    if progress_callback is not None:
+        progress_callback(
+            1.0,
+            f"建物・道路取得完了 / PLATEAU + OSM / 建物{len(combined.buildings)}件",
+        )
     return combined
