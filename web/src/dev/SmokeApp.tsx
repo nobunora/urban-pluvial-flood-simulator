@@ -13,6 +13,7 @@ import {
   type RunStatusResponse,
 } from "../api/client";
 import ResultPanel from "../result/ResultPanel";
+import LocationSearch from "./LocationSearch";
 import RunProgress from "./RunProgress";
 import SetupMap from "./SetupMap";
 import "./smoke.css";
@@ -250,6 +251,10 @@ export default function SmokeApp() {
         <section className="smoke-grid">
           <div className="smoke-card">
             <h2>1. 条件</h2>
+            <LocationSearch disabled={setupLocked} onSelect={updateLocation} />
+            <div className="location-manual-divider">
+              <span>または緯度経度を直接入力</span>
+            </div>
             <label>
               緯度
               <input
