@@ -152,6 +152,32 @@ class ResourceEstimateResponse(BaseModel):
     warnings: list[str]
 
 
+class ResultDepthLegendItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    min_m: float = Field(ge=0)
+    max_m: float | None = Field(default=None, gt=0)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class ResultProviderSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    building_provider: str | None = None
+    road_provider: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ResultEngineSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sfincs_version: str | None = None
+    sfincs_build_sha256: str | None = None
+    sfincs_engine_source: str | None = None
+    hydromt_sfincs_version: str | None = None
+
+
 class ResultMetadataResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -162,8 +188,27 @@ class ResultMetadataResponse(BaseModel):
     time_values: list[str]
     max_depth_summary: dict[str, float]
     grid_level_summary: dict[str, int]
+    depth_legend: list[ResultDepthLegendItem] = Field(default_factory=list)
+    provider_summary: ResultProviderSummary = Field(default_factory=ResultProviderSummary)
+    engine_summary: ResultEngineSummary = Field(default_factory=ResultEngineSummary)
     no_data_policy: str
     limitations: dict[str, bool]
+
+
+class PointInspectionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lon_deg: float = Field(ge=-180, le=180)
+    lat_deg: float = Field(ge=-90, le=90)
+    has_data: bool
+    row: int = Field(ge=0)
+    column: int = Field(ge=0)
+    time_index: int | None = Field(default=None, ge=0)
+    time_value: str | None = None
+    depth_m: float | None = None
+    max_depth_m: float | None = None
+    terrain_elevation_m: float | None = None
+    grid_resolution_m: float | None = None
 
 
 class RunEventResponse(BaseModel):
