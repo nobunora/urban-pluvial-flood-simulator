@@ -3,6 +3,7 @@ import {
   Map as MapLibreMap,
   Marker,
   NavigationControl,
+  type ImageSource,
   type MapMouseEvent,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -10,11 +11,14 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { ResultMetadataResponse } from "../api/client";
 import { resultBounds, resultImageCoordinates } from "./resultGeometry";
 
+const TRANSPARENT_PIXEL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+Xo6kWQAAAABJRU5ErkJggg==";
+
 type Props = {
   metadata: ResultMetadataResponse;
   imageUrl: string;
   flowImageUrl: string | null;
-  overlayOpacity: number;
+  backgroundOpacity: number;
   mapLabel: string;
   onInspect: (lon: number, lat: number) => void;
 };
@@ -23,7 +27,7 @@ export default function ResultMap({
   metadata,
   imageUrl,
   flowImageUrl,
-  overlayOpacity,
+  backgroundOpacity,
   mapLabel,
   onInspect,
 }: Props) {
@@ -31,8 +35,9 @@ export default function ResultMap({
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
   const inspectRef = useRef(onInspect);
-  const opacityRef = useRef(overlayOpacity);
-  opacityRef.current = overlayOpacity;
+  const initialImageUrlRef = useRef(imageUrl);
+  const initialFlowUrlRef = useRef(flowImageUrl ?? TRANSPARENT_PIXEL);
+  const initialBackgroundOpacityRef = useRef(backgroundOpacity);
 
   useEffect(() => {
     inspectRef.current = onInspect;
@@ -41,6 +46,7 @@ export default function ResultMap({
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const coordinates = resultImageCoordinates(metadata.bounds);
     const map = new MapLibreMap({
       container: containerRef.current,
       style: {
@@ -51,6 +57,16 @@ export default function ResultMap({
             tiles: ["https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png"],
             tileSize: 256,
             attribution: "国土地理院",
+          },
+          "result-overlay": {
+            type: "image",
+            url: initialImageUrlRef.current,
+            coordinates,
+          },
+          "flow-overlay": {
+            type: "image",
+            url: initialFlowUrlRef.current,
+            coordinates,
           },
           "analysis-boundary": {
             type: "geojson",
@@ -75,6 +91,27 @@ export default function ResultMap({
             id: "gsi",
             type: "raster",
             source: "gsi",
+            paint: {
+              "raster-opacity": initialBackgroundOpacityRef.current,
+            },
+          },
+          {
+            id: "result-overlay",
+            type: "raster",
+            source: "result-overlay",
+            paint: {
+              "raster-opacity": 1,
+              "raster-fade-duration": 0,
+            },
+          },
+          {
+            id: "flow-overlay",
+            type: "raster",
+            source: "flow-overlay",
+            paint: {
+              "raster-opacity": flowImageUrl ? 1 : 0,
+              "raster-fade-duration": 0,
+            },
           },
           {
             id: "analysis-boundary-fill",
@@ -123,85 +160,57 @@ export default function ResultMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-
-    const replaceResult = () => {
-      if (map.getLayer("result-overlay")) map.removeLayer("result-overlay");
-      if (map.getSource("result-overlay")) map.removeSource("result-overlay");
-      map.addSource("result-overlay", {
-        type: "image",
+    const update = () => {
+      const source = map.getSource("result-overlay") as ImageSource | undefined;
+      source?.updateImage({
         url: imageUrl,
         coordinates: resultImageCoordinates(metadata.bounds),
       });
-      map.addLayer(
-        {
-          id: "result-overlay",
-          type: "raster",
-          source: "result-overlay",
-          paint: {
-            "raster-opacity": opacityRef.current,
-          },
-        },
-        "analysis-boundary-fill",
-      );
       map.triggerRepaint();
     };
-
-    if (map.isStyleLoaded()) {
-      replaceResult();
-      return;
-    }
-    map.once("load", replaceResult);
+    if (map.isStyleLoaded()) update();
+    else map.once("load", update);
     return () => {
-      map.off("load", replaceResult);
+      map.off("load", update);
     };
-  }, [imageUrl, metadata]);
+  }, [imageUrl, metadata.bounds]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-
-    const replaceFlow = () => {
-      if (map.getLayer("flow-overlay")) map.removeLayer("flow-overlay");
-      if (map.getSource("flow-overlay")) map.removeSource("flow-overlay");
-      if (!flowImageUrl) {
-        map.triggerRepaint();
-        return;
-      }
-      map.addSource("flow-overlay", {
-        type: "image",
-        url: flowImageUrl,
+    const update = () => {
+      const source = map.getSource("flow-overlay") as ImageSource | undefined;
+      source?.updateImage({
+        url: flowImageUrl ?? TRANSPARENT_PIXEL,
         coordinates: resultImageCoordinates(metadata.bounds),
       });
-      map.addLayer(
-        {
-          id: "flow-overlay",
-          type: "raster",
-          source: "flow-overlay",
-          paint: {
-            "raster-opacity": 0.95,
-          },
-        },
-        "analysis-boundary-fill",
-      );
+      if (map.getLayer("flow-overlay")) {
+        map.setPaintProperty("flow-overlay", "raster-opacity", flowImageUrl ? 1 : 0);
+      }
       map.triggerRepaint();
     };
-
-    if (map.isStyleLoaded()) {
-      replaceFlow();
-      return;
-    }
-    map.once("load", replaceFlow);
+    if (map.isStyleLoaded()) update();
+    else map.once("load", update);
     return () => {
-      map.off("load", replaceFlow);
+      map.off("load", update);
     };
-  }, [flowImageUrl, metadata]);
+  }, [flowImageUrl, metadata.bounds]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.getLayer("result-overlay")) return;
-    map.setPaintProperty("result-overlay", "raster-opacity", overlayOpacity);
-    map.triggerRepaint();
-  }, [overlayOpacity]);
+    if (!map) return;
+    const update = () => {
+      if (map.getLayer("gsi")) {
+        map.setPaintProperty("gsi", "raster-opacity", backgroundOpacity);
+      }
+      map.triggerRepaint();
+    };
+    if (map.isStyleLoaded()) update();
+    else map.once("load", update);
+    return () => {
+      map.off("load", update);
+    };
+  }, [backgroundOpacity]);
 
   return (
     <div
