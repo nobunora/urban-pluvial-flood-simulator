@@ -36,15 +36,18 @@ def normalize_regular_result(
     root = Path(results_dir)
     root.mkdir(parents=True, exist_ok=True)
     arrays_path = root / "normalized_full_1m.npz"
-    np.savez_compressed(
-        arrays_path,
-        depth_time_m=result.depth_time_m,
-        max_depth_m=result.max_depth_m,
-        terrain_elevation_m=result.terrain_elevation_m,
-        active_mask=result.active_mask,
-        time_values=np.asarray(result.time_values),
-        grid_resolution_m=np.float32(1.0),
-    )
+    arrays_payload: dict[str, Any] = {
+        "depth_time_m": result.depth_time_m,
+        "max_depth_m": result.max_depth_m,
+        "terrain_elevation_m": result.terrain_elevation_m,
+        "active_mask": result.active_mask,
+        "time_values": np.asarray(result.time_values),
+        "grid_resolution_m": np.float32(1.0),
+    }
+    if result.flow_vectors_available:
+        arrays_payload["velocity_u_mps"] = result.velocity_u_mps
+        arrays_payload["velocity_v_mps"] = result.velocity_v_mps
+    np.savez_compressed(arrays_path, **arrays_payload)
     metadata = {
         "schema_version": "1",
         "bounds": area.bounds.model_dump(),
@@ -55,6 +58,7 @@ def normalize_regular_result(
         },
         "available_time_indices": list(range(len(result.time_values))),
         "time_values": list(result.time_values),
+        "flow_vectors_available": result.flow_vectors_available,
         "max_depth_summary": {
             "global_max_depth_m": result.global_max_depth_m,
             "hmax_reconstructed_cells": result.hmax_reconstructed_cells,
