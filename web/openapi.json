@@ -1171,6 +1171,13 @@
       "RunStatusResponse": {
         "additionalProperties": false,
         "properties": {
+          "activity_lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Activity Lines",
+            "type": "array"
+          },
           "estimated_remaining_seconds": {
             "anyOf": [
               {
