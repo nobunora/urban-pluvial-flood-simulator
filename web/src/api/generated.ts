@@ -685,6 +685,8 @@ export interface components {
         RunState: "CREATED" | "VALIDATING" | "ACQUIRING_TERRAIN" | "ACQUIRING_VECTORS" | "ACQUIRING_RAINFALL" | "PREPROCESSING_TERRAIN" | "ALLOCATING_ROOF_RAIN" | "BUILDING_GRID" | "BUILDING_MODEL" | "ENSURING_ENGINE" | "RUNNING_ENGINE" | "READING_RESULTS" | "COMPLETE" | "FAILED" | "CANCELLING" | "CANCELLED";
         /** RunStatusResponse */
         RunStatusResponse: {
+            /** Activity Lines */
+            activity_lines?: string[];
             /** Estimated Remaining Seconds */
             estimated_remaining_seconds?: number | null;
             /** Failure Code */
