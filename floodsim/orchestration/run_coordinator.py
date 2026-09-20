@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import traceback
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+import numpy as np
 from platformdirs import user_data_path
 
 from floodsim import __version__
@@ -270,8 +272,75 @@ class RunCoordinator:
         with record.lock:
             return [event for event in record.events if event.sequence > sequence]
 
+    @staticmethod
+    def _array_summary(values: Any) -> dict[str, Any]:
+        array = np.asarray(values)
+        summary: dict[str, Any] = {
+            "shape": list(array.shape),
+            "dtype": str(array.dtype),
+            "size": int(array.size),
+        }
+        if array.size and np.issubdtype(array.dtype, np.number):
+            finite = np.isfinite(array)
+            summary["finite_values"] = int(np.count_nonzero(finite))
+            summary["nonfinite_values"] = int(array.size - np.count_nonzero(finite))
+            if np.any(finite):
+                summary["finite_min"] = float(np.min(array[finite]))
+                summary["finite_max"] = float(np.max(array[finite]))
+        return summary
+
+    @classmethod
+    def _grid_input_diagnostic(
+        cls,
+        record: RunRecord,
+        elevation: Any,
+        vectors: Any,
+    ) -> dict[str, Any]:
+        provenance = getattr(vectors, "provenance", None)
+        return {
+            "analysis_area": {
+                "width_m": record.config.analysis_area.width_m,
+                "height_m": record.config.analysis_area.height_m,
+                "area_m2": record.config.analysis_area.area_m2,
+            },
+            "elevation": cls._array_summary(elevation.z),
+            "vectors": {
+                "provider_id": getattr(provenance, "provider_id", None),
+                "buildings": len(getattr(vectors, "buildings", [])),
+                "road_lines": len(getattr(vectors, "road_lines", [])),
+                "road_polygons": len(getattr(vectors, "road_polygons", [])),
+            },
+        }
+
+    def _persist_failure_diagnostic(
+        self,
+        record: RunRecord,
+        *,
+        failing_state: RunState,
+        exc: Exception,
+        runtime_diagnostic: dict[str, Any],
+    ) -> str | None:
+        payload = {
+            "run_id": str(record.run_id),
+            "stage": failing_state.value,
+            "exception_type": type(exc).__name__,
+            "message": str(exc),
+            "traceback": traceback.format_exc(),
+            "runtime": runtime_diagnostic,
+        }
+        try:
+            path = self.store.write_diagnostic(
+                record.run_id,
+                "failure_diagnostic.json",
+                payload,
+            )
+        except Exception:  # noqa: BLE001
+            return None
+        return str(path.relative_to(self.store.run_dir(record.run_id)))
+
     def _execute(self, record: RunRecord) -> None:
         run_root = self.store.ensure_run(record.run_id)
+        runtime_diagnostic: dict[str, Any] = {}
         try:
             self._set_state(record, RunState.VALIDATING, "Full 1 m入力条件を検証しています。")
             self._check_cancel(record)
@@ -282,6 +351,7 @@ class RunCoordinator:
                 grid_m=1.0,
                 cache_dir=run_root.parent.parent / "cache",
             )
+            runtime_diagnostic["elevation"] = self._array_summary(elevation.z)
             self._check_cancel(record)
 
             self._set_state(record, RunState.ACQUIRING_VECTORS, "PLATEAU優先で建物・道路を取得しています。")
@@ -293,6 +363,11 @@ class RunCoordinator:
                 plateau_budget_s=self.plateau_vector_budget_s,
                 osm_budget_s=self.osm_vector_budget_s,
                 cancel_event=record.cancel_event,
+            )
+            runtime_diagnostic["grid_input"] = self._grid_input_diagnostic(
+                record,
+                elevation,
+                vectors,
             )
             self._check_cancel(record)
 
@@ -395,13 +470,23 @@ class RunCoordinator:
                     failing_state = record.machine.state
                     record.machine.transition(RunState.FAILED)
                     code = str(getattr(exc, "code", "INTERNAL_RUN_FAILED"))
+                    message = str(exc) or type(exc).__name__
+                    diagnostic_file = self._persist_failure_diagnostic(
+                        record,
+                        failing_state=failing_state,
+                        exc=exc,
+                        runtime_diagnostic=runtime_diagnostic,
+                    )
                     record.failure_code = code
-                    record.failure_message = str(exc)
+                    record.failure_message = message
                     record.manifest = record.manifest.model_copy(
                         update={
                             "run_status": RunState.FAILED,
                             "failing_stage": failing_state.value,
                             "failure_code": code,
+                            "failure_exception_type": type(exc).__name__,
+                            "failure_message": message,
+                            "failure_diagnostic_file": diagnostic_file,
                         }
                     )
                     self._append_event(record, RunState.FAILED, "計算に失敗しました。")
