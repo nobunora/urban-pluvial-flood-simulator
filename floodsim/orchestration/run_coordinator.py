@@ -469,6 +469,16 @@ class RunCoordinator:
                     "sfincs_engine_source": record.manifest.sfincs_engine_source,
                     "hydromt_sfincs_version": record.manifest.hydromt_sfincs_version,
                 },
+                run_summary={
+                    "application_version": record.manifest.application_version,
+                    "requested_accuracy_mode": record.manifest.requested_accuracy_mode.value,
+                    "rainfall_source": dict(record.manifest.rainfall_source),
+                    "elevation_provider_counts": dict(record.manifest.elevation_provider_counts),
+                    "elevation_source_summary": dict(record.manifest.elevation_source_summary),
+                    "manning_defaults": dict(record.manifest.manning_defaults),
+                    "boundary_policy": record.manifest.boundary_policy,
+                    "roof_rain_mass_diagnostic": dict(record.manifest.roof_rain_mass_diagnostic),
+                },
             )
             record.result_metadata = normalized.metadata
             record.manifest = record.manifest.model_copy(
