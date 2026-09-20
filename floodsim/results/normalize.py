@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
 
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.domain.manifest import Limitations
-from floodsim.sfincs.output_reader import SfincsRegularResult
 from floodsim.results.view import depth_legend_metadata
+from floodsim.sfincs.output_reader import SfincsRegularResult
 from floodsim.storage.run_store import atomic_write_json
 
 
