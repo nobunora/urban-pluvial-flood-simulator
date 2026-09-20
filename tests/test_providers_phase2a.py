@@ -16,7 +16,7 @@ from floodsim.providers.common import (
 )
 from floodsim.providers.gsi_elevation import GsiElevationProvider
 from floodsim.providers.osm import OsmProvider, OsmVectors
-from floodsim.providers.plateau import PlateauProvider, extract_citygml
+from floodsim.providers.plateau import PlateauProvider, PlateauVectors, extract_citygml
 from floodsim.providers.vectors import acquire_vectors
 
 
@@ -160,14 +160,18 @@ def test_osm_rectangular_parsing_and_provenance(tmp_path):
     to_ll = Transformer.from_crs(local, CRS.from_epsg(4326), always_xy=True)
     building_ll = [to_ll.transform(x, y) for x, y in ((-15, -5), (-15, 5), (15, 5), (15, -5), (-15, -5))]
     road_ll = [to_ll.transform(x, y) for x, y in ((-20, 0), (20, 0))]
+    tiny_ll = [to_ll.transform(x, y) for x, y in ((1.0, 1.0), (1.0, 1.2), (1.2, 1.2), (1.2, 1.0), (1.0, 1.0))]
     payload = {"elements": [
         {"type": "way", "id": 1, "tags": {"building": "yes"}, "geometry": [{"lon": lon, "lat": lat} for lon, lat in building_ll]},
         {"type": "way", "id": 2, "tags": {"highway": "residential"}, "geometry": [{"lon": lon, "lat": lat} for lon, lat in road_ll]},
+        {"type": "way", "id": 3, "tags": {"building:part": "yes"}, "geometry": [{"lon": lon, "lat": lat} for lon, lat in tiny_ll]},
     ]}
-    result = OsmProvider(session=Session([Response(payload=payload)])).acquire(
+    session = Session([Response(payload=payload)])
+    result = OsmProvider(session=session).acquire(
         area, cache_dir=tmp_path, acquired_at_utc="2026-09-02T00:00:00+00:00"
     )
-    assert len(result.buildings) == 1
+    assert len(result.buildings) == 2
+    assert 'way["building:part"]' in session.calls[0][2]["data"]["data"]
     assert len(result.road_lines) == 1
     assert result.provenance.provider_id == "osm"
     assert result.provenance.attribution == "© OpenStreetMap contributors"
@@ -222,6 +226,29 @@ def test_auto_fallback_is_disclosed_and_unexpected_errors_do_not_fallback():
     osm = FakeOsm(ProviderUnavailableError("no buildings"))
     with pytest.raises(ProviderUnavailableError, match="PLATEAU.*OSM"):
         acquire_vectors(rectangle(), "auto", plateau=plateau, osm=osm)
+
+
+def test_auto_supplements_plateau_buildings_with_osm() -> None:
+    plateau_building = np.asarray([[-2.0, -2.0], [-2.0, -1.0], [-1.0, -1.0], [-1.0, -2.0], [-2.0, -2.0]])
+    osm_building = np.asarray([[1.0, 1.0], [1.0, 1.2], [1.2, 1.2], [1.2, 1.0], [1.0, 1.0]])
+    plateau_result = PlateauVectors(
+        buildings=[plateau_building],
+        road_lines=[],
+        road_polygons=[],
+        provenance=provenance("plateau"),
+    )
+    osm_result = OsmVectors([osm_building], [], provenance("osm"))
+
+    plateau = FakePlateau(plateau_result)
+    osm = FakeOsm(osm_result)
+    result = acquire_vectors(rectangle(), "auto", plateau=plateau, osm=osm)
+
+    assert plateau.calls == 1
+    assert osm.calls == 1
+    assert len(result.buildings) == 2
+    assert result.provenance.provider_id == "plateau+osm"
+    assert result.provenance.source_details["osm_supplement"]["building_polygons"] == 1
+    assert "supplement" in result.provenance.warnings[-1].lower()
 
 
 def test_osm_vectors_expose_empty_road_polygon_contract():
