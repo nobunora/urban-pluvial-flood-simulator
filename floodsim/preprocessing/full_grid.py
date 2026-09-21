@@ -251,4 +251,9 @@ def build_full_1m_grid(
         x0_m=-area.width_m / 2.0,
         y0_m=-area.height_m / 2.0,
         crs_wkt=crs.to_wkt(),
+        # Reuse the authoritative Full 1 m SFINCS mask as the immutable
+        # Adaptive boundary-zone source. This simultaneously preserves
+        # building boundaries (0/1) and the analysis-domain edge (1/3)
+        # without inventing a second boundary definition.
+        adaptive_hard_boundary_zone=sfincs_mask.astype(np.int32, copy=True),
     )
