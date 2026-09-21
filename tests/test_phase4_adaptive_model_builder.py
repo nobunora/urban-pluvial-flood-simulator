@@ -110,7 +110,7 @@ def test_adaptive_builder_writes_quadtree_subgrid_and_distributed_rainfall(
         assert "z_level" in dataset
 
     with xr.open_dataset(model_dir / "sfincs_netampr.nc") as dataset:
-        assert "precip" in dataset
-        assert dataset["precip"].dims == ("time", "y", "x")
+        assert "Precipitation" in dataset
+        assert dataset["Precipitation"].dims == ("time", "y", "x")
         assert dataset.sizes["x"] == full.width_cells
         assert dataset.sizes["y"] == full.height_cells
