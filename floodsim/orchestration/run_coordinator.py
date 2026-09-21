@@ -136,6 +136,7 @@ class RunRecord:
     activity_lines: list[str] = field(default_factory=list)
     started_monotonic: float = field(default_factory=time.monotonic)
     stage_started_monotonic: float = field(default_factory=time.monotonic)
+    major_phase_started_monotonic: float = field(default_factory=time.monotonic)
     lock: threading.RLock = field(default_factory=threading.RLock)
     client_lease_enabled: bool = False
     last_client_heartbeat_monotonic: float | None = None
@@ -283,6 +284,19 @@ class RunCoordinator:
                 f"処理時間: {STAGE_LABELS[current_state]} {stage_elapsed:.2f} s / "
                 f"トータル {total_elapsed:.2f} s",
             )
+
+    def _finish_major_phase(self, record: RunRecord, phase: str) -> None:
+        now = time.monotonic()
+        finished_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        with record.lock:
+            phase_elapsed = max(0.0, now - record.major_phase_started_monotonic)
+            total_elapsed = max(0.0, now - record.started_monotonic)
+            self._append_activity(
+                record,
+                f"{phase} 完了: 終了時間 {finished_at} / "
+                f"処理時間 {phase_elapsed:.2f} s / トータル {total_elapsed:.2f} s",
+            )
+            record.major_phase_started_monotonic = now
 
     def _set_state(self, record: RunRecord, state: RunState, message: str) -> None:
         now = time.monotonic()
@@ -556,6 +570,7 @@ class RunCoordinator:
 
             cache_entry = self.prepared_cache.load(record.config.analysis_area)
             cache_hit = cache_entry is not None
+            self._finish_major_phase(record, "準備")
 
             self._set_state(
                 record,
@@ -617,6 +632,7 @@ class RunCoordinator:
             self._set_state(record, RunState.ACQUIRING_RAINFALL, "降雨シナリオを時間系列へ変換しています。")
             rainfall = self.rainfall_resolver(record.config, self.catalog_provider)
             self._check_cancel(record)
+            self._finish_major_phase(record, "データ取得")
 
             self._set_state(
                 record,
@@ -772,6 +788,7 @@ class RunCoordinator:
             )
             self._persist_manifest(record)
             self._check_cancel(record)
+            self._finish_major_phase(record, "解析格子")
 
             self._set_state(record, RunState.RUNNING_ENGINE, "SFINCSを実行しています。")
             runner = self.runner_factory()
@@ -817,6 +834,7 @@ class RunCoordinator:
             self._append_activity(record, f"SFINCS完了: {execution.elapsed_seconds:.2f} s")
             record.runner = None
             self._check_cancel(record)
+            self._finish_major_phase(record, "SFINCS")
 
             self._set_state(
                 record,
@@ -875,6 +893,7 @@ class RunCoordinator:
                 }
             )
             self._persist_manifest(record)
+            self._finish_major_phase(record, "結果表示")
             self._set_state(record, RunState.COMPLETE, f"{mode_label}計算が完了しました。")
         except SfincsRunCancelled:
             self._mark_cancelled(record, "キャンセル要求を処理しています。")
