@@ -473,7 +473,10 @@ def create_adaptive_quadtree(
     """Create the actual pinned-rc3 quadtree and map normalized face fields."""
 
     _validate_inputs(full_grid, adaptive)
-    diagnostic_polygons = build_refinement_polygons(full_grid, adaptive)
+    # Polygonization is an audit helper only. Production refinement consumes the
+    # classifier raster directly; polygonizing every target level duplicates
+    # expensive geometry work without affecting the quadtree.
+    diagnostic_polygons = None
     base_nmax = math.ceil(full_grid.height_cells / _BASE_CELL_M)
     base_mmax = math.ceil(full_grid.width_cells / _BASE_CELL_M)
 
