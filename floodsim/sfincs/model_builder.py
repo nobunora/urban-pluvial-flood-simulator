@@ -347,6 +347,10 @@ class AdaptiveSfincsModelBuilder:
             model.config.set("dthisout", output_interval)
             model.config.set("outputformat", "net")
             model.config.set("coriolis", 0)
+            # Match the accepted Full-1 m CFL factor. Leaving Adaptive at the
+            # SFINCS default alpha=0.5 unnecessarily shortens every stable
+            # timestep versus the Full-1 m model (which explicitly uses 0.75).
+            model.config.set("alpha", 0.75)
             model.config.set("storecumprcp", 1)
             model.config.set("storevel", 1)
             # SFINCS suppresses h/hmax on subgrid runs unless this is enabled.
