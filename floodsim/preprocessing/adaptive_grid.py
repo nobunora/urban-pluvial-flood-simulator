@@ -527,8 +527,7 @@ def _count_cells(
     counts: dict[str, int] = {}
     for size in active_levels_m:
         area = int(np.count_nonzero(resolution == size))
-        if area:
-            counts[f"{size}m"] = area // (size * size)
+        counts[f"{size}m"] = area // (size * size)
     return counts
 
 

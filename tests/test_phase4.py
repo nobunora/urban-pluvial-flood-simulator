@@ -92,7 +92,7 @@ def test_flat_open_area_safely_coarsens_to_production_8m_level() -> None:
 
     assert isinstance(result, AdaptiveGridProduct)
     assert result.active_levels_m == PRODUCTION_ADAPTIVE_LEVELS_M
-    assert result.cell_count_by_level == {"8m": 64}
+    assert result.cell_count_by_level == {"1m": 0, "2m": 0, "4m": 0, "8m": 64}
     assert result.total_hydraulic_cells == 64
     assert result.full_1m_equivalent_cells == 64 * 64
     assert result.reduction_ratio == pytest.approx(64 / (64 * 64))
@@ -108,7 +108,7 @@ def test_smooth_uniform_steep_slope_is_not_kept_at_one_metre() -> None:
     result = build_adaptive_grid(full, policy=_classifier_policy())
 
     assert set(np.unique(result.resolution_m)) == {8}
-    assert result.cell_count_by_level == {"8m": 64}
+    assert result.cell_count_by_level == {"1m": 0, "2m": 0, "4m": 0, "8m": 64}
 
 
 def test_small_depression_on_flat_surface_remains_high_resolution_with_buffer() -> None:
