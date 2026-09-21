@@ -99,11 +99,25 @@ def _ring_from_container(
     transformer: Transformer,
     deadline_monotonic: float | None = None,
 ) -> np.ndarray | None:
+    positions: list[np.ndarray] = []
     for index, element in enumerate(container.iter()):
         if index % 128 == 0:
             _check_deadline(deadline_monotonic, "PLATEAU CityGML parsing")
-        if _local(element.tag) == "posList":
-            return _parse_poslist(element.text, dim, transformer)
+        name = _local(element.tag)
+        element_dim = dim
+        raw_dim = element.attrib.get("srsDimension")
+        if raw_dim in {"2", "3"}:
+            element_dim = int(raw_dim)
+        if name == "posList":
+            parsed = _parse_poslist(element.text, element_dim, transformer)
+            if parsed is not None:
+                return parsed
+        elif name == "pos":
+            parsed = _parse_poslist(element.text, element_dim, transformer)
+            if parsed is not None and len(parsed) == 1:
+                positions.append(parsed[0])
+    if len(positions) >= 2:
+        return np.asarray(positions, dtype=np.float64)
     return None
 
 
