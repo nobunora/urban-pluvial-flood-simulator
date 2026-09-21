@@ -66,7 +66,7 @@ const metadata: ResultMetadataResponse = {
     global_max_depth_m: 1.25,
   },
   grid_level_summary: {
-    "1m": 250000,
+    "1m": 1200000,
   },
   depth_legend: [
     { label: "0.01–0.05 m", min_m: 0.01, max_m: 0.05, color: "#C6E8FF" },
@@ -89,7 +89,7 @@ const metadata: ResultMetadataResponse = {
     application_version: "0.1.0",
     requested_accuracy_mode: "full_1m",
     rainfall_source: { mode: "constant", intensity_mm_per_h: 10 },
-    elevation_provider_counts: { gsi_1m: 250000 },
+    elevation_provider_counts: { gsi_1m: 1200000 },
     elevation_source_summary: { primary: "GSI" },
     manning_defaults: { general: 0.03, road: 0.02 },
     boundary_policy: "closed boundary",
@@ -377,13 +377,13 @@ describe("ResultPanel", () => {
     expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
       "run-1",
       0,
-      2500,
+      12000,
       expect.any(AbortSignal),
     );
     expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
       "run-1",
       3,
-      2500,
+      12000,
       expect.any(AbortSignal),
     );
   });
