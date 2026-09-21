@@ -4,10 +4,14 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 from pathlib import Path
 
-from floodsim.preprocessing.adaptive_grid import build_adaptive_grid
+from floodsim.preprocessing.adaptive_grid import (
+    DEFAULT_ADAPTIVE_GRID_POLICY,
+    build_adaptive_grid,
+)
 from floodsim.sfincs.model_builder import AdaptiveSfincsModelBuilder, SfincsModelBuilder
 from floodsim.sfincs.output_reader import read_quadtree_result, read_regular_result
 from floodsim.sfincs.runner import ResolvedEngine, SfincsRunner, sha256_file
@@ -38,7 +42,14 @@ def run_benchmark(
         raise FileNotFoundError(executable)
 
     fixture = build_adaptive_benchmark_fixture(kind)
-    adaptive_grid = build_adaptive_grid(fixture.grid)
+    adaptive_grid = build_adaptive_grid(
+        fixture.grid,
+        policy=replace(
+            DEFAULT_ADAPTIVE_GRID_POLICY,
+            target_core_radius_m=0.0,
+            target_mid_radius_m=0.0,
+        ),
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     full_build = SfincsModelBuilder().build(

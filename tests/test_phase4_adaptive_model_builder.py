@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,7 +10,10 @@ import xarray as xr
 from pyproj import CRS
 
 from floodsim.domain.rainfall import RainfallTimeSeries
-from floodsim.preprocessing.adaptive_grid import build_adaptive_grid
+from floodsim.preprocessing.adaptive_grid import (
+    DEFAULT_ADAPTIVE_GRID_POLICY,
+    build_adaptive_grid,
+)
 from floodsim.preprocessing.full_grid import FullGridProduct
 from floodsim.preprocessing.roof_rainfall import allocate_roof_rainfall
 from floodsim.sfincs.model_builder import AdaptiveSfincsModelBuilder
@@ -64,7 +68,14 @@ def test_adaptive_builder_writes_quadtree_subgrid_and_distributed_rainfall(
     tmp_path: Path,
 ) -> None:
     full = _grid()
-    adaptive = build_adaptive_grid(full)
+    adaptive = build_adaptive_grid(
+        full,
+        policy=replace(
+            DEFAULT_ADAPTIVE_GRID_POLICY,
+            target_core_radius_m=0.0,
+            target_mid_radius_m=0.0,
+        ),
+    )
     builder = AdaptiveSfincsModelBuilder(subgrid_pixels=2, subgrid_levels=3)
 
     result = builder.build(tmp_path / "model", full, adaptive, _rainfall())

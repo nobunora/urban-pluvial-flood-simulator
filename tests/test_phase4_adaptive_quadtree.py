@@ -6,7 +6,16 @@ import numpy as np
 import pytest
 from pyproj import CRS
 
-from floodsim.preprocessing.adaptive_grid import build_adaptive_grid
+from floodsim.preprocessing.adaptive_grid import (
+    AdaptiveGridPolicy,
+    build_adaptive_grid,
+)
+
+_EXTENSION_POLICY = AdaptiveGridPolicy(
+    active_levels_m=(1, 2, 4, 8, 16, 32),
+    target_core_radius_m=0.0,
+    target_mid_radius_m=0.0,
+)
 from floodsim.preprocessing.full_grid import FullGridProduct
 from floodsim.preprocessing.roof_rainfall import allocate_roof_rainfall
 from floodsim.sfincs.adaptive_quadtree import create_adaptive_quadtree
@@ -98,7 +107,7 @@ def _source_coverage(component, resolution: np.ndarray, height: int, width: int)
 
 def test_flat_open_classifier_maps_to_four_32m_faces(tmp_path: Path) -> None:
     full = _full_grid(64, 64)
-    adaptive = build_adaptive_grid(full)
+    adaptive = build_adaptive_grid(full, policy=_EXTENSION_POLICY)
     model = _model(tmp_path)
 
     result = create_adaptive_quadtree(model, full, adaptive)
@@ -123,7 +132,7 @@ def test_flat_open_classifier_maps_to_four_32m_faces(tmp_path: Path) -> None:
 
 def test_hard_building_and_road_survive_actual_rc3_face_mapping(tmp_path: Path) -> None:
     full = _full_grid(64, 64, building=(32, 32), road_row=32)
-    adaptive = build_adaptive_grid(full)
+    adaptive = build_adaptive_grid(full, policy=_EXTENSION_POLICY)
     model = _model(tmp_path)
 
     result = create_adaptive_quadtree(model, full, adaptive)
@@ -167,7 +176,7 @@ def test_hard_building_and_road_survive_actual_rc3_face_mapping(tmp_path: Path) 
 
 def test_odd_domain_is_padded_but_padding_is_inactive_and_rain_mass_is_exact(tmp_path: Path) -> None:
     full = _full_grid(33, 35)
-    adaptive = build_adaptive_grid(full)
+    adaptive = build_adaptive_grid(full, policy=_EXTENSION_POLICY)
     model = _model(tmp_path)
 
     result = create_adaptive_quadtree(model, full, adaptive)
@@ -199,7 +208,7 @@ def test_odd_domain_is_padded_but_padding_is_inactive_and_rain_mass_is_exact(tmp
 
 def test_asymmetric_domain_preserves_n_m_orientation_and_source_coverage(tmp_path: Path) -> None:
     full = _full_grid(65, 34, building=(10, 64), road_row=20)
-    adaptive = build_adaptive_grid(full)
+    adaptive = build_adaptive_grid(full, policy=_EXTENSION_POLICY)
     model = _model(tmp_path)
 
     result = create_adaptive_quadtree(model, full, adaptive)
