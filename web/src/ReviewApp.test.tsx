@@ -258,6 +258,11 @@ describe("local review UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "解析開始" }));
 
     await waitFor(() => {
+      expect(createRun).toHaveBeenCalledWith(
+        expect.objectContaining({ requested_accuracy_mode: "full_1m" }),
+      );
+    });
+    await waitFor(() => {
       expect(screen.getByRole("heading", { name: "解析結果" })).toBeVisible();
     });
 
