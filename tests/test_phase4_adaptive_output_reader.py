@@ -136,3 +136,26 @@ def test_quadtree_reader_rejects_infinite_active_depth(tmp_path: Path) -> None:
             result_path,
             layout_path=_layout(tmp_path / "adaptive_face_layout.npz"),
         )
+
+
+def test_quadtree_reader_clips_finite_negative_subgrid_storage_with_diagnostics(
+    tmp_path: Path,
+) -> None:
+    result_path = _result(tmp_path / "sfincs_map.nc")
+    with xr.open_dataset(result_path) as dataset:
+        loaded = dataset.load()
+    values = np.asarray(loaded["subgrid_volume"].values, dtype=np.float32)
+    values[1, 0] = -0.0016041
+    values[1, 1] = -1.0e-9
+    loaded["subgrid_volume"] = (("time", "nmesh2d_face"), values)
+    loaded.to_netcdf(result_path, mode="w")
+
+    result = read_quadtree_result(
+        result_path,
+        layout_path=_layout(tmp_path / "adaptive_face_layout.npz"),
+    )
+
+    assert result.subgrid_volume_m3 is not None
+    assert result.negative_subgrid_volume_clipped_values == 2
+    assert result.min_raw_active_subgrid_volume_m3 == pytest.approx(-0.0016041)
+    assert np.nanmin(result.subgrid_volume_m3) == 0.0
