@@ -369,7 +369,7 @@ describe("ResultPanel", () => {
     expect(screen.getByText("0.001–0.10 m/s")).toBeVisible();
     expect(screen.getByText("2.00 m/s以上")).toBeVisible();
     expect(screen.getByText("矢印の向き: 流向 / 色: 流速")).toBeVisible();
-    expect(screen.getByText("表示矢印: 1本")).toBeVisible();
+    expect(screen.getByText("GeoJSON矢印: 1本")).toBeVisible();
     expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
       "run-1",
       0,
