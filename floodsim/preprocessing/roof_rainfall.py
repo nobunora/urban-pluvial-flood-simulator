@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.ndimage import binary_dilation, label  # type: ignore[import-untyped]
+from scipy.ndimage import binary_dilation, find_objects, label  # type: ignore[import-untyped]
 
 
 class RoofRunoffNoRecipient(RuntimeError):
@@ -51,16 +51,28 @@ def allocate_roof_rainfall(
     weights = np.ones(mask.shape, dtype=np.float64)
     weights[mask] = 0.0
     components, count = label(mask, structure=np.ones((3, 3), dtype=np.uint8))
+    component_slices = find_objects(components)
     redistributed = 0
     if progress_callback is not None:
         progress_callback(0, int(count))
     callback_step = max(1, int(count) // 20) if count else 1
 
+    height, width = mask.shape
     for component_id in range(1, count + 1):
-        component = components == component_id
+        component_slice = component_slices[component_id - 1]
+        if component_slice is None:
+            continue
+        rows, cols = component_slice
+        row0 = max(0, rows.start - max_distance_cells)
+        row1 = min(height, rows.stop + max_distance_cells)
+        col0 = max(0, cols.start - max_distance_cells)
+        col1 = min(width, cols.stop + max_distance_cells)
+        local_labels = components[row0:row1, col0:col1]
+        component = local_labels == component_id
         roof_cells = int(component.sum())
         if roof_cells == 0:
             continue
+        local_mask = mask[row0:row1, col0:col1]
         recipients: np.ndarray | None = None
         for distance in range(1, max_distance_cells + 1):
             expanded = binary_dilation(
@@ -68,7 +80,7 @@ def allocate_roof_rainfall(
                 structure=np.ones((3, 3), dtype=bool),
                 iterations=distance,
             )
-            candidates = expanded & ~mask
+            candidates = expanded & ~local_mask
             if np.any(candidates):
                 recipients = candidates
                 break
@@ -78,7 +90,8 @@ def allocate_roof_rainfall(
                 f"{max_distance_cells} cells"
             )
         recipient_count = int(recipients.sum())
-        weights[recipients] += roof_cells / recipient_count
+        local_weights = weights[row0:row1, col0:col1]
+        local_weights[recipients] += roof_cells / recipient_count
         redistributed += roof_cells
         if progress_callback is not None and (
             component_id == count or component_id % callback_step == 0
