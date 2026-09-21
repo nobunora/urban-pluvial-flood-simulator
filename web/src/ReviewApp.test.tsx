@@ -144,7 +144,14 @@ describe("local review UI", () => {
     render(<App />);
 
     expect(screen.getByText("ローカルレビュー版 — Full 1 m")).toBeVisible();
-    expect(screen.getByRole("checkbox", { name: "Adaptive" })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Adaptive OFF" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Adaptive ON" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
     expect(screen.getByRole("button", { name: "解析開始" })).toBeVisible();
     expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "500");
 
@@ -160,8 +167,10 @@ describe("local review UI", () => {
   it("switches Adaptive on and keeps Full 1 m as the default/off path", async () => {
     render(<App />);
 
-    const adaptive = screen.getByRole("checkbox", { name: "Adaptive" });
-    expect(adaptive).not.toBeChecked();
+    const adaptiveOn = screen.getByRole("button", { name: "Adaptive ON" });
+    const adaptiveOff = screen.getByRole("button", { name: "Adaptive OFF" });
+    expect(adaptiveOff).toHaveAttribute("aria-pressed", "true");
+    expect(adaptiveOn).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText(/精度:/)).toHaveTextContent("Full 1 m");
 
     fireEvent.click(screen.getByRole("button", { name: "負荷を見積る" }));
@@ -172,8 +181,9 @@ describe("local review UI", () => {
       );
     });
 
-    fireEvent.click(adaptive);
-    expect(adaptive).toBeChecked();
+    fireEvent.click(adaptiveOn);
+    expect(adaptiveOn).toHaveAttribute("aria-pressed", "true");
+    expect(adaptiveOff).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText(/精度:/)).toHaveTextContent("Adaptive");
 
     fireEvent.click(screen.getByRole("button", { name: "解析開始" }));

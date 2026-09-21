@@ -301,21 +301,41 @@ export default function SmokeApp() {
             </label>
             <label>雨量強度 (mm/h)<input value={intensity} disabled={setupLocked} onChange={(event) => setIntensity(event.target.value)} /></label>
             <label>継続時間 (min)<input value={duration} disabled={setupLocked} onChange={(event) => setDuration(event.target.value)} /></label>
-            <label className="adaptive-toggle">
-              <input
-                type="checkbox"
-                checked={adaptiveEnabled}
-                disabled={setupLocked}
-                onChange={(event) => {
-                  setAdaptiveEnabled(event.target.checked);
-                  setEstimate(null);
-                }}
-              />
-              Adaptive
-            </label>
+            <fieldset className="adaptive-mode-control" disabled={setupLocked}>
+              <legend>Adaptive Grid</legend>
+              <div className="adaptive-mode-buttons" role="group" aria-label="Adaptive Grid切替">
+                <button
+                  type="button"
+                  className={!adaptiveEnabled ? "is-active" : ""}
+                  aria-pressed={!adaptiveEnabled}
+                  onClick={() => {
+                    setAdaptiveEnabled(false);
+                    setEstimate(null);
+                  }}
+                >
+                  Adaptive OFF
+                </button>
+                <button
+                  type="button"
+                  className={adaptiveEnabled ? "is-active" : ""}
+                  aria-pressed={adaptiveEnabled}
+                  onClick={() => {
+                    setAdaptiveEnabled(true);
+                    setEstimate(null);
+                  }}
+                >
+                  Adaptive ON
+                </button>
+              </div>
+              <p className="adaptive-mode-note">
+                {adaptiveEnabled
+                  ? "Full 1 mから地形・構造を保護しながら2 m → 4 m → 8 mへ静的粗格子化します。"
+                  : "従来のFull 1 m regular gridで解析します。"}
+              </p>
+            </fieldset>
             <p>
               精度: <strong>{adaptiveEnabled ? "Adaptive" : "Full 1 m"}</strong>
-              {adaptiveEnabled ? "（実機精度検証中）" : "（従来のFull 1 m経路）"}
+              {adaptiveEnabled ? "（静的Adaptive Grid）" : "（従来のFull 1 m経路）"}
             </p>
             <div className="smoke-actions">
               <button disabled={!area || setupLocked} onClick={() => void handleEstimate()}>負荷を見積る</button>
