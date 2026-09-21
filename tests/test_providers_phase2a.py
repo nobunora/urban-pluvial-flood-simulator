@@ -192,6 +192,37 @@ def test_osm_rectangular_parsing_and_provenance(tmp_path):
     json.dumps(result.provenance.to_dict(), ensure_ascii=False)
 
 
+def test_osm_relation_assembles_split_outer_members(tmp_path):
+    area = rectangle()
+    local = CRS.from_proj4(
+        f"+proj=aeqd +lat_0={area.center.lat_deg} +lon_0={area.center.lon_deg} "
+        "+datum=WGS84 +units=m +no_defs"
+    )
+    to_ll = Transformer.from_crs(local, CRS.from_epsg(4326), always_xy=True)
+
+    def geom(points):
+        return [
+            {"lon": lon, "lat": lat}
+            for lon, lat in (to_ll.transform(x, y) for x, y in points)
+        ]
+
+    payload = {"elements": [{
+        "type": "relation",
+        "id": 40,
+        "tags": {"building": "yes", "type": "multipolygon"},
+        "members": [
+            {"type": "way", "role": "outer", "geometry": geom([(-4, -3), (4, -3), (4, 3)])},
+            {"type": "way", "role": "outer", "geometry": geom([(4, 3), (-4, 3), (-4, -3)])},
+        ],
+    }]}
+    result = OsmProvider(session=Session([Response(payload=payload)])).acquire(
+        area, cache_dir=tmp_path
+    )
+    assert len(result.buildings) == 1
+    assert result.buildings[0].shape[0] >= 5
+
+
+
 class FakePlateau:
     def __init__(self, outcome):
         self.outcome = outcome
