@@ -16,9 +16,9 @@ from floodsim.domain.geometry import AnalysisArea, GeoBounds, LonLat
 from floodsim.results.view import (
     DEPTH_BANDS,
     NormalizedArrays,
-    _display_arrow_length_m,
     PointOutsideResult,
     ResultTimeIndexInvalid,
+    _display_arrow_length_m,
     flow_vectors_geojson,
     inspect_native_point,
     load_normalized_arrays,
