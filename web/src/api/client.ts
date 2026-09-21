@@ -34,11 +34,12 @@ export function searchLocation(query: string, signal?: AbortSignal): Promise<Geo
 
 export function estimateResources(
   analysisArea: AnalysisArea,
+  accuracyMode: RunConfig["requested_accuracy_mode"] = "full_1m",
 ): Promise<ResourceEstimateResponse> {
   return jsonRequest<ResourceEstimateResponse>("/api/v1/estimate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ analysis_area: analysisArea, accuracy_mode: "full_1m" }),
+    body: JSON.stringify({ analysis_area: analysisArea, accuracy_mode: accuracyMode }),
   });
 }
 

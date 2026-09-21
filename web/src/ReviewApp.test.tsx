@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
   createRun,
+  estimateResources,
   getHealth,
   getResultMetadata,
   getRun,
@@ -143,6 +144,7 @@ describe("local review UI", () => {
     render(<App />);
 
     expect(screen.getByText("ローカルレビュー版 — Full 1 m")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Adaptive" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "解析開始" })).toBeVisible();
     expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "500");
 
@@ -152,6 +154,34 @@ describe("local review UI", () => {
 
     fireEvent.change(screen.getByLabelText("範囲"), { target: { value: "500" } });
     expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "1000");
+  });
+
+
+  it("switches Adaptive on and keeps Full 1 m as the default/off path", async () => {
+    render(<App />);
+
+    const adaptive = screen.getByRole("checkbox", { name: "Adaptive" });
+    expect(adaptive).not.toBeChecked();
+    expect(screen.getByText(/精度:/)).toHaveTextContent("Full 1 m");
+
+    fireEvent.click(screen.getByRole("button", { name: "負荷を見積る" }));
+    await waitFor(() => {
+      expect(estimateResources).toHaveBeenCalledWith(
+        expect.any(Object),
+        "full_1m",
+      );
+    });
+
+    fireEvent.click(adaptive);
+    expect(adaptive).toBeChecked();
+    expect(screen.getByText(/精度:/)).toHaveTextContent("Adaptive");
+
+    fireEvent.click(screen.getByRole("button", { name: "解析開始" }));
+    await waitFor(() => {
+      expect(createRun).toHaveBeenCalledWith(
+        expect.objectContaining({ requested_accuracy_mode: "adaptive" }),
+      );
+    });
   });
 
 

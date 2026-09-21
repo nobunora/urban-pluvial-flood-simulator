@@ -58,7 +58,7 @@ class _JsonMutationRoute(APIRoute):
 
 
 router = APIRouter(route_class=_JsonMutationRoute)
-coordinator = RunCoordinator()
+coordinator = RunCoordinator(adaptive_enabled=True)
 
 
 def _map_coordinator_error(error: RuntimeError) -> ApiContractError:

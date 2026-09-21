@@ -54,6 +54,7 @@ export default function SmokeApp() {
   const [halfSize, setHalfSize] = useState("250");
   const [intensity, setIntensity] = useState("50");
   const [duration, setDuration] = useState("60");
+  const [adaptiveEnabled, setAdaptiveEnabled] = useState(false);
   const [backend, setBackend] = useState("確認中…");
   const [estimate, setEstimate] = useState<ResourceEstimateResponse | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
@@ -160,7 +161,9 @@ export default function SmokeApp() {
     setBusy(true);
     setError(null);
     try {
-      setEstimate(await estimateResources(area));
+      setEstimate(
+        await estimateResources(area, adaptiveEnabled ? "adaptive" : "full_1m"),
+      );
     } catch (cause: unknown) {
       setError(String(cause));
     } finally {
@@ -195,7 +198,7 @@ export default function SmokeApp() {
     try {
       const created = await createRun({
         analysis_area: area,
-        requested_accuracy_mode: "full_1m",
+        requested_accuracy_mode: adaptiveEnabled ? "adaptive" : "full_1m",
         rainfall: {
           kind: "constant",
           intensity_mm_per_h: intensityValue,
@@ -239,9 +242,12 @@ export default function SmokeApp() {
       <header>
         <div>
           <h1>Urban Pluvial Flood Simulator</h1>
-          <p className="smoke-kicker">ローカルレビュー版 — Full 1 m</p>
+          <p className="smoke-kicker">
+            ローカルレビュー版 — {adaptiveEnabled ? "Adaptive" : "Full 1 m"}
+          </p>
           <p>
-            Full 1 mの条件入力からSFINCS実行、最大浸水深の結果地図までをレビューできます。Adaptiveはまだ無効です。
+            Adaptiveは条件画面で切替できます。OFFでは従来のFull 1 m解析経路をそのまま使用し、
+            ONではAdaptive quadtree/subgrid経路を使用します。
           </p>
         </div>
         <div className="smoke-health">Backend: {backend}</div>
@@ -295,7 +301,22 @@ export default function SmokeApp() {
             </label>
             <label>雨量強度 (mm/h)<input value={intensity} disabled={setupLocked} onChange={(event) => setIntensity(event.target.value)} /></label>
             <label>継続時間 (min)<input value={duration} disabled={setupLocked} onChange={(event) => setDuration(event.target.value)} /></label>
-            <p>精度: <strong>Full 1 m</strong>（Adaptiveはレビュー版では無効）</p>
+            <label className="adaptive-toggle">
+              <input
+                type="checkbox"
+                checked={adaptiveEnabled}
+                disabled={setupLocked}
+                onChange={(event) => {
+                  setAdaptiveEnabled(event.target.checked);
+                  setEstimate(null);
+                }}
+              />
+              Adaptive
+            </label>
+            <p>
+              精度: <strong>{adaptiveEnabled ? "Adaptive" : "Full 1 m"}</strong>
+              {adaptiveEnabled ? "（実機精度検証中）" : "（従来のFull 1 m経路）"}
+            </p>
             <div className="smoke-actions">
               <button disabled={!area || setupLocked} onClick={() => void handleEstimate()}>負荷を見積る</button>
               <button disabled={!area || setupLocked} onClick={() => void handleRun()}>
@@ -365,7 +386,7 @@ export default function SmokeApp() {
       )}
 
       <footer>
-        レビュー対象: 地図による場所・範囲指定 / Full 1 m実行 / 工程・取得データ表示 / SFINCS稼働表示 / 最大浸水深地図・地点確認 / 下水・浸透は未考慮 / 雨は解析範囲内で一様 / 公的な洪水予報・避難情報ではありません
+        レビュー対象: 地図による場所・範囲指定 / Full 1 m・Adaptive切替 / 工程・取得データ表示 / SFINCS稼働表示 / 最大浸水深地図・地点確認 / 下水・浸透は未考慮 / 雨は解析範囲内で一様 / 公的な洪水予報・避難情報ではありません
       </footer>
     </main>
   );
