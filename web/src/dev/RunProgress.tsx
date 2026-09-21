@@ -201,9 +201,9 @@ export default function RunProgress({ status, stageObservedAtMs, lastPollAtMs }:
         <div className="run-progress-console">
           <div className="run-progress-console-heading">
             <strong>処理ログ</strong>
-            <span>最新 {Math.min(activityLines.length, 16)} 行</span>
+            <span>全 {activityLines.length} 行</span>
           </div>
-          <pre aria-label="処理ログ">{activityLines.slice(-16).join("\n")}</pre>
+          <pre aria-label="処理ログ">{activityLines.join("\n")}</pre>
         </div>
       )}
     </section>
