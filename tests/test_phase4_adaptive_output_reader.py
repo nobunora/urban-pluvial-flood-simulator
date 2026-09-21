@@ -31,7 +31,7 @@ def _result(path: Path, *, negative_hmax: bool = False) -> Path:
                 ("time", "nmesh2d_face"),
                 np.asarray(
                     [
-                        [-0.05, 0.0, 0.0, 0.0],
+                        [-0.05, np.nan, 0.0, 0.0],
                         [0.20, 0.40, 0.0, 0.0],
                     ],
                     dtype=np.float32,
@@ -84,8 +84,10 @@ def test_quadtree_reader_preserves_native_faces_and_dry_depth_policy(tmp_path: P
     assert result.depth_time_m.shape == (2, 4)
     assert result.max_depth_m.shape == (4,)
     assert result.layout.face_count == 4
+    assert result.dry_fill_depth_values == 1
     assert result.negative_depth_clipped_values == 1
     assert result.depth_time_m[0, 0] == 0.0
+    assert result.depth_time_m[0, 1] == 0.0
     assert result.max_depth_m[0] == pytest.approx(0.3)
     assert result.max_depth_m[1] == pytest.approx(0.4)
     assert result.hmax_reconstructed_cells == 1
@@ -117,3 +119,20 @@ def test_quadtree_reader_rejects_face_order_mask_mismatch(tmp_path: Path) -> Non
 
     with pytest.raises(SfincsResultError, match="face order/mask"):
         read_quadtree_result(result_path, layout_path=layout_path)
+
+
+
+def test_quadtree_reader_rejects_infinite_active_depth(tmp_path: Path) -> None:
+    result_path = _result(tmp_path / "sfincs_map.nc")
+    with xr.open_dataset(result_path) as dataset:
+        loaded = dataset.load()
+    values = np.asarray(loaded["h"].values, dtype=np.float32)
+    values[0, 0] = np.inf
+    loaded["h"] = (("time", "nmesh2d_face"), values)
+    loaded.to_netcdf(result_path, mode="w")
+
+    with pytest.raises(SfincsResultError, match="infinite values"):
+        read_quadtree_result(
+            result_path,
+            layout_path=_layout(tmp_path / "adaptive_face_layout.npz"),
+        )

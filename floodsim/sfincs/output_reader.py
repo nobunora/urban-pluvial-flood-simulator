@@ -87,9 +87,16 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
                     "active SFINCS maximum depth contains negative finite values"
                 )
 
-            active_depth_values = depth[:, active]
+            active_depth_values = np.where(
+                np.isfinite(active_depth_raw),
+                active_depth_raw,
+                0.0,
+            ).astype(np.float32, copy=False)
+            finite_raw_active_depth = active_depth_raw[np.isfinite(active_depth_raw)]
             min_raw_active_depth = (
-                float(np.min(active_depth_values)) if active_depth_values.size else 0.0
+                float(np.min(finite_raw_active_depth))
+                if finite_raw_active_depth.size
+                else 0.0
             )
             negative_depth_clipped_values = int(
                 np.count_nonzero(active_depth_values < 0.0)
@@ -197,6 +204,7 @@ class SfincsQuadtreeResult:
     velocity_v_mps: np.ndarray | None = None
     subgrid_volume_m3: np.ndarray | None = None
     hmax_reconstructed_cells: int = 0
+    dry_fill_depth_values: int = 0
     negative_depth_clipped_values: int = 0
     min_raw_active_depth_m: float = 0.0
     excluded_boundary_cells: int = 0
@@ -302,8 +310,16 @@ def read_quadtree_result(
 
             active = mask_values == 1
             boundary = (mask_values == 2) | (mask_values == 3)
-            if np.any(~np.isfinite(depth[:, active])):
-                raise SfincsResultError("active SFINCS quadtree depth faces contain non-finite values")
+            active_depth_raw = depth[:, active]
+            if np.any(np.isinf(active_depth_raw)):
+                raise SfincsResultError(
+                    "active SFINCS quadtree depth faces contain infinite values"
+                )
+            # SFINCS quadtree h uses the wet-cell writer. Dry active faces are
+            # written as NetCDF FILL_VALUE and decoded by xarray as NaN.
+            # Preserve the distinction in diagnostics, but normalize those dry
+            # samples to zero water depth for the application result contract.
+            dry_fill_depth_values = int(np.count_nonzero(np.isnan(active_depth_raw)))
             if np.any(~np.isfinite(terrain[active])):
                 raise SfincsResultError("active SFINCS quadtree terrain faces contain non-finite values")
 
@@ -419,6 +435,7 @@ def read_quadtree_result(
         velocity_v_mps=velocity_v,
         subgrid_volume_m3=subgrid_volume,
         hmax_reconstructed_cells=reconstructed_cells,
+        dry_fill_depth_values=dry_fill_depth_values,
         negative_depth_clipped_values=negative_depth_clipped_values,
         min_raw_active_depth_m=min_raw_active_depth,
         excluded_boundary_cells=excluded_boundary_cells,

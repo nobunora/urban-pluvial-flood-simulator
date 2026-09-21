@@ -152,6 +152,7 @@ def normalize_quadtree_result(
         "max_depth_summary": {
             "global_max_depth_m": result.global_max_depth_m,
             "hmax_reconstructed_cells": result.hmax_reconstructed_cells,
+            "dry_fill_depth_values": result.dry_fill_depth_values,
             "negative_depth_clipped_values": result.negative_depth_clipped_values,
             "negative_max_depth_clipped_cells": 0,
             "min_raw_active_depth_m": result.min_raw_active_depth_m,
@@ -164,10 +165,12 @@ def normalize_quadtree_result(
         "run_summary": dict(run_summary or {}),
         "no_data_policy": (
             "Adaptive output is stored in native quadtree-face order; inactive/blocked "
-            "and SFINCS boundary-control faces are NaN; finite negative time-depth "
-            "values are normalized to zero while remaining visible in diagnostics; "
-            "missing wet-filtered hmax is reconstructed from normalized time-depth; "
-            "finite negative hmax remains invalid"
+            "and SFINCS boundary-control faces are NaN; SFINCS wet-filtered quadtree h "
+            "FILL_VALUE samples on dry active faces are normalized to zero and counted "
+            "in diagnostics; finite negative time-depth values are also normalized to "
+            "zero while remaining visible in diagnostics; missing wet-filtered hmax is "
+            "reconstructed from normalized time-depth; infinite h and finite negative "
+            "hmax remain invalid"
         ),
         "limitations": limitations.model_dump(),
     }
