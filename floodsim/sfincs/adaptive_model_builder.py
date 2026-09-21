@@ -14,13 +14,12 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Final
 
-import numpy as np
 from pyproj import CRS
 
 from floodsim.domain.rainfall import RainfallTimeSeries
 from floodsim.preprocessing.adaptive_grid import AdaptiveGridProduct
 from floodsim.preprocessing.full_grid import FullGridProduct
-from floodsim.sfincs.adaptive_quadtree import AdaptiveQuadtreeBuild, create_adaptive_quadtree
+from floodsim.sfincs.adaptive_quadtree import (\n    AdaptiveQuadtreeBuild,\n    create_adaptive_quadtree,\n)
 from floodsim.sfincs.model_builder import (
     ModelBuildError,
     ModelBuildResult,
