@@ -157,7 +157,7 @@ def grid_resolution_layer(run_id: UUID, max_px: int = 4096) -> Response:
 def flow_vectors_geojson_layer(
     run_id: UUID,
     time_index: int,
-    max_vectors: int = Query(default=900, ge=1, le=2500),
+    max_vectors: int = Query(default=900, ge=1, le=12000),
 ) -> JSONResponse:
     try:
         path, mtime_ns = _arrays_path_for_run(run_id)
