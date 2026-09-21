@@ -463,8 +463,29 @@ def _adaptive_flow_vectors_geojson(
     )
     candidates = np.flatnonzero(valid)
     if candidates.size > max_vectors:
-        ranked = candidates[np.argsort(speed[candidates])[::-1]]
-        candidates = ranked[:max_vectors]
+        # Preserve spatial coverage instead of taking the globally fastest
+        # faces. Global top-speed ranking clusters the retained source vectors,
+        # so client-side screen-space resampling cannot reveal more arrows when
+        # the user zooms into an Adaptive result.
+        candidate_rows = arrays.face_row_index[candidates].astype(np.float64)
+        candidate_cols = arrays.face_col_index[candidates].astype(np.float64)
+        candidate_span = arrays.face_resolution_m[candidates].astype(np.float64)
+        center_rows = candidate_rows + 0.5 * candidate_span
+        center_cols = candidate_cols + 0.5 * candidate_span
+        bins_per_axis = max(1, int(np.sqrt(max_vectors)))
+        row_bins = np.minimum(
+            bins_per_axis - 1,
+            (center_rows * bins_per_axis / max(1, arrays.source_height_cells)).astype(np.int64),
+        )
+        col_bins = np.minimum(
+            bins_per_axis - 1,
+            (center_cols * bins_per_axis / max(1, arrays.source_width_cells)).astype(np.int64),
+        )
+        bin_ids = row_bins * bins_per_axis + col_bins
+        order = np.lexsort((-speed[candidates], bin_ids))
+        sorted_bins = bin_ids[order]
+        first = np.r_[True, sorted_bins[1:] != sorted_bins[:-1]]
+        candidates = candidates[order[first]]
 
     transformer = Transformer.from_crs(
         local_crs(area),
@@ -559,7 +580,7 @@ def _adaptive_flow_vectors_geojson(
             "speed_unit": "m/s",
             "min_speed_mps": float(min_speed_mps),
             "arrow_count": len(features),
-            "sampling_method": "native-quadtree-face-top-speed",
+            "sampling_method": "native-quadtree-spatial-fastest-per-bin",
         },
     }
 
