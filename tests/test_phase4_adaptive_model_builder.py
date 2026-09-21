@@ -136,3 +136,37 @@ def test_adaptive_builder_writes_quadtree_subgrid_and_distributed_rainfall(
         assert dataset["Precipitation"].dims == ("time", "y", "x")
         assert dataset.sizes["x"] == full.width_cells
         assert dataset.sizes["y"] == full.height_cells
+
+
+def test_adaptive_subgrid_cache_reuses_rainfall_independent_table(tmp_path: Path) -> None:
+    full = _grid()
+    adaptive = build_adaptive_grid(
+        full,
+        policy=replace(
+            DEFAULT_ADAPTIVE_GRID_POLICY,
+            target_core_radius_m=0.0,
+            target_mid_radius_m=0.0,
+        ),
+    )
+    builder = AdaptiveSfincsModelBuilder(
+        subgrid_pixels=2,
+        subgrid_levels=3,
+        cache_root=tmp_path / "cache",
+    )
+
+    first = builder.build(tmp_path / "first", full, adaptive, _rainfall())
+    changed_rain = RainfallTimeSeries(
+        start_time=datetime(2026, 9, 21, tzinfo=timezone.utc),
+        elapsed_seconds=[0.0, 120.0],
+        intensity_mm_per_h=[75.0, 0.0],
+        source_metadata={"kind": "changed-rain"},
+    )
+    second = builder.build(tmp_path / "second", full, adaptive, changed_rain)
+
+    assert first.report["subgrid"]["cache_hit"] is False
+    assert second.report["subgrid"]["cache_hit"] is True
+    assert (second.model_dir / "sfincs_subgrid.nc").read_bytes() == (
+        first.model_dir / "sfincs_subgrid.nc"
+    ).read_bytes()
+    with xr.open_dataset(second.model_dir / "sfincs_netampr.nc") as dataset:
+        assert float(dataset["Precipitation"].isel(time=0).max()) == pytest.approx(75.0)
