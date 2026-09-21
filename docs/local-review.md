@@ -97,11 +97,9 @@ On Windows:
 python -m scripts.run_local_review --sfincs-bin "C:\path\to\sfincs.exe"
 ```
 
-To serve an already-built frontend without invoking npm:
-
-```bash
-python -m scripts.run_local_review --skip-build
-```
+The local review launcher always rebuilds the frontend before serving it. This
+prevents a stale `floodsim/static` bundle from being reviewed as the current
+source revision.
 
 The build-free fallback diagnostic remains available at `/smoke.html`; `web/public/smoke.html` ensures a normal Vite build preserves that route.
 

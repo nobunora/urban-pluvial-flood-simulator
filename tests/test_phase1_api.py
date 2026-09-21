@@ -12,7 +12,7 @@ def test_health_returns_typed_phase1_response() -> None:
     assert response.json() == {
         "status": "ok",
         "api_version": "v1",
-        "application_version": "0.1.1",
+        "application_version": "0.1.2",
         "engine": {"required": "SFINCS 2.4.0 Galibier"},
     }
 

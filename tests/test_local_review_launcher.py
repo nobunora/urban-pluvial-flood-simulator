@@ -74,3 +74,16 @@ def test_node_version_rejects_unparseable_version(
 )
 def test_node_version_support(version: tuple[int, int, int], supported: bool) -> None:
     assert run_local_review._node_version_supported(version) is supported
+
+
+def test_local_review_rejects_removed_skip_build_option(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["run_local_review.py", "--skip-build"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_local_review._parse_args()
+
+    assert exc_info.value.code == 2
+    assert "unrecognized arguments: --skip-build" in capsys.readouterr().err

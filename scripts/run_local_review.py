@@ -76,8 +76,7 @@ def _npm_executable() -> str:
     npm = shutil.which("npm.cmd") or shutil.which("npm")
     if npm is None:
         raise SystemExit(
-            "npm was not found. Install Node.js >=22.12, or rerun with --skip-build only if "
-            "floodsim/static already contains a current frontend build."
+            "npm was not found. Install Node.js >=22.12 to build the current frontend."
         )
     return npm
 
@@ -136,11 +135,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
-        "--skip-build",
-        action="store_true",
-        help="Serve the existing floodsim/static build without running npm.",
-    )
-    parser.add_argument(
         "--check-env",
         action="store_true",
         help="Validate the exact canonical Python environment and exit.",
@@ -173,8 +167,7 @@ def main() -> None:
             raise SystemExit(f"SFINCS executable not found: {sfincs_bin}")
         os.environ["SFINCS_BIN"] = str(sfincs_bin)
 
-    if not args.skip_build:
-        _build_frontend()
+    _build_frontend()
     _validate_static_build()
 
     from uvicorn import run as uvicorn_run
