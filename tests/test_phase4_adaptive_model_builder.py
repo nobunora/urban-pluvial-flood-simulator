@@ -85,6 +85,12 @@ def test_adaptive_builder_writes_quadtree_subgrid_and_distributed_rainfall(
     assert result.report["subgrid"]["pixels_per_hydraulic_cell"] == 2
     assert result.report["subgrid"]["hypsometric_levels"] == 3
     assert result.report["threshold_identity"] == adaptive.threshold_identity
+    assert result.report["classifier_diagnostics"]["active_levels_m"] == [1, 2, 4, 8]
+    assert result.report["classifier_diagnostics"]["maximum_resolution_m"] <= 8
+    assert "terrain_protected_cells" in result.report["classifier_diagnostics"]
+    assert "structure_protected_cells" in result.report["classifier_diagnostics"]
+    assert "target_protected_cells" in result.report["classifier_diagnostics"]
+    assert "transition_balance_cells" in result.report["classifier_diagnostics"]
     assert result.report["rainfall_volume_after_weight_area_m2"] == pytest.approx(
         result.report["rainfall_volume_before_weight_area_m2"]
     )
