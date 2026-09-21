@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from floodsim.domain.geometry import AnalysisArea, GeoBounds, LonLat
 from floodsim.domain.manifest import Limitations
@@ -72,7 +73,7 @@ def test_adaptive_normalizer_keeps_native_face_storage(tmp_path: Path) -> None:
 
     assert result.arrays_path.name == "normalized_adaptive_faces.npz"
     assert result.metadata["grid_level_summary"] == {"2m": 2}
-    assert result.metadata["max_depth_summary"]["global_max_depth_m"] == 0.4
+    assert result.metadata["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.4)
     assert result.metadata["flow_vectors_available"] is True
     assert "native quadtree-face order" in result.metadata["no_data_policy"]
 
