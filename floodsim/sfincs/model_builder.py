@@ -383,6 +383,7 @@ class AdaptiveSfincsModelBuilder:
             "reduction_ratio": quadtree.face_count / adaptive.full_1m_equivalent_cells,
             "classifier_reduction_ratio": adaptive.reduction_ratio,
             "threshold_identity": adaptive.threshold_identity,
+            "classifier_diagnostics": dict(adaptive.diagnostics),
             "model_crs_wkt": grid.crs_wkt,
             "quadtree_base_resolution_m": 32.0,
             "quadtree_padded_width_m": quadtree.padded_width_m,
