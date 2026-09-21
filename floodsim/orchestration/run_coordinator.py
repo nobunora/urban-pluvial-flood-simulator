@@ -419,6 +419,14 @@ class RunCoordinator:
         self._mark_cancelled(record, "キャンセルを要求しました。")
         if runner is not None:
             runner.cancel()
+
+        # Cancellation is a user-visible terminal state. Release the admission
+        # slot immediately instead of waiting for a cooperative preprocessing or
+        # model-build call to return. The cancelled worker may finish cleanup in
+        # the background, but it can no longer make this run active again.
+        with self._lock:
+            if self._active_run_id == run_id:
+                self._active_run_id = None
         return record
 
     def result_metadata(self, run_id: UUID) -> dict[str, Any]:
