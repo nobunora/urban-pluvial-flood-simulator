@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Final
 
 import numpy as np
@@ -46,7 +47,7 @@ class AdaptiveThresholds:
     detrended_relief_by_level_m: dict[int, float]
 
     @classmethod
-    def provisional(cls) -> "AdaptiveThresholds":
+    def provisional(cls) -> AdaptiveThresholds:
         return cls(
             rmse_by_level_m={2: 0.03, 4: 0.04, 8: 0.05, 16: 0.06, 32: 0.08},
             max_abs_residual_by_level_m={
@@ -124,7 +125,7 @@ class AdaptiveGridPolicy:
             raise ValueError("Adaptive policy must start at 1 m")
         if any(level not in ADAPTIVE_LEVELS_M for level in levels):
             raise ValueError("Adaptive policy contains an unsupported resolution")
-        if any(right != 2 * left for left, right in zip(levels, levels[1:])):
+        if any(right != 2 * left for left, right in pairwise(levels)):
             raise ValueError("Adaptive policy levels must be a contiguous power-of-two series")
         if self.target_mid_max_resolution_m not in levels:
             raise ValueError("target mid-zone resolution must be an active Adaptive level")

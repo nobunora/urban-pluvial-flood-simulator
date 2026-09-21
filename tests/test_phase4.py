@@ -138,7 +138,7 @@ def test_one_to_eight_requirement_creates_two_and_four_metre_transition() -> Non
     full = _full_grid(building=True)
     result = build_adaptive_grid(full, policy=_classifier_policy())
 
-    levels = set(int(value) for value in np.unique(result.resolution_m))
+    levels = {int(value) for value in np.unique(result.resolution_m)}
     assert {1, 2, 4, 8}.issubset(levels)
     _assert_two_to_one(result.resolution_m)
 
