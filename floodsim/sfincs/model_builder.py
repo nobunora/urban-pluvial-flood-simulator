@@ -405,6 +405,12 @@ class AdaptiveSfincsModelBuilder:
                 "failed to build Adaptive HydroMT-SFINCS quadtree/subgrid model"
             ) from exc
 
+        if subgrid_cache_hit:
+            with xr.open_dataset(root / "sfincs_subgrid.nc") as cached_dataset:
+                subgrid_variables = sorted(str(name) for name in cached_dataset.data_vars)
+        else:
+            subgrid_variables = sorted(str(name) for name in component.data.data_vars)
+
         level_counts = {
             f"{size}m": int(np.count_nonzero(quadtree.face_fields.resolution_m == size))
             for size in (1, 2, 4, 8, 16, 32)
@@ -436,11 +442,7 @@ class AdaptiveSfincsModelBuilder:
                 "source_roughness_resolution_m": 1.0,
                 "pixels_per_hydraulic_cell": self.subgrid_pixels,
                 "hypsometric_levels": self.subgrid_levels,
-                "variables": (
-                    sorted(str(name) for name in component.data.data_vars)
-                    if not subgrid_cache_hit
-                    else sorted(str(name) for name in xr.open_dataset(root / "sfincs_subgrid.nc").data_vars)
-                ),
+                "variables": subgrid_variables,
             },
             "rainfall_forcing": {
                 "grid_resolution_m": 1.0,
