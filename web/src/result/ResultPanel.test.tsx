@@ -116,6 +116,10 @@ describe("ResultPanel", () => {
       configurable: true,
       value: vi.fn(),
     });
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      value: null,
+    });
   });
 
   it("shows native point values including maximum time", async () => {
@@ -384,7 +388,7 @@ describe("ResultPanel", () => {
     );
   });
 
-  it("requests fullscreen for the focused map/point/legend region", () => {
+  it("keeps layer controls and the timeline inside the fullscreen region", () => {
     render(
       <ResultPanel
         runId="run-1"
@@ -397,13 +401,28 @@ describe("ResultPanel", () => {
     const region = screen.getByTestId("result-focus-region");
     const requestFullscreen = region.requestFullscreen as ReturnType<typeof vi.fn>;
 
-    fireEvent.click(screen.getByRole("button", { name: "地図を全画面表示" }));
+    expect(region.querySelector('[aria-label="結果レイヤー"]')).not.toBeNull();
+    for (const label of ["最大浸水深", "時刻別の浸水深", "計算格子", "流れベクトル"]) {
+      expect(region.querySelector(`button[aria-pressed]`)).not.toBeNull();
+      expect(screen.getByRole("button", { name: label })).toBeVisible();
+    }
 
+    fireEvent.click(screen.getByRole("button", { name: "地図を全画面表示" }));
     expect(requestFullscreen).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      value: region,
+    });
+    fireEvent(document, new Event("fullscreenchange"));
+
+    expect(await screen.findByRole("slider", { name: "結果時刻" })).toBeVisible();
+    expect(region.querySelector('[aria-label="結果時刻"]')).not.toBeNull();
     expect(region.querySelector('[aria-label="浸水深の凡例"]')).not.toBeNull();
     expect(region.querySelector(".result-point-panel")).not.toBeNull();
     expect(region.querySelector(".result-map-panel")).not.toBeNull();
     expect(region.querySelector(".result-sidebar-extra")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "全画面表示を終了" })).toBeVisible();
   });
 
   it("shows vector unavailability for historical runs without stored velocities", () => {

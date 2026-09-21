@@ -277,7 +277,7 @@ export default function ResultPanel({
 
   const showTimeline =
     metadata.available_time_indices.length > 0 &&
-    (layer === "time_depth" || flowVisible);
+    (layer === "time_depth" || flowVisible || isFullscreen);
 
   const mapLabel =
     layer === "time_depth"
@@ -333,102 +333,106 @@ export default function ResultPanel({
         数値シナリオです。公的な洪水予報・避難判断の代替ではありません。
       </div>
 
-      <div className="result-layer-controls" aria-label="結果レイヤー">
-        <button
-          type="button"
-          className={layer === "max_depth" ? "is-active" : ""}
-          aria-pressed={layer === "max_depth"}
-          onClick={() => setLayer("max_depth")}
-        >
-          最大浸水深
-        </button>
-        <button
-          type="button"
-          className={layer === "time_depth" ? "is-active" : ""}
-          aria-pressed={layer === "time_depth"}
-          disabled={metadata.available_time_indices.length === 0}
-          onClick={() => setLayer("time_depth")}
-        >
-          時刻別の浸水深
-        </button>
-        <button
-          type="button"
-          className={layer === "grid_resolution" ? "is-active" : ""}
-          aria-pressed={layer === "grid_resolution"}
-          onClick={() => setLayer("grid_resolution")}
-        >
-          計算格子
-        </button>
-        <button
-          type="button"
-          className={flowVisible ? "is-active" : ""}
-          aria-pressed={flowVisible}
-          disabled={!metadata.flow_vectors_available}
-          onClick={handleFlowToggle}
-        >
-          流れベクトル
-        </button>
-      </div>
-
-      <div className="result-display-controls">
-        <label>
-          背景地図の透明度
-          <input
-            aria-label="背景地図の透明度"
-            type="range"
-            min={0}
-            max={100}
-            step={1}
-            value={backgroundTransparency}
-            onChange={(event) => setBackgroundTransparency(Number(event.target.value))}
-          />
-          <span>{backgroundTransparency}%</span>
-        </label>
-        {!metadata.flow_vectors_available && (
-          <span className="result-muted">この解析には流れベクトルデータがありません。</span>
-        )}
-      </div>
-
-      {showTimeline && (
-        <div className="result-timeline">
-          <button
-            type="button"
-            disabled={timePosition <= 0}
-            onClick={() => setTimePosition((value) => Math.max(0, value - 1))}
-            aria-label="前の時刻"
-          >
-            ◀
-          </button>
-          <input
-            aria-label="結果時刻"
-            type="range"
-            min={0}
-            max={maxTimePosition}
-            step={1}
-            value={timePosition}
-            onChange={(event) => setTimePosition(Number(event.target.value))}
-          />
-          <button
-            type="button"
-            disabled={timePosition >= maxTimePosition}
-            onClick={() => setTimePosition((value) => Math.min(maxTimePosition, value + 1))}
-            aria-label="次の時刻"
-          >
-            ▶
-          </button>
-          <strong>現在: {elapsedLabel(metadata.time_values, selectedTimeIndex ?? 0)}</strong>
-        </div>
-      )}
-
       <div className="result-focus-region" ref={focusRegionRef} data-testid="result-focus-region">
-        <button
-          type="button"
-          className="result-fullscreen-button"
-          onClick={toggleFullscreen}
-          aria-label={isFullscreen ? "全画面表示を終了" : "地図を全画面表示"}
-        >
-          {isFullscreen ? "全画面を終了" : "全画面"}
-        </button>
+        <div className="result-focus-controls" data-testid="result-focus-controls">
+          <div className="result-focus-control-row">
+            <div className="result-layer-controls" aria-label="結果レイヤー">
+              <button
+                type="button"
+                className={layer === "max_depth" ? "is-active" : ""}
+                aria-pressed={layer === "max_depth"}
+                onClick={() => setLayer("max_depth")}
+              >
+                最大浸水深
+              </button>
+              <button
+                type="button"
+                className={layer === "time_depth" ? "is-active" : ""}
+                aria-pressed={layer === "time_depth"}
+                disabled={metadata.available_time_indices.length === 0}
+                onClick={() => setLayer("time_depth")}
+              >
+                時刻別の浸水深
+              </button>
+              <button
+                type="button"
+                className={layer === "grid_resolution" ? "is-active" : ""}
+                aria-pressed={layer === "grid_resolution"}
+                onClick={() => setLayer("grid_resolution")}
+              >
+                計算格子
+              </button>
+              <button
+                type="button"
+                className={flowVisible ? "is-active" : ""}
+                aria-pressed={flowVisible}
+                disabled={!metadata.flow_vectors_available}
+                onClick={handleFlowToggle}
+              >
+                流れベクトル
+              </button>
+            </div>
+
+            <button
+              type="button"
+              className="result-fullscreen-button"
+              onClick={toggleFullscreen}
+              aria-label={isFullscreen ? "全画面表示を終了" : "地図を全画面表示"}
+            >
+              {isFullscreen ? "全画面を終了" : "全画面"}
+            </button>
+          </div>
+
+          <div className="result-display-controls">
+            <label>
+              背景地図の透明度
+              <input
+                aria-label="背景地図の透明度"
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={backgroundTransparency}
+                onChange={(event) => setBackgroundTransparency(Number(event.target.value))}
+              />
+              <span>{backgroundTransparency}%</span>
+            </label>
+            {!metadata.flow_vectors_available && (
+              <span className="result-muted">この解析には流れベクトルデータがありません。</span>
+            )}
+          </div>
+
+          {showTimeline && (
+            <div className="result-timeline">
+              <button
+                type="button"
+                disabled={timePosition <= 0}
+                onClick={() => setTimePosition((value) => Math.max(0, value - 1))}
+                aria-label="前の時刻"
+              >
+                ◀
+              </button>
+              <input
+                aria-label="結果時刻"
+                type="range"
+                min={0}
+                max={maxTimePosition}
+                step={1}
+                value={timePosition}
+                onChange={(event) => setTimePosition(Number(event.target.value))}
+              />
+              <button
+                type="button"
+                disabled={timePosition >= maxTimePosition}
+                onClick={() => setTimePosition((value) => Math.min(maxTimePosition, value + 1))}
+                aria-label="次の時刻"
+              >
+                ▶
+              </button>
+              <strong>現在: {elapsedLabel(metadata.time_values, selectedTimeIndex ?? 0)}</strong>
+            </div>
+          )}
+        </div>
 
         <div className="result-layout">
           <div className="result-map-panel">
