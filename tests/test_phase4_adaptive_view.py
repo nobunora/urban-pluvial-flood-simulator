@@ -146,7 +146,7 @@ def test_adaptive_flow_vectors_use_native_face_centers() -> None:
     )
 
     assert payload["metadata"]["arrow_count"] == 1
-    assert payload["metadata"]["sampling_method"] == "native-quadtree-face-top-speed"
+    assert payload["metadata"]["sampling_method"] == "native-quadtree-spatial-fastest-per-bin"
     feature = payload["features"][0]
     assert feature["properties"]["face_index"] == 3
     assert feature["properties"]["grid_resolution_m"] == pytest.approx(2.0)
