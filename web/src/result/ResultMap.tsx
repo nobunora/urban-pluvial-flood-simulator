@@ -314,6 +314,42 @@ export default function ResultMap({
 
     let idleReporter: (() => void) | null = null;
 
+    const selectFlowData = (): FlowVectorFeatureCollection | null => {
+      if (!flowVectorData || flowVectorData.features.length === 0) return flowVectorData;
+
+      // Keep roughly one arrow per screen-space cell. Because projection is
+      // recalculated after every map move/zoom, zooming out reduces clutter
+      // while zooming in reveals progressively more of the retained vectors.
+      const cellPx = 52;
+      const width = Math.max(1, map.getCanvas().clientWidth);
+      const height = Math.max(1, map.getCanvas().clientHeight);
+      const bins = new Map<string, (typeof flowVectorData.features)[number]>();
+
+      for (const feature of displayFlow.features) {
+        const firstLine = feature.geometry.coordinates[0];
+        if (!firstLine || firstLine.length === 0) continue;
+        const anchorPoint = firstLine[Math.floor(firstLine.length / 2)];
+        if (!anchorPoint) continue;
+        const point = map.project([anchorPoint[0], anchorPoint[1]]);
+        if (point.x < 0 || point.y < 0 || point.x > width || point.y > height) continue;
+        const key = `${Math.floor(point.x / cellPx)}:${Math.floor(point.y / cellPx)}`;
+        const previous = bins.get(key);
+        if (!previous || feature.properties.speed_mps > previous.properties.speed_mps) {
+          bins.set(key, feature);
+        }
+      }
+
+      return {
+        ...flowVectorData,
+        features: Array.from(bins.values()),
+        metadata: {
+          ...flowVectorData.metadata,
+          arrow_count: bins.size,
+          sampling_method: "screen-space-fastest-per-52px-cell",
+        },
+      };
+    };
+
     const featureBounds = (): [number, number, number, number] | null => {
       if (!flowVectorData || flowVectorData.features.length === 0) return null;
       const points = flowVectorData.features.flatMap((feature) =>
@@ -330,13 +366,13 @@ export default function ResultMap({
       ];
     };
 
-    const renderSvg = () => {
+    const renderSvg = (displayFlow: FlowVectorFeatureCollection | null) => {
       svg.replaceChildren();
       const width = Math.max(1, svg.clientWidth);
       const height = Math.max(1, svg.clientHeight);
       svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
 
-      if (!flowVectorData || flowVectorData.features.length === 0) {
+      if (!displayFlow || displayFlow.features.length === 0) {
         svg.dataset.flowSvgArrows = "0";
         return;
       }
@@ -376,7 +412,7 @@ export default function ResultMap({
         line.setAttribute("stroke-opacity", "1");
         svg.appendChild(line);
       }
-      svg.dataset.flowSvgArrows = String(flowVectorData.features.length);
+      svg.dataset.flowSvgArrows = String(displayFlow.features.length);
     };
 
     const report = () => {
@@ -399,9 +435,10 @@ export default function ResultMap({
     };
 
     const update = () => {
+      const displayFlow = selectFlowData();
       const source = map.getSource(FLOW_SOURCE_ID) as GeoJSONSource | undefined;
-      source?.setData(flowVectorData ?? EMPTY_FLOW);
-      const visibility = flowVectorData && flowVectorData.features.length > 0
+      source?.setData(displayFlow ?? EMPTY_FLOW);
+      const visibility = displayFlow && displayFlow.features.length > 0
         ? "visible"
         : "none";
       map.setLayoutProperty(FLOW_HALO_LAYER_ID, "visibility", visibility);
@@ -418,7 +455,7 @@ export default function ResultMap({
 
       // Independent SVG rendering is the visible fallback/guarantee. It uses
       // the same GeoJSON but bypasses MapLibre line-layer rendering entirely.
-      renderSvg();
+      renderSvg(displayFlow);
 
       if (visibility === "none") {
         onFlowRenderStats?.(null);
@@ -429,8 +466,8 @@ export default function ResultMap({
       map.triggerRepaint();
     };
 
-    map.on("move", renderSvg);
-    map.on("resize", renderSvg);
+    map.on("moveend", update);
+    map.on("resize", update);
 
     if (map.getSource(FLOW_SOURCE_ID)) {
       update();
@@ -439,8 +476,8 @@ export default function ResultMap({
     }
     return () => {
       map.off("load", update);
-      map.off("move", renderSvg);
-      map.off("resize", renderSvg);
+      map.off("moveend", update);
+      map.off("resize", update);
       if (idleReporter) map.off("idle", idleReporter);
       svg.replaceChildren();
       svg.dataset.flowSvgArrows = "0";
