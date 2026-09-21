@@ -86,15 +86,16 @@ def build_adaptive_benchmark_fixture(
         y0_m=-size / 2.0,
         crs_wkt=crs.to_wkt(),
     )
+    rainfall_metadata: dict[str, object] = {
+        "fixture": f"adaptive-validation-{kind}",
+        "intensity_mm_per_h": 120.0,
+        "duration_seconds": 1800.0,
+    }
     rainfall = RainfallTimeSeries(
         start_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
         elapsed_seconds=[0.0, 1800.0],
         intensity_mm_per_h=[120.0, 120.0],
-        source_metadata={
-            "fixture": f"adaptive-validation-{kind}",
-            "intensity_mm_per_h": 120.0,
-            "duration_seconds": 1800.0,
-        },
+        source_metadata=rainfall_metadata,
     )
     return AdaptiveBenchmarkFixture(
         name=kind,
