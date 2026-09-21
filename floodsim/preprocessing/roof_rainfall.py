@@ -6,7 +6,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.ndimage import binary_dilation, find_objects, label  # type: ignore[import-untyped]
+from scipy.ndimage import (  # type: ignore[import-untyped]
+    binary_dilation,
+    find_objects,
+    label,
+)
 
 
 class RoofRunoffNoRecipient(RuntimeError):
