@@ -47,8 +47,6 @@ def normalize_regular_result(
     if result.flow_vectors_available:
         arrays_payload["velocity_u_mps"] = result.velocity_u_mps
         arrays_payload["velocity_v_mps"] = result.velocity_v_mps
-    if result.subgrid_volume_m3 is not None:
-        arrays_payload["subgrid_volume_m3"] = result.subgrid_volume_m3
     np.savez_compressed(arrays_path, **arrays_payload)
     metadata = {
         "schema_version": "1",
@@ -129,6 +127,8 @@ def normalize_quadtree_result(
     if result.flow_vectors_available:
         arrays_payload["velocity_u_mps"] = result.velocity_u_mps
         arrays_payload["velocity_v_mps"] = result.velocity_v_mps
+    if result.subgrid_volume_m3 is not None:
+        arrays_payload["subgrid_volume_m3"] = result.subgrid_volume_m3
     np.savez_compressed(arrays_path, **arrays_payload)
 
     level_summary = {
@@ -156,19 +156,6 @@ def normalize_quadtree_result(
             "negative_max_depth_clipped_cells": 0,
             "min_raw_active_depth_m": result.min_raw_active_depth_m,
             "excluded_boundary_cells": result.excluded_boundary_cells,
-        },
-        "volume_summary": {
-            "final_surface_water_volume_m3": (
-                float(np.nansum(result.subgrid_volume_m3[-1]))
-                if result.subgrid_volume_m3 is not None
-                and result.subgrid_volume_m3.shape[0] > 0
-                else None
-            ),
-            "source": (
-                "SFINCS subgrid_volume"
-                if result.subgrid_volume_m3 is not None
-                else "unavailable"
-            ),
         },
         "grid_level_summary": level_summary,
         "depth_legend": depth_legend_metadata(),
