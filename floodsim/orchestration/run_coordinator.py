@@ -363,10 +363,12 @@ class RunCoordinator:
         return self.grid_builder(area, elevation, vectors)
 
     def _mark_cancelled(self, record: RunRecord, message: str) -> None:
+        now = time.monotonic()
         with record.lock:
             if record.machine.state is RunState.CANCELLED:
                 return
             if record.machine.state is not RunState.CANCELLING:
+                self._append_stage_timing(record, now=now)
                 record.machine.transition(RunState.CANCELLING)
                 record.manifest = record.manifest.model_copy(update={"run_status": RunState.CANCELLING})
                 self._append_event(record, RunState.CANCELLING, message)
@@ -883,6 +885,7 @@ class RunCoordinator:
                     self._mark_cancelled(record, "キャンセル要求を処理しています。")
                 else:
                     failing_state = record.machine.state
+                    self._append_stage_timing(record)
                     record.machine.transition(RunState.FAILED)
                     code = str(getattr(exc, "code", "INTERNAL_RUN_FAILED"))
                     message = str(exc) or type(exc).__name__
