@@ -130,14 +130,16 @@ export type FlowVectorFeatureCollection = {
       u_mps: number;
       v_mps: number;
       time_index: number;
-      row: number;
-      column: number;
+      row?: number;
+      column?: number;
+      face_index?: number;
+      grid_resolution_m?: number;
     };
   }>;
   metadata: {
     speed_unit: string;
     min_speed_mps: number;
-    sample_stride_cells: number;
+    sample_stride_cells?: number;
     arrow_count: number;
     sampling_method?: string;
   };

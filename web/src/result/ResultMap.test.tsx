@@ -13,18 +13,24 @@ const mocks = vi.hoisted(() => ({
   updateImage: vi.fn(),
   setData: vi.fn(),
   setLayoutProperty: vi.fn(),
+  moveLayer: vi.fn(),
+  querySourceFeatures: vi.fn(),
+  queryRenderedFeatures: vi.fn(),
   triggerRepaint: vi.fn(),
 }));
 
 vi.mock("maplibre-gl", () => {
   class Map {
     sources = new globalThis.Map<string, unknown>();
+    style: { layers?: Array<{ id: string }> };
 
     constructor(options: Record<string, unknown>) {
       mocks.constructorOptions.push(options);
       const style = options.style as {
         sources?: Record<string, { type?: string }>;
+        layers?: Array<{ id: string }>;
       };
+      this.style = style;
       for (const [id, source] of Object.entries(style.sources ?? {})) {
         if (source.type === "image") {
           this.sources.set(id, { updateImage: mocks.updateImage });
@@ -46,6 +52,24 @@ vi.mock("maplibre-gl", () => {
     getPitch() { return 0; }
     getSource(id: string) { return this.sources.get(id); }
     setLayoutProperty(...args: unknown[]) { mocks.setLayoutProperty(...args); }
+    moveLayer(...args: unknown[]) { mocks.moveLayer(...args); }
+    querySourceFeatures(...args: unknown[]) {
+      mocks.querySourceFeatures(...args);
+      return flowData.features;
+    }
+    queryRenderedFeatures(...args: unknown[]) {
+      mocks.queryRenderedFeatures(...args);
+      return flowData.features;
+    }
+    getStyle() { return this.style; }
+    getBounds() {
+      return {
+        getWest: () => 139.7,
+        getSouth: () => 35.6,
+        getEast: () => 139.8,
+        getNorth: () => 35.7,
+      };
+    }
     triggerRepaint() { mocks.triggerRepaint(); }
   }
 
@@ -151,6 +175,9 @@ describe("ResultMap", () => {
     mocks.updateImage.mockClear();
     mocks.setData.mockClear();
     mocks.setLayoutProperty.mockClear();
+    mocks.moveLayer.mockClear();
+    mocks.querySourceFeatures.mockClear();
+    mocks.queryRenderedFeatures.mockClear();
     mocks.triggerRepaint.mockClear();
   });
 
@@ -184,6 +211,7 @@ describe("ResultMap", () => {
   });
 
   it("updates result images without recreating MapLibre and renders vector data with halo", () => {
+    const onFlowRenderStats = vi.fn();
     const view = render(
       <ResultMap
         metadata={metadata}
@@ -192,6 +220,7 @@ describe("ResultMap", () => {
         backgroundOpacity={0.55}
         mapLabel="結果"
         onInspect={vi.fn()}
+        onFlowRenderStats={onFlowRenderStats}
       />,
     );
     const initialMapCount = mocks.constructorOptions.length;
@@ -204,6 +233,7 @@ describe("ResultMap", () => {
         backgroundOpacity={0.55}
         mapLabel="結果"
         onInspect={vi.fn()}
+        onFlowRenderStats={onFlowRenderStats}
       />,
     );
 
@@ -213,25 +243,37 @@ describe("ResultMap", () => {
     );
     expect(mocks.setData).toHaveBeenLastCalledWith(flowData);
     expect(mocks.setLayoutProperty).toHaveBeenCalledWith(
-      "flow-vectors-halo",
+      "flow-vector-halo",
       "visibility",
       "visible",
     );
     expect(mocks.setLayoutProperty).toHaveBeenCalledWith(
-      "flow-vectors",
+      "flow-vector-lines",
       "visibility",
       "visible",
+    );
+    expect(mocks.moveLayer).toHaveBeenCalledWith("flow-vector-halo");
+    expect(mocks.moveLayer).toHaveBeenCalledWith("flow-vector-lines");
+    expect(mocks.querySourceFeatures).toHaveBeenCalledWith("flow-vector-source");
+    expect(mocks.queryRenderedFeatures).toHaveBeenCalledWith({
+      layers: ["flow-vector-lines"],
+    });
+    expect(onFlowRenderStats).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceFeatureCount: 1,
+        renderedFeatureCount: 1,
+      }),
     );
 
     const overlay = options(1);
     const vectorPaint = overlay.style.layers.find(
-      (layer) => layer.id === "flow-vectors",
+      (layer) => layer.id === "flow-vector-lines",
     )?.paint;
     expect(vectorPaint?.["line-color"]).toEqual(
       expect.arrayContaining(["step", expect.anything()]),
     );
     expect(
-      overlay.style.layers.find((layer) => layer.id === "flow-vectors-halo"),
+      overlay.style.layers.find((layer) => layer.id === "flow-vector-halo"),
     ).toBeDefined();
   });
 });

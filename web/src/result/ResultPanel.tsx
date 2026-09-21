@@ -8,7 +8,7 @@ import {
   type PointInspectionResponse,
   type ResultMetadataResponse,
 } from "../api/client";
-import ResultMap from "./ResultMap";
+import ResultMap, { type FlowRenderStats } from "./ResultMap";
 import "./result.css";
 
 type Props = {
@@ -80,6 +80,7 @@ export default function ResultPanel({
   const [flowVectorData, setFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
   const [flowLoading, setFlowLoading] = useState(false);
   const [flowError, setFlowError] = useState<string | null>(null);
+  const [flowRenderStats, setFlowRenderStats] = useState<FlowRenderStats | null>(null);
   const flowAutoLocateRef = useRef(false);
   const [inspection, setInspection] = useState<PointInspectionResponse | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
@@ -127,6 +128,7 @@ export default function ResultPanel({
       setFlowVisible(false);
       setFlowVectorData(null);
       setFlowError(null);
+      setFlowRenderStats(null);
       return;
     }
     flowAutoLocateRef.current = true;
@@ -437,6 +439,7 @@ export default function ResultPanel({
               backgroundOpacity={(100 - backgroundTransparency) / 100}
               mapLabel={mapLabel}
               onInspect={handleInspect}
+              onFlowRenderStats={setFlowRenderStats}
             />
           </div>
 
@@ -513,9 +516,24 @@ export default function ResultPanel({
                 {flowLoading && <span className="result-vector-note">流れベクトルを読み込み中…</span>}
                 {flowError && <span className="result-warning">流れベクトルを読み込めません: {flowError}</span>}
                 {!flowLoading && !flowError && flowVectorData && (
-                  <span className="result-vector-note">
-                    表示矢印: {flowVectorData.metadata.arrow_count.toLocaleString()}本
-                  </span>
+                  <>
+                    <span className="result-vector-note">
+                      GeoJSON矢印: {flowVectorData.metadata.arrow_count.toLocaleString()}本
+                    </span>
+                    {flowRenderStats && (
+                      <span className="result-vector-note">
+                        MapLibre source: {flowRenderStats.sourceFeatureCount.toLocaleString()} /
+                        描画: {flowRenderStats.renderedFeatureCount.toLocaleString()}
+                      </span>
+                    )}
+                    {flowRenderStats &&
+                      flowVectorData.metadata.arrow_count > 0 &&
+                      flowRenderStats.renderedFeatureCount === 0 && (
+                        <span className="result-warning">
+                          GeoJSONは存在しますが、現在のMapLibre表示範囲では描画featureが0件です。
+                        </span>
+                      )}
+                  </>
                 )}
                 {!flowLoading &&
                   !flowError &&

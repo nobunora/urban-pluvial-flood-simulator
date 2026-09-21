@@ -16,6 +16,14 @@ import type {
 } from "../api/client";
 import { resultBounds, resultImageCoordinates } from "./resultGeometry";
 
+export type FlowRenderStats = {
+  sourceFeatureCount: number;
+  renderedFeatureCount: number;
+  layerOrder: string[];
+  featureBounds: [number, number, number, number] | null;
+  mapBounds: [number, number, number, number];
+};
+
 type Props = {
   metadata: ResultMetadataResponse;
   imageUrl: string;
@@ -23,12 +31,17 @@ type Props = {
   backgroundOpacity: number;
   mapLabel: string;
   onInspect: (lon: number, lat: number) => void;
+  onFlowRenderStats?: (stats: FlowRenderStats | null) => void;
 };
 
 const EMPTY_FLOW = {
   type: "FeatureCollection" as const,
   features: [],
 };
+
+const FLOW_SOURCE_ID = "flow-vector-source";
+const FLOW_HALO_LAYER_ID = "flow-vector-halo";
+const FLOW_LINE_LAYER_ID = "flow-vector-lines";
 
 function overlayStyle(
   metadata: ResultMetadataResponse,
@@ -51,7 +64,7 @@ function overlayStyle(
         url: imageUrl,
         coordinates,
       },
-      "flow-vectors": {
+      [FLOW_SOURCE_ID]: {
         type: "geojson",
         data: EMPTY_FLOW,
       },
@@ -78,9 +91,9 @@ function overlayStyle(
         },
       },
       {
-        id: "flow-vectors-halo",
+        id: FLOW_HALO_LAYER_ID,
         type: "line",
-        source: "flow-vectors",
+        source: FLOW_SOURCE_ID,
         layout: {
           visibility: "none",
           "line-cap": "round",
@@ -100,9 +113,9 @@ function overlayStyle(
         },
       },
       {
-        id: "flow-vectors",
+        id: FLOW_LINE_LAYER_ID,
         type: "line",
-        source: "flow-vectors",
+        source: FLOW_SOURCE_ID,
         layout: {
           visibility: "none",
           "line-cap": "round",
@@ -171,6 +184,7 @@ export default function ResultMap({
   backgroundOpacity,
   mapLabel,
   onInspect,
+  onFlowRenderStats,
 }: Props) {
   const baseContainerRef = useRef<HTMLDivElement | null>(null);
   const overlayContainerRef = useRef<HTMLDivElement | null>(null);
@@ -286,28 +300,79 @@ export default function ResultMap({
     const map = overlayMapRef.current;
     if (!map) return;
 
+    let idleReporter: (() => void) | null = null;
+
+    const featureBounds = (): [number, number, number, number] | null => {
+      if (!flowVectorData || flowVectorData.features.length === 0) return null;
+      const points = flowVectorData.features.flatMap((feature) =>
+        feature.geometry.coordinates.flatMap((line) => line),
+      );
+      if (points.length === 0) return null;
+      const lons = points.map((point) => point[0]);
+      const lats = points.map((point) => point[1]);
+      return [
+        Math.min(...lons),
+        Math.min(...lats),
+        Math.max(...lons),
+        Math.max(...lats),
+      ];
+    };
+
+    const report = () => {
+      const bounds = map.getBounds();
+      onFlowRenderStats?.({
+        sourceFeatureCount: map.querySourceFeatures(FLOW_SOURCE_ID).length,
+        renderedFeatureCount: map.queryRenderedFeatures({
+          layers: [FLOW_LINE_LAYER_ID],
+        }).length,
+        layerOrder: (map.getStyle().layers ?? []).map((layer) => layer.id),
+        featureBounds: featureBounds(),
+        mapBounds: [
+          bounds.getWest(),
+          bounds.getSouth(),
+          bounds.getEast(),
+          bounds.getNorth(),
+        ],
+      });
+    };
+
     const update = () => {
-      const source = map.getSource("flow-vectors") as GeoJSONSource | undefined;
+      const source = map.getSource(FLOW_SOURCE_ID) as GeoJSONSource | undefined;
       source?.setData(flowVectorData ?? EMPTY_FLOW);
       const visibility = flowVectorData && flowVectorData.features.length > 0
         ? "visible"
         : "none";
-      map.setLayoutProperty("flow-vectors-halo", "visibility", visibility);
-      map.setLayoutProperty("flow-vectors", "visibility", visibility);
+      map.setLayoutProperty(FLOW_HALO_LAYER_ID, "visibility", visibility);
+      map.setLayoutProperty(FLOW_LINE_LAYER_ID, "visibility", visibility);
+
+      // Keep an explicit deterministic stack after any source/image update.
+      // Result raster < vector halo < vector line < analysis boundary.
+      map.moveLayer(FLOW_HALO_LAYER_ID);
+      map.moveLayer(FLOW_LINE_LAYER_ID);
+      map.moveLayer("analysis-boundary-casing");
+      map.moveLayer("analysis-boundary-outline");
       map.setLayoutProperty("analysis-boundary-casing", "visibility", "visible");
       map.setLayoutProperty("analysis-boundary-outline", "visibility", "visible");
+
+      if (visibility === "none") {
+        onFlowRenderStats?.(null);
+      } else {
+        idleReporter = report;
+        map.once("idle", report);
+      }
       map.triggerRepaint();
     };
 
-    if (map.getSource("flow-vectors")) {
+    if (map.getSource(FLOW_SOURCE_ID)) {
       update();
-      return;
+    } else {
+      map.once("load", update);
     }
-    map.once("load", update);
     return () => {
       map.off("load", update);
+      if (idleReporter) map.off("idle", idleReporter);
     };
-  }, [flowVectorData]);
+  }, [flowVectorData, onFlowRenderStats]);
 
   return (
     <div className="result-map-stack" role="region" aria-label={mapLabel}>
