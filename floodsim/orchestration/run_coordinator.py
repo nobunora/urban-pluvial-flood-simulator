@@ -22,7 +22,11 @@ from floodsim.domain.manifest import RunManifest
 from floodsim.domain.run_config import AccuracyMode, RunConfig
 from floodsim.domain.run_state import RunState, RunStateMachine
 from floodsim.orchestration.rainfall_resolution import resolve_rainfall
-from floodsim.preprocessing.adaptive_grid import build_adaptive_grid
+from floodsim.preprocessing.adaptive_grid import (
+    DEFAULT_ADAPTIVE_GRID_POLICY,
+    AdaptiveGridPolicy,
+    build_adaptive_grid,
+)
 from floodsim.preprocessing.full_grid import build_full_1m_grid
 from floodsim.providers.gsi_elevation import GsiElevationProvider
 from floodsim.providers.jma import JmaCatalogProvider
@@ -148,6 +152,7 @@ class RunCoordinator:
         model_builder: Any | None = None,
         adaptive_enabled: bool = False,
         adaptive_grid_builder: Callable[..., Any] = build_adaptive_grid,
+        adaptive_grid_policy: AdaptiveGridPolicy = DEFAULT_ADAPTIVE_GRID_POLICY,
         adaptive_model_builder: Any | None = None,
         engine_resolver: Callable[[], ResolvedEngine] = resolve_sfincs_executable,
         runner_factory: Callable[[], SfincsRunner] = SfincsRunner,
@@ -168,8 +173,9 @@ class RunCoordinator:
         self.catalog_provider = catalog_provider or JmaCatalogProvider()
         self.grid_builder = grid_builder
         self.model_builder = model_builder or SfincsModelBuilder()
-        self.adaptive_enabled = adaptive_enabled
+        self.adaptive_grid_enabled = adaptive_enabled
         self.adaptive_grid_builder = adaptive_grid_builder
+        self.adaptive_grid_policy = adaptive_grid_policy
         self.adaptive_model_builder = adaptive_model_builder or AdaptiveSfincsModelBuilder()
         self.engine_resolver = engine_resolver
         self.runner_factory = runner_factory
@@ -315,7 +321,7 @@ class RunCoordinator:
     def create_run(self, config: RunConfig) -> RunRecord:
         if (
             config.requested_accuracy_mode is AccuracyMode.ADAPTIVE
-            and not self.adaptive_enabled
+            and not self.adaptive_grid_enabled
         ):
             raise AdaptiveNotAvailable(
                 "Adaptive mode is implemented but remains disabled until the "
@@ -611,7 +617,22 @@ class RunCoordinator:
                     0.0,
                     "Adaptive格子の地形複雑度を分類しています。",
                 )
-                adaptive_grid = self.adaptive_grid_builder(grid)
+                adaptive_signature = inspect.signature(self.adaptive_grid_builder)
+                accepts_policy = (
+                    "policy" in adaptive_signature.parameters
+                    or any(
+                        parameter.kind is inspect.Parameter.VAR_KEYWORD
+                        for parameter in adaptive_signature.parameters.values()
+                    )
+                )
+                adaptive_grid = (
+                    self.adaptive_grid_builder(
+                        grid,
+                        policy=self.adaptive_grid_policy,
+                    )
+                    if accepts_policy
+                    else self.adaptive_grid_builder(grid)
+                )
                 final_grid_level_counts = dict(adaptive_grid.cell_count_by_level)
                 runtime_diagnostic["adaptive_grid"] = dict(adaptive_grid.diagnostics)
                 self._append_activity(
