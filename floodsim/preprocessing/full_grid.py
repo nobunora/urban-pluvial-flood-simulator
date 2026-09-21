@@ -43,6 +43,9 @@ class FullGridProduct:
     y0_m: float
     crs_wkt: str
     road_mask: np.ndarray | None = None
+    adaptive_hard_boundary_zone: np.ndarray | None = None
+    adaptive_resolution_ceiling_m: np.ndarray | None = None
+    native_structure_mask: np.ndarray | None = None
 
     @property
     def cell_count(self) -> int:

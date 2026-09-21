@@ -618,21 +618,21 @@ class RunCoordinator:
                     "Adaptive格子の地形複雑度を分類しています。",
                 )
                 adaptive_signature = inspect.signature(self.adaptive_grid_builder)
-                accepts_policy = (
-                    "policy" in adaptive_signature.parameters
-                    or any(
-                        parameter.kind is inspect.Parameter.VAR_KEYWORD
-                        for parameter in adaptive_signature.parameters.values()
-                    )
+                accepts_kwargs = any(
+                    parameter.kind is inspect.Parameter.VAR_KEYWORD
+                    for parameter in adaptive_signature.parameters.values()
                 )
-                adaptive_grid = (
-                    self.adaptive_grid_builder(
-                        grid,
-                        policy=self.adaptive_grid_policy,
-                    )
-                    if accepts_policy
-                    else self.adaptive_grid_builder(grid)
-                )
+                adaptive_kwargs: dict[str, Any] = {}
+                adaptive_inputs = {
+                    "policy": self.adaptive_grid_policy,
+                    "hard_boundary_zone": grid.adaptive_hard_boundary_zone,
+                    "existing_resolution_ceiling_m": grid.adaptive_resolution_ceiling_m,
+                    "native_structure_mask": grid.native_structure_mask,
+                }
+                for name, value in adaptive_inputs.items():
+                    if accepts_kwargs or name in adaptive_signature.parameters:
+                        adaptive_kwargs[name] = value
+                adaptive_grid = self.adaptive_grid_builder(grid, **adaptive_kwargs)
                 final_grid_level_counts = dict(adaptive_grid.cell_count_by_level)
                 runtime_diagnostic["adaptive_grid"] = dict(adaptive_grid.diagnostics)
                 self._append_activity(

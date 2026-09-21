@@ -18,7 +18,7 @@ from floodsim.preprocessing.roof_rainfall import RoofRainAllocation
 from floodsim.storage.run_store import atomic_write_json
 
 PREPARED_GRID_CACHE_SCHEMA = "1"
-PREPARED_GRID_REVISION = "full1m-preprocess-v3-all-building-obstacles"
+PREPARED_GRID_REVISION = "full1m-preprocess-v4-adaptive-constraints"
 
 
 @dataclass(frozen=True)
@@ -75,6 +75,22 @@ class PreparedGridCache:
                 manning = np.asarray(archive["manning_n"], dtype=np.float32)
                 rain_weight = np.asarray(archive["rain_weight"], dtype=np.float32)
                 road = np.asarray(archive["road_mask"], dtype=bool)
+                has_hard_boundary = bool(np.asarray(archive["has_adaptive_hard_boundary_zone"]).item())
+                hard_boundary = np.asarray(
+                    archive["adaptive_hard_boundary_zone"], dtype=np.int32
+                )
+                has_resolution_ceiling = bool(
+                    np.asarray(archive["has_adaptive_resolution_ceiling_m"]).item()
+                )
+                resolution_ceiling = np.asarray(
+                    archive["adaptive_resolution_ceiling_m"], dtype=np.int16
+                )
+                has_native_structure = bool(
+                    np.asarray(archive["has_native_structure_mask"]).item()
+                )
+                native_structure = np.asarray(
+                    archive["native_structure_mask"], dtype=bool
+                )
                 width = int(np.asarray(archive["width_cells"]).item())
                 height = int(np.asarray(archive["height_cells"]).item())
                 dx = float(np.asarray(archive["dx_m"]).item())
@@ -86,7 +102,17 @@ class PreparedGridCache:
             return None
 
         expected = (height, width)
-        arrays = (elevation, building, sfincs_mask, manning, rain_weight, road)
+        arrays = (
+            elevation,
+            building,
+            sfincs_mask,
+            manning,
+            rain_weight,
+            road,
+            hard_boundary,
+            resolution_ceiling,
+            native_structure,
+        )
         if any(array.shape != expected for array in arrays):
             return None
 
@@ -113,6 +139,11 @@ class PreparedGridCache:
             y0_m=y0,
             crs_wkt=crs_wkt,
             road_mask=road,
+            adaptive_hard_boundary_zone=hard_boundary if has_hard_boundary else None,
+            adaptive_resolution_ceiling_m=(
+                resolution_ceiling if has_resolution_ceiling else None
+            ),
+            native_structure_mask=native_structure if has_native_structure else None,
         )
         return PreparedGridEntry(self.key_for(area), grid, metadata)
 
@@ -140,6 +171,30 @@ class PreparedGridCache:
                     road_mask=(
                         grid.road_mask
                         if grid.road_mask is not None
+                        else np.zeros(grid.elevation_m.shape, dtype=bool)
+                    ),
+                    has_adaptive_hard_boundary_zone=np.uint8(
+                        grid.adaptive_hard_boundary_zone is not None
+                    ),
+                    adaptive_hard_boundary_zone=(
+                        grid.adaptive_hard_boundary_zone
+                        if grid.adaptive_hard_boundary_zone is not None
+                        else np.zeros(grid.elevation_m.shape, dtype=np.int32)
+                    ),
+                    has_adaptive_resolution_ceiling_m=np.uint8(
+                        grid.adaptive_resolution_ceiling_m is not None
+                    ),
+                    adaptive_resolution_ceiling_m=(
+                        grid.adaptive_resolution_ceiling_m
+                        if grid.adaptive_resolution_ceiling_m is not None
+                        else np.zeros(grid.elevation_m.shape, dtype=np.int16)
+                    ),
+                    has_native_structure_mask=np.uint8(
+                        grid.native_structure_mask is not None
+                    ),
+                    native_structure_mask=(
+                        grid.native_structure_mask
+                        if grid.native_structure_mask is not None
                         else np.zeros(grid.elevation_m.shape, dtype=bool)
                     ),
                     width_cells=np.int64(grid.width_cells),
