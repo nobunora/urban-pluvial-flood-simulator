@@ -188,7 +188,7 @@ class RunCoordinator:
         self.adaptive_result_reader = adaptive_result_reader
         self.adaptive_result_normalizer = adaptive_result_normalizer
         self.prepared_cache = PreparedGridCache(self.store.root.parent / "cache")
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="floodsim-run")
+        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="floodsim-run")
         self._records: dict[UUID, RunRecord] = {}
         self._active_run_id: UUID | None = None
         self._lock = threading.RLock()
