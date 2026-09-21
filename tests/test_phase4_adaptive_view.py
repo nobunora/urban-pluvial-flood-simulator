@@ -100,7 +100,8 @@ def test_adaptive_png_rendering_expands_only_selected_face_field() -> None:
     assert tuple(maximum[3, 3]) == DEPTH_BANDS[-1].rgba
     # Inactive north-west face remains transparent.
     assert maximum[0, 0, 3] == 0
-    assert tuple(resolution[3, 0]) == GRID_RESOLUTION_COLORS[2]
+    assert tuple(resolution[3, 0]) == (20, 27, 36, 245)
+    assert tuple(resolution[2, 1]) == GRID_RESOLUTION_COLORS[2]
     assert tuple(first[3, 0]) == DEPTH_BANDS[0].rgba
 
 
