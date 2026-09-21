@@ -228,8 +228,10 @@ class SfincsAdaptiveModelBuilder:
                 "building_interior_storage": False,
             },
             "warnings": [
-                "Adaptive remains disabled in the public run API until face-based "
-                "result normalization and the Full-vs-Adaptive acceptance benchmark pass."
+                (
+                    "Adaptive remains disabled in the public run API until face-based "
+                    "result normalization and the Full-vs-Adaptive acceptance benchmark pass."
+                )
             ],
         }
         report_path = root / "model_build_report.json"
