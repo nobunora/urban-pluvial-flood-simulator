@@ -531,6 +531,16 @@ export default function ResultPanel({
                       flowRenderStats.renderedFeatureCount === 0 && (
                         <span className="result-warning">
                           GeoJSONは存在しますが、現在のMapLibre表示範囲では描画featureが0件です。
+                          <br />
+                          layer順: {flowRenderStats.layerOrder.join(" > ")}
+                          <br />
+                          feature範囲: {flowRenderStats.featureBounds
+                            ? flowRenderStats.featureBounds.map((value) => value.toFixed(6)).join(", ")
+                            : "—"}
+                          <br />
+                          map範囲: {flowRenderStats.mapBounds
+                            .map((value) => value.toFixed(6))
+                            .join(", ")}
                         </span>
                       )}
                   </>
