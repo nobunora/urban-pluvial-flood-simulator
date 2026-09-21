@@ -12,7 +12,8 @@ from typing import Any
 
 import numpy as np
 from pyproj import Transformer
-from shapely.geometry import LineString, Polygon, box  # type: ignore[import-untyped]\nfrom shapely.ops import polygonize, unary_union  # type: ignore[import-untyped]
+from shapely.geometry import LineString, Polygon, box  # type: ignore[import-untyped]
+from shapely.ops import polygonize, unary_union  # type: ignore[import-untyped]
 
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.providers.common import (
