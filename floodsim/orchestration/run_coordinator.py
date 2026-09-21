@@ -71,6 +71,8 @@ class ResultNotReady(RunCoordinatorError):
 
 DEFAULT_PLATEAU_REVIEW_BUDGET_S = 20.0
 DEFAULT_OSM_REVIEW_BUDGET_S = 30.0
+CLIENT_LEASE_TIMEOUT_S = 60.0
+CLIENT_LEASE_CHECK_INTERVAL_S = 5.0
 
 
 STAGE_LABELS = {
@@ -133,6 +135,8 @@ class RunRecord:
     progress_detail: str | None = None
     activity_lines: list[str] = field(default_factory=list)
     lock: threading.RLock = field(default_factory=threading.RLock)
+    client_lease_enabled: bool = False
+    last_client_heartbeat_monotonic: float | None = None
 
 
 class RunCoordinator:
@@ -188,6 +192,49 @@ class RunCoordinator:
         self._records: dict[UUID, RunRecord] = {}
         self._active_run_id: UUID | None = None
         self._lock = threading.RLock()
+        self._lease_watchdog = threading.Thread(
+            target=self._watch_client_leases,
+            name="floodsim-client-lease",
+            daemon=True,
+        )
+        self._lease_watchdog.start()
+
+    def enable_client_lease(self, run_id: UUID) -> None:
+        """Require a live browser client for a non-terminal run."""
+        record = self.get(run_id)
+        with record.lock:
+            record.client_lease_enabled = True
+            record.last_client_heartbeat_monotonic = time.monotonic()
+
+    def client_heartbeat(self, run_id: UUID) -> None:
+        """Renew the browser lease used to stop abandoned calculations."""
+        record = self.get(run_id)
+        with record.lock:
+            if record.machine.state in {RunState.COMPLETE, RunState.FAILED, RunState.CANCELLED}:
+                return
+            record.last_client_heartbeat_monotonic = time.monotonic()
+
+    def _watch_client_leases(self) -> None:
+        while True:
+            time.sleep(CLIENT_LEASE_CHECK_INTERVAL_S)
+            now = time.monotonic()
+            with self._lock:
+                records = list(self._records.values())
+            for record in records:
+                with record.lock:
+                    expired = (
+                        record.client_lease_enabled
+                        and record.last_client_heartbeat_monotonic is not None
+                        and now - record.last_client_heartbeat_monotonic > CLIENT_LEASE_TIMEOUT_S
+                        and record.machine.state
+                        not in {RunState.COMPLETE, RunState.FAILED, RunState.CANCELLED}
+                    )
+                if expired:
+                    self._append_activity(
+                        record,
+                        "ブラウザ接続が60秒以上確認できないため、解析を自動停止します。",
+                    )
+                    self.cancel(record.run_id)
 
     def _manifest_payload(self, record: RunRecord) -> dict[str, Any]:
         return record.manifest.model_dump(mode="json")
