@@ -341,6 +341,7 @@ def _adaptive_depth_rgba(
 
 def _adaptive_resolution_rgba(arrays: AdaptiveNormalizedArrays) -> np.ndarray:
     rgba = np.zeros((*arrays.shape, 4), dtype=np.uint8)
+    face_bounds: list[tuple[int, int, int, int]] = []
     for index, resolution in enumerate(arrays.face_resolution_m):
         if not arrays.active_mask[index]:
             continue
@@ -350,6 +351,19 @@ def _adaptive_resolution_rgba(arrays: AdaptiveNormalizedArrays) -> np.ndarray:
         row0, row1, col0, col1 = _adaptive_face_bounds(arrays, index)
         if row1 > row0 and col1 > col0:
             rgba[row0:row1, col0:col1] = color
+            face_bounds.append((row0, row1, col0, col1))
+
+    # Source pixels already represent 1 m faces exactly. For coarser faces,
+    # make the actual hydraulic face perimeter explicit without expanding the
+    # full raster into a higher-resolution debug image.
+    boundary_color = np.asarray((20, 27, 36, 245), dtype=np.uint8)
+    for row0, row1, col0, col1 in face_bounds:
+        if row1 - row0 <= 1 and col1 - col0 <= 1:
+            continue
+        rgba[row0, col0:col1] = boundary_color
+        rgba[row1 - 1, col0:col1] = boundary_color
+        rgba[row0:row1, col0] = boundary_color
+        rgba[row0:row1, col1 - 1] = boundary_color
     return rgba
 
 
