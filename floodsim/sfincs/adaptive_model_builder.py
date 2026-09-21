@@ -183,7 +183,7 @@ class SfincsAdaptiveModelBuilder:
             "cell_reduction_ratio": reduction_ratio,
             "refined_parent_count": int(quadtree.refined_parent_count),
             "refinement_polygon_count": int(quadtree.refinement_polygon_count),
-            "threshold_config_identity": adaptive.threshold_config_identity,
+            "threshold_config_identity": adaptive.threshold_identity,
             "model_crs_wkt": grid.crs_wkt,
             "padded_extent_m": {
                 "width": quadtree.padded_width_m,
