@@ -218,9 +218,7 @@ class SfincsModelBuilder:
             "rainfall_volume_after_weight_area_m2": grid.roof_allocation.hydraulic_weighted_area_m2,
             "roof_rain_relative_mass_error": grid.roof_allocation.relative_mass_error,
             "output_interval_seconds": output_interval,
-            "depth_output": {"storehsubgrid": 1, "variables": ["h", "hmax"]},
             "velocity_output": {"storevel": 1, "variables": ["u", "v"]},
-            "adaptive_face_layout": "adaptive_face_layout.npz",
             "unsupported_physics": {
                 "infiltration": False,
                 "sewer_drainage": False,
@@ -399,7 +397,9 @@ class AdaptiveSfincsModelBuilder:
             "rainfall_volume_after_weight_area_m2": grid.roof_allocation.hydraulic_weighted_area_m2,
             "roof_rain_relative_mass_error": grid.roof_allocation.relative_mass_error,
             "output_interval_seconds": output_interval,
+            "depth_output": {"storehsubgrid": 1, "variables": ["h", "hmax"]},
             "velocity_output": {"storevel": 1, "variables": ["u", "v"]},
+            "adaptive_face_layout": "adaptive_face_layout.npz",
             "unsupported_physics": {
                 "infiltration": False,
                 "sewer_drainage": False,
