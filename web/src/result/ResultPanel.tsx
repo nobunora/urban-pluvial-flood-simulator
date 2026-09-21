@@ -157,7 +157,7 @@ export default function ResultPanel({
         const current = await getFlowVectors(
           runId,
           selectedTimeIndex,
-          900,
+          2500,
           controller.signal,
         );
         if (disposed) return;
@@ -179,7 +179,7 @@ export default function ResultPanel({
           const candidate = await getFlowVectors(
             runId,
             candidateIndex,
-            900,
+            2500,
             controller.signal,
           );
           if (disposed) return;
