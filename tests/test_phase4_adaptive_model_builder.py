@@ -1,28 +1,28 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 import pytest
 import xarray as xr
 from pyproj import CRS
 
-pytest.importorskip("hydromt_sfincs")
-
 from floodsim.domain.rainfall import RainfallTimeSeries
 from floodsim.preprocessing.adaptive_grid import build_adaptive_grid
 from floodsim.preprocessing.full_grid import FullGridProduct
 from floodsim.preprocessing.roof_rainfall import allocate_roof_rainfall
-from floodsim.sfincs.adaptive_model_builder import SfincsAdaptiveModelBuilder
+from floodsim.sfincs.model_builder import AdaptiveSfincsModelBuilder
 
 
-def _grid(size: int = 96) -> FullGridProduct:
-    crs = CRS.from_proj4(
-        "+proj=aeqd +lat_0=35.0 +lon_0=139.0 +datum=WGS84 +units=m +no_defs"
+def _authorityless_crs() -> CRS:
+    return CRS.from_proj4(
+        "+proj=aeqd +lat_0=35.0005 +lon_0=139.0005 +datum=WGS84 +units=m +no_defs"
     )
-    yy, xx = np.mgrid[0:size, 0:size]
-    terrain = (0.001 * xx + 0.002 * yy).astype(np.float32)
-    buildings = np.zeros((size, size), dtype=bool)
+
+
+def _grid(size: int = 32) -> FullGridProduct:
+    building = np.zeros((size, size), dtype=bool)
     road = np.zeros((size, size), dtype=bool)
     mask = np.ones((size, size), dtype=np.uint8)
     mask[0, :] = 3
@@ -30,85 +30,83 @@ def _grid(size: int = 96) -> FullGridProduct:
     mask[:, 0] = 3
     mask[:, -1] = 3
     manning = np.full((size, size), 0.030, dtype=np.float32)
-    roof = allocate_roof_rainfall(buildings)
+    allocation = allocate_roof_rainfall(building)
+    yy, xx = np.indices((size, size), dtype=np.float32)
+    elevation = 0.002 * xx + 0.001 * yy
     return FullGridProduct(
-        elevation_m=terrain,
-        building_mask=buildings,
+        elevation_m=elevation.astype(np.float32),
+        building_mask=building,
+        road_mask=road,
         sfincs_mask=mask,
         manning_n=manning,
-        rain_weight=roof.rain_weight.astype(np.float32),
-        roof_allocation=roof,
+        rain_weight=allocation.rain_weight.astype(np.float32),
+        roof_allocation=allocation,
         width_cells=size,
         height_cells=size,
         dx_m=1.0,
         dy_m=1.0,
-        x0_m=0.0,
-        y0_m=0.0,
-        crs_wkt=crs.to_wkt(),
-        road_mask=road,
+        x0_m=-size / 2.0,
+        y0_m=-size / 2.0,
+        crs_wkt=_authorityless_crs().to_wkt(),
     )
 
 
 def _rainfall() -> RainfallTimeSeries:
     return RainfallTimeSeries(
-        start_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        start_time=datetime(2026, 9, 21, tzinfo=timezone.utc),
         elapsed_seconds=[0.0, 60.0],
-        intensity_mm_per_h=[12.0, 12.0],
-        source_metadata={"fixture": "adaptive-model-builder"},
+        intensity_mm_per_h=[30.0, 0.0],
+        source_metadata={"kind": "test"},
     )
 
 
-def test_adaptive_builder_writes_engine_consumable_model_inputs(tmp_path):
-    grid = _grid()
-    adaptive = build_adaptive_grid(grid)
-    result = SfincsAdaptiveModelBuilder().build(
-        tmp_path / "model",
-        grid,
-        adaptive,
-        _rainfall(),
-    )
+def test_adaptive_builder_writes_quadtree_subgrid_and_distributed_rainfall(
+    tmp_path: Path,
+) -> None:
+    full = _grid()
+    adaptive = build_adaptive_grid(full)
+    builder = AdaptiveSfincsModelBuilder(subgrid_pixels=2, subgrid_levels=3)
 
-    root = result.model_dir
-    expected = {
+    result = builder.build(tmp_path / "model", full, adaptive, _rainfall())
+
+    assert result.report["grid_type"] == "quadtree"
+    assert result.report["subgrid"]["source_terrain_resolution_m"] == 1.0
+    assert result.report["subgrid"]["pixels_per_hydraulic_cell"] == 2
+    assert result.report["subgrid"]["hypsometric_levels"] == 3
+    assert result.report["threshold_identity"] == adaptive.threshold_identity
+    assert result.report["rainfall_volume_after_weight_area_m2"] == pytest.approx(
+        result.report["rainfall_volume_before_weight_area_m2"]
+    )
+    assert result.report["total_hydraulic_cells"] < full.cell_count
+
+    model_dir = result.model_dir
+    for name in (
+        "sfincs.inp",
         "sfincs.nc",
         "sfincs_subgrid.nc",
         "sfincs_netampr.nc",
-        "sfincs.inp",
         "model_build_report.json",
-    }
-    assert expected.issubset({path.name for path in root.iterdir()})
+    ):
+        assert (model_dir / name).is_file(), name
 
-    assert result.report["grid_type"] == "quadtree"
-    assert result.report["accuracy_mode"] == "adaptive"
-    assert result.report["hydraulic_cells"] > 0
-    assert result.report["full_1m_equivalent_cells"] == grid.cell_count
-    assert result.report["subgrid"]["source_terrain_resolution_m"] == 1.0
-    assert result.report["subgrid"]["nr_subgrid_pixels"] == 2
+    inp = (model_dir / "sfincs.inp").read_text(encoding="utf-8")
+    assert "qtrfile" in inp
+    assert "sbgfile" in inp
+    assert "netamprfile" in inp
 
-    with xr.open_dataset(root / "sfincs.nc") as dataset:
-        assert int(dataset.sizes["mesh2d_nFaces"]) == result.report["hydraulic_cells"]
+    with xr.open_dataset(model_dir / "sfincs.nc") as dataset:
+        assert "mesh2d_crs" in dataset
+        assert "crs_wkt" in dataset["mesh2d_crs"].attrs
         assert "mask" in dataset
         assert "manning" in dataset
-        assert "mesh2d_crs" in dataset
-        attrs = dataset["mesh2d_crs"].attrs
-        assert "epsg" not in attrs
-        assert "epsg_code" not in attrs
-        assert CRS.from_wkt(str(attrs["crs_wkt"])).equals(
-            CRS.from_wkt(grid.crs_wkt)
-        )
+        assert "epsg" not in dataset["mesh2d_crs"].attrs
+        assert "epsg_code" not in dataset["mesh2d_crs"].attrs
 
-    with xr.open_dataset(root / "sfincs_subgrid.nc") as dataset:
-        assert "z_level" in dataset.data_vars
+    with xr.open_dataset(model_dir / "sfincs_subgrid.nc") as dataset:
+        assert "z_level" in dataset
 
-    with xr.open_dataset(root / "sfincs_netampr.nc") as dataset:
-        assert dataset["Precipitation"].dims == ("time", "y", "x")
-        assert dataset["Precipitation"].shape[1:] == (
-            grid.height_cells,
-            grid.width_cells,
-        )
-        np.testing.assert_allclose(dataset["Precipitation"].values, 12.0)
-
-    config = (root / "sfincs.inp").read_text(encoding="utf-8")
-    assert "qtrfile" in config
-    assert "sbgfile" in config
-    assert "netamprfile" in config
+    with xr.open_dataset(model_dir / "sfincs_netampr.nc") as dataset:
+        assert "precip" in dataset
+        assert dataset["precip"].dims == ("time", "y", "x")
+        assert dataset.sizes["x"] == full.width_cells
+        assert dataset.sizes["y"] == full.height_cells

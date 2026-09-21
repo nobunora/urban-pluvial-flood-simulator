@@ -15,7 +15,10 @@ import xarray as xr
 from pyproj import CRS
 
 from floodsim.domain.rainfall import RainfallTimeSeries
+from floodsim.preprocessing.adaptive_grid import AdaptiveGridProduct
 from floodsim.preprocessing.full_grid import FullGridProduct
+from floodsim.sfincs.adaptive_quadtree import create_adaptive_quadtree
+from floodsim.sfincs.quadtree_writer import write_quadtree_grid_compat
 from floodsim.storage.run_store import atomic_write_json
 
 EXPECTED_HYDROMT_SFINCS = "2.0.0rc3"
@@ -210,6 +213,161 @@ class SfincsModelBuilder:
             "blocked_building_cells": int(np.count_nonzero(grid.building_mask)),
             "outflow_boundary_cells": int(np.count_nonzero(grid.sfincs_mask == 3)),
             "roughness": {"general": 0.030, "road": 0.020},
+            "rainfall_volume_before_weight_area_m2": grid.roof_allocation.meteorological_area_m2,
+            "rainfall_volume_after_weight_area_m2": grid.roof_allocation.hydraulic_weighted_area_m2,
+            "roof_rain_relative_mass_error": grid.roof_allocation.relative_mass_error,
+            "output_interval_seconds": output_interval,
+            "velocity_output": {"storevel": 1, "variables": ["u", "v"]},
+            "unsupported_physics": {
+                "infiltration": False,
+                "sewer_drainage": False,
+                "water_level_boundary": False,
+                "tide": False,
+                "wind_waves": False,
+                "river_inflow": False,
+                "building_interior_storage": False,
+            },
+            "warnings": [],
+        }
+        report_path = root / "model_build_report.json"
+        atomic_write_json(report_path, report)
+        return ModelBuildResult(root, report_path, report)
+
+
+ADAPTIVE_SUBGRID_PIXELS = 20
+ADAPTIVE_SUBGRID_LEVELS = 10
+
+
+class AdaptiveSfincsModelBuilder:
+    """Build the Phase 4 quadtree + subgrid hydraulic model.
+
+    The classifier decides hydraulic face size, while the original Full 1 m
+    terrain and Manning rasters remain the source for HydroMT-SFINCS subgrid
+    generation. Rainfall also remains on the canonical 1 m allocation raster,
+    preserving the roof-runoff redistribution field independently of quadtree
+    face size.
+    """
+
+    def __init__(
+        self,
+        *,
+        subgrid_pixels: int = ADAPTIVE_SUBGRID_PIXELS,
+        subgrid_levels: int = ADAPTIVE_SUBGRID_LEVELS,
+    ) -> None:
+        if subgrid_pixels < 1:
+            raise ValueError("subgrid_pixels must be positive")
+        if subgrid_levels < 2:
+            raise ValueError("subgrid_levels must be at least two")
+        self.subgrid_pixels = int(subgrid_pixels)
+        self.subgrid_levels = int(subgrid_levels)
+
+    def build(
+        self,
+        model_dir: str | Path,
+        grid: FullGridProduct,
+        adaptive: AdaptiveGridProduct,
+        rainfall: RainfallTimeSeries,
+    ) -> ModelBuildResult:
+        root = Path(model_dir)
+        root.mkdir(parents=True, exist_ok=True)
+        try:
+            with _sfincs_environment():
+                SfincsModel = _load_sfincs_model()
+                model = SfincsModel(root=root, mode="w+", write_gis=False)
+                _ = model.config.data
+
+            quadtree = create_adaptive_quadtree(model, grid, adaptive)
+
+            elevation = _raster(grid.elevation_m, grid, "elevtn")
+            roughness = _raster(grid.manning_n, grid, "manning")
+            component = getattr(model, "quadtree_subgrid", None)
+            if component is None or not hasattr(component, "create"):
+                raise ModelBuildError(
+                    "HydroMT-SFINCS quadtree subgrid component is incompatible"
+                )
+            component.create(
+                elevation_list=[{"elevation": elevation}],
+                roughness_list=[{"manning": roughness}],
+                nr_levels=self.subgrid_levels,
+                nr_subgrid_pixels=self.subgrid_pixels,
+                write_dep_tif=False,
+                write_man_tif=False,
+                quiet=True,
+            )
+            if not getattr(component.data, "data_vars", None):
+                raise ModelBuildError("Adaptive subgrid generation produced no data")
+
+            duration_seconds = float(rainfall.elapsed_seconds[-1])
+            output_interval = derive_output_interval_seconds(duration_seconds)
+            start = _sfincs_datetime(rainfall.start_time)
+            stop = start + timedelta(seconds=duration_seconds)
+            stamp = "%Y%m%d %H%M%S"
+            model.config.set("tref", start.strftime(stamp))
+            model.config.set("tstart", start.strftime(stamp))
+            model.config.set("tstop", stop.strftime(stamp))
+            model.config.set("dtmapout", output_interval)
+            model.config.set("dtmaxout", output_interval)
+            model.config.set("dthisout", output_interval)
+            model.config.set("outputformat", "net")
+            model.config.set("coriolis", 0)
+            model.config.set("storecumprcp", 1)
+            model.config.set("storevel", 1)
+
+            # Keep the already mass-conserving 1 m roof-allocation raster as
+            # SFINCS distributed precipitation forcing. The meteorological field
+            # is uniform; only roof-runoff redistribution varies spatially.
+            _configure_precipitation(model, _precipitation(rainfall, grid), rainfall)
+
+            # rc3's normal quadtree writer serializes EPSG=None for the local
+            # authority-less AEQD CRS. Use the narrow compatibility writer for
+            # the grid, then let upstream components write subgrid/meteo files.
+            write_quadtree_grid_compat(model.quadtree_grid, filename="sfincs.nc")
+            component.write(filename="sfincs_subgrid.nc")
+            model.precipitation.write(filename="sfincs_netampr.nc")
+            model.config.write()
+        except ModelBuildError:
+            raise
+        except Exception as exc:
+            raise ModelBuildError(
+                "failed to build Adaptive HydroMT-SFINCS quadtree/subgrid model"
+            ) from exc
+
+        level_counts = {
+            f"{size}m": int(np.count_nonzero(quadtree.face_fields.resolution_m == size))
+            for size in (1, 2, 4, 8, 16, 32)
+            if np.any(quadtree.face_fields.resolution_m == size)
+        }
+        active_faces = int(np.count_nonzero(quadtree.face_fields.sfincs_mask))
+        outflow_faces = int(np.count_nonzero(quadtree.face_fields.sfincs_mask == 3))
+        report = {
+            "schema_version": "1",
+            "grid_type": "quadtree",
+            "cell_counts": level_counts,
+            "total_hydraulic_cells": quadtree.face_count,
+            "full_1m_equivalent_cells": adaptive.full_1m_equivalent_cells,
+            "reduction_ratio": quadtree.face_count / adaptive.full_1m_equivalent_cells,
+            "classifier_reduction_ratio": adaptive.reduction_ratio,
+            "threshold_identity": adaptive.threshold_identity,
+            "model_crs_wkt": grid.crs_wkt,
+            "quadtree_base_resolution_m": 32.0,
+            "quadtree_padded_width_m": quadtree.padded_width_m,
+            "quadtree_padded_height_m": quadtree.padded_height_m,
+            "active_cells": active_faces,
+            "outflow_boundary_cells": outflow_faces,
+            "blocked_building_source_cells": int(np.count_nonzero(grid.building_mask)),
+            "roughness": {"general": 0.030, "road": 0.020},
+            "subgrid": {
+                "source_terrain_resolution_m": 1.0,
+                "source_roughness_resolution_m": 1.0,
+                "pixels_per_hydraulic_cell": self.subgrid_pixels,
+                "hypsometric_levels": self.subgrid_levels,
+                "variables": sorted(str(name) for name in component.data.data_vars),
+            },
+            "rainfall_forcing": {
+                "grid_resolution_m": 1.0,
+                "spatial_mode": "uniform_meteorology_with_roof_allocation_weights",
+                "weighted_area_m2": quadtree.face_fields.hydraulic_weighted_area_m2,
+            },
             "rainfall_volume_before_weight_area_m2": grid.roof_allocation.meteorological_area_m2,
             "rainfall_volume_after_weight_area_m2": grid.roof_allocation.hydraulic_weighted_area_m2,
             "roof_rain_relative_mass_error": grid.roof_allocation.relative_mass_error,
