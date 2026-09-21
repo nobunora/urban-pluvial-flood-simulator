@@ -95,8 +95,10 @@ def test_adaptive_builder_writes_quadtree_subgrid_and_distributed_rainfall(
     assert "sbgfile" in inp
     assert "netamprfile" in inp
     assert "storehsubgrid" in inp
+    assert "storezvolume" in inp
     assert result.adaptive_layout_path == model_dir / "adaptive_face_layout.npz"
     assert result.report["depth_output"]["storehsubgrid"] == 1
+    assert result.report["volume_output"]["storezvolume"] == 1
 
     with xr.open_dataset(model_dir / "sfincs.nc") as dataset:
         assert "mesh2d_crs" in dataset

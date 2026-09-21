@@ -53,6 +53,13 @@ def _result(path: Path, *, negative_hmax: bool = False) -> Path:
                 ("nmesh2d_face",),
                 np.asarray([1, 1, 3, 0], dtype=np.int32),
             ),
+            "subgrid_volume": (
+                ("time", "nmesh2d_face"),
+                np.asarray(
+                    [[0.0, 0.0, 0.0, 0.0], [0.8, 1.6, 0.0, 0.0]],
+                    dtype=np.float32,
+                ),
+            ),
             "u": (
                 ("time", "nmesh2d_face"),
                 np.asarray([[5.0, 5.0, 0.0, 0.0], [1.0, 2.0, 0.0, 0.0]], dtype=np.float32),
@@ -85,6 +92,8 @@ def test_quadtree_reader_preserves_native_faces_and_dry_depth_policy(tmp_path: P
     assert result.excluded_boundary_cells == 1
     assert result.global_max_depth_m == pytest.approx(0.4)
     assert result.flow_vectors_available
+    assert result.subgrid_volume_m3 is not None
+    assert np.nansum(result.subgrid_volume_m3[-1]) == pytest.approx(2.4)
     assert result.velocity_u_mps is not None
     assert result.velocity_u_mps[0, 0] == 0.0
     assert np.isnan(result.depth_time_m[:, 2:]).all()

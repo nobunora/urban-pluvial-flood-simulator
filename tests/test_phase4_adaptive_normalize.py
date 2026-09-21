@@ -55,6 +55,10 @@ def _result() -> SfincsQuadtreeResult:
             [[0.0, 0.0, np.nan, np.nan], [0.3, 0.4, np.nan, np.nan]],
             dtype=np.float32,
         ),
+        subgrid_volume_m3=np.asarray(
+            [[0.0, 0.0, np.nan, np.nan], [0.8, 1.6, np.nan, np.nan]],
+            dtype=np.float64,
+        ),
         hmax_reconstructed_cells=1,
         negative_depth_clipped_values=2,
         min_raw_active_depth_m=-0.01,
@@ -75,6 +79,9 @@ def test_adaptive_normalizer_keeps_native_face_storage(tmp_path: Path) -> None:
     assert result.metadata["grid_level_summary"] == {"2m": 2}
     assert result.metadata["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.4)
     assert result.metadata["flow_vectors_available"] is True
+    assert result.metadata["volume_summary"]["final_surface_water_volume_m3"] == (
+        pytest.approx(2.4)
+    )
     assert "native quadtree-face order" in result.metadata["no_data_policy"]
 
     with np.load(result.arrays_path, allow_pickle=False) as archive:
@@ -88,3 +95,4 @@ def test_adaptive_normalizer_keeps_native_face_storage(tmp_path: Path) -> None:
         assert int(archive["source_width_cells"].item()) == 4
         assert "velocity_u_mps" in archive.files
         assert "velocity_v_mps" in archive.files
+        assert "subgrid_volume_m3" in archive.files
