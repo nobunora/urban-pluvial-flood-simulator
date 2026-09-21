@@ -9,16 +9,12 @@ from scripts.full1m_performance_matrix import configure_variant
 
 def _inp(path: Path) -> None:
     path.write_text(
-        "\n".join(
-            [
-                "dtmapout               = 60",
-                "dtmaxout               = 1800",
-                "storecumprcp            = 0",
-                "storevel                = 1",
-                "alpha                   = 0.75",
-            ]
-        )
-        + "\n",
+        """dtmapout               = 60
+dtmaxout               = 1800
+storecumprcp            = 0
+storevel                = 1
+alpha                   = 0.75
+""",
         encoding="utf-8",
     )
 
