@@ -388,7 +388,7 @@ describe("ResultPanel", () => {
     );
   });
 
-  it("keeps layer controls and the timeline inside the fullscreen region", () => {
+  it("keeps layer controls and the timeline inside the fullscreen region", async () => {
     render(
       <ResultPanel
         runId="run-1"
