@@ -210,6 +210,16 @@ def _level_for_physical_size(builder: Any, size_m: int) -> int | None:
     return ilev
 
 
+def _aligned_block_minimum(values: np.ndarray, size: int) -> np.ndarray:
+    """Return aligned size×size block minima without per-cell Python slicing."""
+    height, width = values.shape
+    block_rows = math.ceil(height / size)
+    block_cols = math.ceil(width / size)
+    padded = np.full((block_rows * size, block_cols * size), size, dtype=values.dtype)
+    padded[:height, :width] = values
+    return padded.reshape(block_rows, size, block_cols, size).min(axis=(1, 3))
+
+
 def _cells_needing_refinement(
     builder: Any,
     *,
@@ -218,28 +228,24 @@ def _cells_needing_refinement(
     full_grid: FullGridProduct,
     adaptive: AdaptiveGridProduct,
 ) -> np.ndarray:
-    """Return existing rc3 cells at ``ilev`` that are coarser than source targets."""
-
-    desired = np.asarray(adaptive.resolution_m, dtype=np.int16)
-    indices = np.flatnonzero(np.asarray(builder.level, dtype=np.int64) == ilev)
+    """Return rc3 cells whose aligned source block requests a finer target."""
+    levels = np.asarray(builder.level, dtype=np.int64)
+    indices = np.flatnonzero(levels == ilev)
     if indices.size == 0:
         return np.empty(0, dtype=np.int64)
 
-    selected: list[int] = []
-    for raw_index in indices:
-        index = int(raw_index)
-        row0 = int(builder.n[index]) * size_m
-        col0 = int(builder.m[index]) * size_m
-        row1 = min(row0 + size_m, full_grid.height_cells)
-        col1 = min(col0 + size_m, full_grid.width_cells)
-        if row0 >= full_grid.height_cells or col0 >= full_grid.width_cells:
-            continue
-        if row1 <= row0 or col1 <= col0:
-            continue
-        if np.any(desired[row0:row1, col0:col1] < size_m):
-            selected.append(index)
-    return np.asarray(selected, dtype=np.int64)
-
+    rows = np.asarray(builder.n, dtype=np.int64)[indices]
+    cols = np.asarray(builder.m, dtype=np.int64)[indices]
+    block_min = _aligned_block_minimum(
+        np.asarray(adaptive.resolution_m, dtype=np.int16),
+        size_m,
+    )
+    inside = (rows >= 0) & (cols >= 0) & (rows < block_min.shape[0]) & (
+        cols < block_min.shape[1]
+    )
+    refine = np.zeros(indices.shape, dtype=bool)
+    refine[inside] = block_min[rows[inside], cols[inside]] < size_m
+    return indices[refine]
 
 def _assert_contiguous_populated_levels(builder: Any) -> None:
     """Reject an internal level gap that would violate rc3's 2:1 topology contract."""
@@ -374,60 +380,106 @@ def _face_layout(component: Any) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return resolution, rows, cols
 
 
+def _integral_image(values: np.ndarray) -> np.ndarray:
+    """Integral image with a zero top/left border for vectorized rectangle sums."""
+    source = np.asarray(values, dtype=np.float64)
+    return np.pad(source.cumsum(axis=0).cumsum(axis=1), ((1, 0), (1, 0)))
+
+
+def _rectangle_sums(
+    integral: np.ndarray,
+    row0: np.ndarray,
+    col0: np.ndarray,
+    row1: np.ndarray,
+    col1: np.ndarray,
+) -> np.ndarray:
+    return (
+        integral[row1, col1]
+        - integral[row0, col1]
+        - integral[row1, col0]
+        + integral[row0, col0]
+    )
+
+
 def aggregate_face_fields(
     component: Any,
     full_grid: FullGridProduct,
     adaptive: AdaptiveGridProduct,
 ) -> AdaptiveFaceFields:
-    """Aggregate Full 1 m hydraulic fields to the actual rc3 quadtree faces."""
+    """Aggregate Full-1 m fields onto all rc3 faces using vectorized block queries."""
 
     _validate_inputs(full_grid, adaptive)
     resolution, rows, cols = _face_layout(component)
-    face_count = len(resolution)
-    overlap_area = np.zeros(face_count, dtype=np.float64)
-    mask = np.zeros(face_count, dtype=np.uint8)
-    manning = np.full(face_count, GENERAL_MANNING, dtype=np.float32)
-    rain_weight = np.zeros(face_count, dtype=np.float64)
+    size = resolution.astype(np.int64)
+    height = full_grid.height_cells
+    width = full_grid.width_cells
+
+    row0 = rows * size
+    col0 = cols * size
+    row1 = np.minimum(row0 + size, height)
+    col1 = np.minimum(col0 + size, width)
+    inside = (row0 < height) & (col0 < width) & (row1 > row0) & (col1 > col0)
+    safe_row0 = np.clip(row0, 0, height)
+    safe_col0 = np.clip(col0, 0, width)
+    safe_row1 = np.clip(row1, 0, height)
+    safe_col1 = np.clip(col1, 0, width)
 
     full_mask = np.asarray(full_grid.sfincs_mask, dtype=np.uint8)
     full_manning = np.asarray(full_grid.manning_n, dtype=np.float32)
     full_rain = np.asarray(full_grid.rain_weight, dtype=np.float64)
     desired = np.asarray(adaptive.resolution_m, dtype=np.int16)
     source_shapes = {array.shape for array in (full_mask, full_manning, full_rain, desired)}
-    if source_shapes != {(full_grid.height_cells, full_grid.width_cells)}:
+    if source_shapes != {(height, width)}:
         raise AdaptiveQuadtreeError("Full 1 m source fields do not share one grid shape")
 
-    for index, size_value in enumerate(resolution):
-        size = int(size_value)
-        row0 = int(rows[index]) * size
-        col0 = int(cols[index]) * size
-        row1 = min(row0 + size, full_grid.height_cells)
-        col1 = min(col0 + size, full_grid.width_cells)
-        if row0 >= full_grid.height_cells or col0 >= full_grid.width_cells or row1 <= row0 or col1 <= col0:
-            continue
-
-        target_block = desired[row0:row1, col0:col1]
-        if np.any(size > target_block):
+    # The only supported face sizes are powers of two aligned to the source
+    # origin, so target validation can use one block-min table per size.
+    for size_value in np.unique(size[inside]):
+        face_indices = np.flatnonzero(inside & (size == size_value))
+        block_min = _aligned_block_minimum(desired, int(size_value))
+        block_rows = rows[face_indices]
+        block_cols = cols[face_indices]
+        if np.any(block_min[block_rows, block_cols] < size_value):
             raise AdaptiveQuadtreeError(
                 "rc3 quadtree produced a face coarser than the validated Adaptive target"
             )
 
-        block_mask = full_mask[row0:row1, col0:col1]
-        block_manning = full_manning[row0:row1, col0:col1]
-        block_rain = full_rain[row0:row1, col0:col1]
-        source_area = float((row1 - row0) * (col1 - col0))
-        face_area = float(size * size)
-        overlap_area[index] = source_area
+    active = full_mask != 0
+    mask3_count = _rectangle_sums(
+        _integral_image(full_mask == 3),
+        safe_row0, safe_col0, safe_row1, safe_col1,
+    )
+    active_count = _rectangle_sums(
+        _integral_image(active),
+        safe_row0, safe_col0, safe_row1, safe_col1,
+    )
+    rain_sum = _rectangle_sums(
+        _integral_image(full_rain),
+        safe_row0, safe_col0, safe_row1, safe_col1,
+    )
+    manning_sum = _rectangle_sums(
+        _integral_image(full_manning.astype(np.float64) * active),
+        safe_row0, safe_col0, safe_row1, safe_col1,
+    )
 
-        if np.any(block_mask == 3):
-            mask[index] = 3
-        elif np.any(block_mask != 0):
-            mask[index] = 1
+    overlap_area = np.where(
+        inside,
+        (safe_row1 - safe_row0) * (safe_col1 - safe_col0),
+        0,
+    ).astype(np.float64)
+    mask = np.zeros(len(size), dtype=np.uint8)
+    mask[inside & (active_count > 0)] = 1
+    mask[inside & (mask3_count > 0)] = 3
 
-        active = block_mask != 0
-        if np.any(active):
-            manning[index] = np.float32(np.mean(block_manning[active], dtype=np.float64))
-        rain_weight[index] = np.sum(block_rain, dtype=np.float64) / face_area
+    manning = np.full(len(size), GENERAL_MANNING, dtype=np.float32)
+    has_active = inside & (active_count > 0)
+    manning[has_active] = (
+        manning_sum[has_active] / active_count[has_active]
+    ).astype(np.float32)
+
+    face_area = size.astype(np.float64) ** 2
+    rain_weight = np.zeros(len(size), dtype=np.float64)
+    rain_weight[inside] = rain_sum[inside] / face_area[inside]
 
     fields = AdaptiveFaceFields(
         resolution_m=resolution,
@@ -445,7 +497,6 @@ def aggregate_face_fields(
     ):
         raise AdaptiveQuadtreeError("Adaptive face rain-weight aggregation does not conserve area")
     return fields
-
 
 def attach_face_fields(component: Any, fields: AdaptiveFaceFields) -> None:
     """Attach SFINCS mask and Manning arrays to the rc3 quadtree component."""
