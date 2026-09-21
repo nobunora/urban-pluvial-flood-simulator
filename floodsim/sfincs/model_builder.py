@@ -188,11 +188,12 @@ class SfincsModelBuilder:
             model.config.set("tstart", start.strftime(stamp))
             model.config.set("tstop", stop.strftime(stamp))
             model.config.set("dtmapout", output_interval)
-            model.config.set("dtmaxout", output_interval)
+            model.config.set("dtmaxout", duration_seconds)
             model.config.set("dthisout", output_interval)
             model.config.set("outputformat", "net")
             model.config.set("coriolis", 0)
-            model.config.set("storecumprcp", 1)
+            model.config.set("alpha", 0.75)
+            model.config.set("storecumprcp", 0)
             model.config.set("storevel", 1)
 
             _configure_precipitation(model, _precipitation(rainfall, grid), rainfall)
@@ -218,7 +219,10 @@ class SfincsModelBuilder:
             "rainfall_volume_after_weight_area_m2": grid.roof_allocation.hydraulic_weighted_area_m2,
             "roof_rain_relative_mass_error": grid.roof_allocation.relative_mass_error,
             "output_interval_seconds": output_interval,
+            "maximum_output_interval_seconds": duration_seconds,
+            "cumulative_precipitation_output": False,
             "velocity_output": {"storevel": 1, "variables": ["u", "v"]},
+            "numerics": {"alpha": 0.75},
             "unsupported_physics": {
                 "infiltration": False,
                 "sewer_drainage": False,
