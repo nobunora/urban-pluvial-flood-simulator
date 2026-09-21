@@ -263,7 +263,11 @@ def _flow_accumulation_concentration(values: np.ndarray) -> float:
     return float(accumulation.max() / cell_count)
 
 
-def fit_plane_metrics(elevation_m: np.ndarray) -> PlaneFitMetrics:
+def fit_plane_metrics(
+    elevation_m: np.ndarray,
+    *,
+    compute_flow_accumulation: bool = True,
+) -> PlaneFitMetrics:
     values = np.asarray(elevation_m, dtype=float)
     if values.ndim != 2 or min(values.shape) < 2:
         raise ValueError("plane-fit input must be a two-dimensional block")
@@ -306,7 +310,11 @@ def fit_plane_metrics(elevation_m: np.ndarray) -> PlaneFitMetrics:
         elevation_std_m=float(np.std(values)),
         detrended_relief_m=float(np.ptp(residual)),
         connectivity_feature_present=_connectivity_feature_present(values),
-        flow_accumulation_concentration=_flow_accumulation_concentration(values),
+        flow_accumulation_concentration=(
+            _flow_accumulation_concentration(values)
+            if compute_flow_accumulation
+            else 0.0
+        ),
     )
 
 
@@ -746,7 +754,10 @@ def build_adaptive_grid(
                     continue
 
                 block = elevation[row_slice, col_slice]
-                metric = fit_plane_metrics(block)
+                # D8 flow accumulation is diagnostic-only and is not part of
+                # the coarsening decision. Computing it for tens of thousands
+                # of candidate blocks dominated Adaptive classification time.
+                metric = fit_plane_metrics(block, compute_flow_accumulation=False)
                 metrics[_block_key(size, row, col)] = metric
                 safe = (
                     metric.rmse_m <= thresholds.rmse_by_level_m[size]
