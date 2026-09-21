@@ -8,8 +8,11 @@ import pytest
 from floodsim.preprocessing.adaptive_grid import (
     ADAPTIVE_LEVELS_M,
     ADAPTIVE_THRESHOLD_IDENTITY,
+    DEFAULT_ADAPTIVE_GRID_POLICY,
+    DEFAULT_ADAPTIVE_THRESHOLDS,
+    PRODUCTION_ADAPTIVE_LEVELS_M,
+    AdaptiveGridPolicy,
     AdaptiveGridProduct,
-    AdaptiveThresholds,
     _metric_feature_buffer,
     build_adaptive_grid,
     fit_plane_metrics,
@@ -18,7 +21,12 @@ from floodsim.preprocessing.full_grid import FullGridProduct
 from floodsim.preprocessing.roof_rainfall import allocate_roof_rainfall
 
 
-def _full_grid(size: int = 64, *, building: bool = False, road: bool = False) -> FullGridProduct:
+def _full_grid(
+    size: int = 64,
+    *,
+    building: bool = False,
+    road: bool = False,
+) -> FullGridProduct:
     building_mask = np.zeros((size, size), dtype=bool)
     road_mask = np.zeros((size, size), dtype=bool)
     if building:
@@ -46,101 +54,241 @@ def _full_grid(size: int = 64, *, building: bool = False, road: bool = False) ->
     )
 
 
+def _classifier_policy(**updates: object) -> AdaptiveGridPolicy:
+    base = replace(
+        DEFAULT_ADAPTIVE_GRID_POLICY,
+        target_core_radius_m=0.0,
+        target_mid_radius_m=0.0,
+    )
+    return replace(base, **updates)
+
+
+def _assert_two_to_one(resolution: np.ndarray) -> None:
+    left = resolution[:, :-1]
+    right = resolution[:, 1:]
+    upper = resolution[:-1, :]
+    lower = resolution[1:, :]
+    assert np.all(np.maximum(left, right) <= 2 * np.minimum(left, right))
+    assert np.all(np.maximum(upper, lower) <= 2 * np.minimum(upper, lower))
+
+
 def test_plane_fit_is_zero_for_a_plane_and_records_required_evidence() -> None:
     yy, xx = np.indices((8, 8), dtype=float)
-    plane = fit_plane_metrics(2.0 * xx + 0.5 * yy + 4.0)
+    plane_values = 2.0 * xx + 0.5 * yy + 4.0
+    plane = fit_plane_metrics(plane_values)
+
     assert plane.rmse_m == pytest.approx(0.0)
     assert plane.max_abs_residual_m == pytest.approx(0.0)
     assert plane.curvature_indicator_m == pytest.approx(0.0)
+    assert plane.elevation_range_m > 0
+    assert plane.elevation_std_m > 0
+    assert plane.detrended_relief_m == pytest.approx(0.0)
     assert not plane.connectivity_feature_present
     assert 0.0 < plane.flow_accumulation_concentration <= 1.0
 
-    depression = 2.0 * xx + 0.5 * yy + 4.0
-    depression[4, 4] -= 20.0
-    complex_metric = fit_plane_metrics(depression)
-    assert complex_metric.rmse_m > 0
-    assert complex_metric.curvature_indicator_m > 0
-    assert complex_metric.connectivity_feature_present
-    assert complex_metric.flow_accumulation_concentration > 1.0 / depression.size
 
+def test_flat_open_area_safely_coarsens_to_production_8m_level() -> None:
+    result = build_adaptive_grid(_full_grid(), policy=_classifier_policy())
 
-def test_flat_open_area_uses_coarse_power_of_two_cells() -> None:
-    result = build_adaptive_grid(_full_grid())
     assert isinstance(result, AdaptiveGridProduct)
-    assert result.cell_count_by_level == {"32m": 4}
-    assert result.total_hydraulic_cells == 4
+    assert result.active_levels_m == PRODUCTION_ADAPTIVE_LEVELS_M
+    assert result.cell_count_by_level == {"8m": 64}
+    assert result.total_hydraulic_cells == 64
     assert result.full_1m_equivalent_cells == 64 * 64
-    assert result.reduction_ratio == pytest.approx(4 / (64 * 64))
-    assert set(np.unique(result.resolution_m)) == {32}
-    assert result.threshold_identity == ADAPTIVE_THRESHOLD_IDENTITY
-    assert result.diagnostics["refinement_reason_1m_cells"] == {
-        "terrain_coarsened": 64 * 64
-    }
+    assert result.reduction_ratio == pytest.approx(64 / (64 * 64))
+    assert set(np.unique(result.resolution_m)) == {8}
     assert ADAPTIVE_LEVELS_M == (1, 2, 4, 8, 16, 32)
 
 
-def test_threshold_identity_tracks_actual_configuration() -> None:
-    custom = AdaptiveThresholds(
-        rmse_by_level_m={2: 0.0, 4: 0.0, 8: 0.0, 16: 0.0, 32: 0.0},
-        max_abs_residual_by_level_m={2: 0.0, 4: 0.0, 8: 0.0, 16: 0.0, 32: 0.0},
+def test_smooth_uniform_steep_slope_is_not_kept_at_one_metre() -> None:
+    full = _full_grid()
+    yy, xx = np.indices(full.elevation_m.shape, dtype=np.float32)
+    full = replace(full, elevation_m=(0.8 * xx + 0.5 * yy).astype(np.float32))
+
+    result = build_adaptive_grid(full, policy=_classifier_policy())
+
+    assert set(np.unique(result.resolution_m)) == {8}
+    assert result.cell_count_by_level == {"8m": 64}
+
+
+def test_small_depression_on_flat_surface_remains_high_resolution_with_buffer() -> None:
+    full = _full_grid()
+    terrain = np.zeros_like(full.elevation_m)
+    terrain[32, 32] = -1.0
+    full = replace(full, elevation_m=terrain)
+
+    result = build_adaptive_grid(full, policy=_classifier_policy())
+
+    assert result.resolution_m[32, 32] == 1
+    assert np.max(result.resolution_m) == 8
+    assert result.protection_counts["terrain"] > 0
+    _assert_two_to_one(result.resolution_m)
+
+
+def test_steep_flat_boundary_has_transition_and_never_jumps_one_to_eight() -> None:
+    full = _full_grid(building=True)
+    result = build_adaptive_grid(full, policy=_classifier_policy())
+
+    assert 1 in np.unique(result.resolution_m)
+    assert 8 in np.unique(result.resolution_m)
+    _assert_two_to_one(result.resolution_m)
+
+
+def test_one_to_eight_requirement_creates_two_and_four_metre_transition() -> None:
+    full = _full_grid(building=True)
+    result = build_adaptive_grid(full, policy=_classifier_policy())
+
+    levels = set(int(value) for value in np.unique(result.resolution_m))
+    assert {1, 2, 4, 8}.issubset(levels)
+    _assert_two_to_one(result.resolution_m)
+
+
+def test_registered_hard_boundary_is_never_crossed_by_a_coarse_block() -> None:
+    full = _full_grid()
+    zones = np.zeros(full.elevation_m.shape, dtype=np.int16)
+    zones[:, 32:] = 1
+
+    result = build_adaptive_grid(
+        full,
+        policy=_classifier_policy(),
+        hard_boundary_zone=zones,
     )
-    result = build_adaptive_grid(_full_grid(), thresholds=custom)
 
-    assert custom.identity != ADAPTIVE_THRESHOLD_IDENTITY
-    assert result.threshold_identity == custom.identity
-    assert result.threshold_identity.startswith("adaptive-v1-rmse-max-residual:")
+    assert result.hard_boundary_preserved
+    assert result.protection_counts["hard_boundary"] > 0
+    for row in range(64):
+        for col in range(64):
+            size = int(result.resolution_m[row, col])
+            top = row - row % size
+            left = col - col % size
+            block = zones[top : top + size, left : left + size]
+            assert np.all(block == block.flat[0])
 
 
-def test_terrain_residual_prevents_unsafe_coarsening() -> None:
-    full = _full_grid(8)
-    rough = np.zeros((8, 8), dtype=np.float32)
-    rough[3:5, 3:5] = 1.0
-    full = replace(full, elevation_m=rough)
+def test_existing_two_vs_eight_boundary_is_fixed_and_four_metre_band_is_added() -> None:
+    full = _full_grid()
+    zones = np.zeros(full.elevation_m.shape, dtype=np.int16)
+    zones[:, 32:] = 1
+    ceiling = np.full(full.elevation_m.shape, 8, dtype=np.int16)
+    ceiling[:, :32] = 2
 
+    result = build_adaptive_grid(
+        full,
+        policy=_classifier_policy(),
+        hard_boundary_zone=zones,
+        existing_resolution_ceiling_m=ceiling,
+    )
+
+    assert np.max(result.resolution_m[:, :32]) <= 2
+    assert 4 in np.unique(result.resolution_m[:, 32:])
+    assert 8 in np.unique(result.resolution_m[:, 32:])
+    _assert_two_to_one(result.resolution_m)
+
+
+def test_building_narrow_passage_is_not_erased_by_coarsening() -> None:
+    full = _full_grid()
+    buildings = full.building_mask.copy()
+    buildings[20:44, 28:30] = True
+    buildings[20:44, 34:36] = True
+    sfincs = full.sfincs_mask.copy()
+    sfincs[buildings] = 0
+    full = replace(full, building_mask=buildings, sfincs_mask=sfincs)
+
+    result = build_adaptive_grid(full, policy=_classifier_policy())
+
+    passage = result.resolution_m[20:44, 30:34]
+    assert np.max(passage) <= 2
+    assert np.all(full.sfincs_mask[20:44, 30:34] == 1)
+    _assert_two_to_one(result.resolution_m)
+
+
+def test_same_inputs_produce_identical_topology_counts_and_assignment() -> None:
+    full = _full_grid(building=True, road=True)
+    first = build_adaptive_grid(full, policy=_classifier_policy())
+    second = build_adaptive_grid(full, policy=_classifier_policy())
+
+    np.testing.assert_array_equal(first.resolution_m, second.resolution_m)
+    np.testing.assert_array_equal(first.level, second.level)
+    np.testing.assert_array_equal(first.refinement_reason, second.refinement_reason)
+    assert first.cell_count_by_level == second.cell_count_by_level
+    assert first.diagnostics == second.diagnostics
+
+
+def test_default_target_protection_enforces_one_and_two_metre_zones() -> None:
+    full = _full_grid(256)
     result = build_adaptive_grid(full)
 
-    assert result.total_hydraulic_cells > 1
-    assert np.any(result.resolution_m == 1)
-    assert "terrain_or_edge_refinement" in set(result.refinement_reason.ravel())
+    yy, xx = np.indices((256, 256), dtype=np.float64)
+    radius = np.hypot(xx + 0.5 - 128.0, yy + 0.5 - 128.0)
+    core = radius <= DEFAULT_ADAPTIVE_GRID_POLICY.target_core_radius_m
+    mid = (
+        radius <= DEFAULT_ADAPTIVE_GRID_POLICY.target_mid_radius_m
+    ) & ~core
 
-
-def test_feature_buffer_uses_projected_cell_footprint_distance() -> None:
-    feature = np.zeros((9, 9), dtype=bool)
-    feature[4, 4] = True
-    buffered = _metric_feature_buffer(feature, dx_m=1.0, dy_m=1.0)
-
-    # Offset three cells axially leaves exactly 2 m between closed 1 m cells.
-    assert buffered[1, 4]
-    # Offset two cells diagonally leaves sqrt(2) m between cell footprints.
-    assert buffered[2, 2]
-    # Offset three cells diagonally leaves sqrt(8) m, so it is outside the rule.
-    assert not buffered[1, 1]
+    assert np.all(result.resolution_m[core] == 1)
+    assert np.all(
+        result.resolution_m[mid]
+        <= DEFAULT_ADAPTIVE_GRID_POLICY.target_mid_max_resolution_m
+    )
+    assert result.protection_counts["target"] > 0
 
 
 @pytest.mark.parametrize("feature", ["building", "road"])
-def test_hard_features_are_one_metre_and_buffer_is_at_most_two(feature: str) -> None:
-    result = build_adaptive_grid(_full_grid(building=feature == "building", road=feature == "road"))
+def test_hard_structures_are_one_metre_and_buffer_is_at_most_two(feature: str) -> None:
+    result = build_adaptive_grid(
+        _full_grid(building=feature == "building", road=feature == "road"),
+        policy=_classifier_policy(),
+    )
     center = result.resolution_m.shape[0] // 2
     assert result.resolution_m[center, center] == 1
-    assert result.refinement_reason[center, center] == feature
 
     direct = np.zeros_like(result.resolution_m, dtype=bool)
     if feature == "building":
         direct[center, center] = True
     else:
         direct[center, :] = True
-    buffered = _metric_feature_buffer(direct, dx_m=1.0, dy_m=1.0) & ~direct
+    buffered = _metric_feature_buffer(
+        direct,
+        dx_m=1.0,
+        dy_m=1.0,
+        distance_m=2.0,
+    ) & ~direct
     assert np.all(result.resolution_m[direct] == 1)
     assert np.all(result.resolution_m[buffered] <= 2)
-    assert np.any(result.resolution_m[buffered] == 2)
+    _assert_two_to_one(result.resolution_m)
 
-    vertical = result.resolution_m[:, 1:]
-    horizontal = result.resolution_m[1:, :]
-    assert np.all(
-        np.maximum(vertical, result.resolution_m[:, :-1])
-        <= 2 * np.minimum(vertical, result.resolution_m[:, :-1])
+
+def test_threshold_identity_tracks_all_terrain_error_configuration() -> None:
+    custom = replace(
+        DEFAULT_ADAPTIVE_THRESHOLDS,
+        rmse_by_level_m={
+            **DEFAULT_ADAPTIVE_THRESHOLDS.rmse_by_level_m,
+            8: 0.123,
+        },
     )
-    assert np.all(
-        np.maximum(horizontal, result.resolution_m[:-1, :])
-        <= 2 * np.minimum(horizontal, result.resolution_m[:-1, :])
+    result = build_adaptive_grid(
+        _full_grid(),
+        thresholds=custom,
+        policy=_classifier_policy(),
     )
+
+    assert custom.identity != ADAPTIVE_THRESHOLD_IDENTITY
+    assert result.threshold_identity == custom.identity
+    assert result.threshold_identity.startswith("adaptive-v2-static-terrain-error:")
+
+
+def test_diagnostics_expose_required_protection_and_resolution_counts() -> None:
+    result = build_adaptive_grid(
+        _full_grid(building=True, road=True),
+        policy=_classifier_policy(),
+    )
+    diagnostics = result.diagnostics
+
+    assert diagnostics["cell_count_by_level"] == result.cell_count_by_level
+    assert diagnostics["full_1m_equivalent_cells"] == 4096
+    assert diagnostics["structure_protected_cells"] > 0
+    assert "terrain_protected_cells" in diagnostics
+    assert "target_protected_cells" in diagnostics
+    assert "transition_balance_cells" in diagnostics
+    assert diagnostics["minimum_resolution_m"] == 1
+    assert diagnostics["maximum_resolution_m"] <= 8
