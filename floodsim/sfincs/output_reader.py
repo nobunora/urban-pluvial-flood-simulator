@@ -87,16 +87,9 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
                     "active SFINCS maximum depth contains negative finite values"
                 )
 
-            active_depth_values = np.where(
-                np.isfinite(active_depth_raw),
-                active_depth_raw,
-                0.0,
-            ).astype(np.float32, copy=False)
-            finite_raw_active_depth = active_depth_raw[np.isfinite(active_depth_raw)]
+            active_depth_values = depth[:, active]
             min_raw_active_depth = (
-                float(np.min(finite_raw_active_depth))
-                if finite_raw_active_depth.size
-                else 0.0
+                float(np.min(active_depth_values)) if active_depth_values.size else 0.0
             )
             negative_depth_clipped_values = int(
                 np.count_nonzero(active_depth_values < 0.0)
@@ -332,9 +325,16 @@ def read_quadtree_result(
                     "active SFINCS quadtree hmax contains negative finite values"
                 )
 
-            active_depth_values = depth[:, active]
+            active_depth_values = np.where(
+                np.isfinite(active_depth_raw),
+                active_depth_raw,
+                0.0,
+            ).astype(np.float32, copy=False)
+            finite_raw_active_depth = active_depth_raw[np.isfinite(active_depth_raw)]
             min_raw_active_depth = (
-                float(np.min(active_depth_values)) if active_depth_values.size else 0.0
+                float(np.min(finite_raw_active_depth))
+                if finite_raw_active_depth.size
+                else 0.0
             )
             negative_depth_clipped_values = int(
                 np.count_nonzero(active_depth_values < 0.0)
