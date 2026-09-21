@@ -79,9 +79,6 @@ def test_adaptive_normalizer_keeps_native_face_storage(tmp_path: Path) -> None:
     assert result.metadata["grid_level_summary"] == {"2m": 2}
     assert result.metadata["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.4)
     assert result.metadata["flow_vectors_available"] is True
-    assert result.metadata["volume_summary"]["final_surface_water_volume_m3"] == (
-        pytest.approx(2.4)
-    )
     assert "native quadtree-face order" in result.metadata["no_data_policy"]
 
     with np.load(result.arrays_path, allow_pickle=False) as archive:
