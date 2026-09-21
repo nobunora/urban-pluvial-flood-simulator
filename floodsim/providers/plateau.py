@@ -93,6 +93,19 @@ def _parse_poslist(text: str | None, dim: int, transformer: Transformer) -> np.n
     return np.column_stack((x, y))
 
 
+def _parse_pos(text: str | None, dim: int, transformer: Transformer) -> np.ndarray | None:
+    """Parse one GML pos coordinate tuple."""
+    if not text:
+        return None
+    values = np.fromstring(text, sep=" ", dtype=np.float64)
+    if values.size != dim or dim < 2:
+        return None
+    lat = values[0]
+    lon = values[1]
+    x, y = transformer.transform(lon, lat)
+    return np.asarray([x, y], dtype=np.float64)
+
+
 def _ring_from_container(
     container: ET.Element,
     dim: int,
@@ -113,9 +126,9 @@ def _ring_from_container(
             if parsed is not None:
                 return parsed
         elif name == "pos":
-            parsed = _parse_poslist(element.text, element_dim, transformer)
-            if parsed is not None and len(parsed) == 1:
-                positions.append(parsed[0])
+            parsed = _parse_pos(element.text, element_dim, transformer)
+            if parsed is not None:
+                positions.append(parsed)
     if len(positions) >= 2:
         return np.asarray(positions, dtype=np.float64)
     return None
