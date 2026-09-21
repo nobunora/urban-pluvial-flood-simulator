@@ -182,6 +182,16 @@
   background: transparent !important;
 }
 
+.result-flow-svg {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+
 .result-legend {
   display: grid;
   gap: 0.35rem;

@@ -523,12 +523,14 @@ export default function ResultPanel({
                     {flowRenderStats && (
                       <span className="result-vector-note">
                         MapLibre source: {flowRenderStats.sourceFeatureCount.toLocaleString()} /
-                        描画: {flowRenderStats.renderedFeatureCount.toLocaleString()}
+                        line描画: {flowRenderStats.renderedFeatureCount.toLocaleString()} /
+                        SVG描画: {flowRenderStats.svgArrowCount.toLocaleString()}
                       </span>
                     )}
                     {flowRenderStats &&
                       flowVectorData.metadata.arrow_count > 0 &&
-                      flowRenderStats.renderedFeatureCount === 0 && (
+                      flowRenderStats.renderedFeatureCount === 0 &&
+                      flowRenderStats.svgArrowCount === 0 && (
                         <span className="result-warning">
                           GeoJSONは存在しますが、現在のMapLibre表示範囲では描画featureが0件です。
                           <br />

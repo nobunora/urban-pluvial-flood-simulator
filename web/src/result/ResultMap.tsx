@@ -19,6 +19,7 @@ import { resultBounds, resultImageCoordinates } from "./resultGeometry";
 export type FlowRenderStats = {
   sourceFeatureCount: number;
   renderedFeatureCount: number;
+  svgArrowCount: number;
   layerOrder: string[];
   featureBounds: [number, number, number, number] | null;
   mapBounds: [number, number, number, number];
@@ -42,6 +43,15 @@ const EMPTY_FLOW = {
 const FLOW_SOURCE_ID = "flow-vector-source";
 const FLOW_HALO_LAYER_ID = "flow-vector-halo";
 const FLOW_LINE_LAYER_ID = "flow-vector-lines";
+
+function flowColor(speedMps: number): string {
+  if (speedMps >= 2.0) return "#7F0000";
+  if (speedMps >= 1.0) return "#E74C3C";
+  if (speedMps >= 0.5) return "#8E44AD";
+  if (speedMps >= 0.3) return "#3F51B5";
+  if (speedMps >= 0.1) return "#3BB2D0";
+  return "#2DC4B2";
+}
 
 function overlayStyle(
   metadata: ResultMetadataResponse,
@@ -191,6 +201,7 @@ export default function ResultMap({
   const baseMapRef = useRef<MapLibreMap | null>(null);
   const overlayMapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
+  const flowSvgRef = useRef<SVGSVGElement | null>(null);
   const inspectRef = useRef(onInspect);
   const initialImageUrlRef = useRef(imageUrl);
 
@@ -298,7 +309,8 @@ export default function ResultMap({
 
   useEffect(() => {
     const map = overlayMapRef.current;
-    if (!map) return;
+    const svg = flowSvgRef.current;
+    if (!map || !svg) return;
 
     let idleReporter: (() => void) | null = null;
 
@@ -318,6 +330,55 @@ export default function ResultMap({
       ];
     };
 
+    const renderSvg = () => {
+      svg.replaceChildren();
+      const width = Math.max(1, svg.clientWidth);
+      const height = Math.max(1, svg.clientHeight);
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+      if (!flowVectorData || flowVectorData.features.length === 0) {
+        svg.dataset.flowSvgArrows = "0";
+        return;
+      }
+
+      const namespace = "http://www.w3.org/2000/svg";
+      for (const feature of flowVectorData.features) {
+        const commands: string[] = [];
+        for (const line of feature.geometry.coordinates) {
+          if (line.length < 2) continue;
+          const startPoint = map.project([line[0][0], line[0][1]]);
+          commands.push(`M ${startPoint.x.toFixed(2)} ${startPoint.y.toFixed(2)}`);
+          for (let index = 1; index < line.length; index += 1) {
+            const point = map.project([line[index][0], line[index][1]]);
+            commands.push(`L ${point.x.toFixed(2)} ${point.y.toFixed(2)}`);
+          }
+        }
+        if (commands.length === 0) continue;
+
+        const d = commands.join(" ");
+        const halo = document.createElementNS(namespace, "path");
+        halo.setAttribute("d", d);
+        halo.setAttribute("fill", "none");
+        halo.setAttribute("stroke", "#FFFFFF");
+        halo.setAttribute("stroke-width", "7");
+        halo.setAttribute("stroke-linecap", "round");
+        halo.setAttribute("stroke-linejoin", "round");
+        halo.setAttribute("stroke-opacity", "0.96");
+        svg.appendChild(halo);
+
+        const line = document.createElementNS(namespace, "path");
+        line.setAttribute("d", d);
+        line.setAttribute("fill", "none");
+        line.setAttribute("stroke", flowColor(feature.properties.speed_mps));
+        line.setAttribute("stroke-width", "4");
+        line.setAttribute("stroke-linecap", "round");
+        line.setAttribute("stroke-linejoin", "round");
+        line.setAttribute("stroke-opacity", "1");
+        svg.appendChild(line);
+      }
+      svg.dataset.flowSvgArrows = String(flowVectorData.features.length);
+    };
+
     const report = () => {
       const bounds = map.getBounds();
       onFlowRenderStats?.({
@@ -325,6 +386,7 @@ export default function ResultMap({
         renderedFeatureCount: map.queryRenderedFeatures({
           layers: [FLOW_LINE_LAYER_ID],
         }).length,
+        svgArrowCount: Number(svg.dataset.flowSvgArrows ?? "0"),
         layerOrder: (map.getStyle().layers ?? []).map((layer) => layer.id),
         featureBounds: featureBounds(),
         mapBounds: [
@@ -346,13 +408,17 @@ export default function ResultMap({
       map.setLayoutProperty(FLOW_LINE_LAYER_ID, "visibility", visibility);
 
       // Keep an explicit deterministic stack after any source/image update.
-      // Result raster < vector halo < vector line < analysis boundary.
+      // Result raster < MapLibre vector layers < analysis boundary.
       map.moveLayer(FLOW_HALO_LAYER_ID);
       map.moveLayer(FLOW_LINE_LAYER_ID);
       map.moveLayer("analysis-boundary-casing");
       map.moveLayer("analysis-boundary-outline");
       map.setLayoutProperty("analysis-boundary-casing", "visibility", "visible");
       map.setLayoutProperty("analysis-boundary-outline", "visibility", "visible");
+
+      // Independent SVG rendering is the visible fallback/guarantee. It uses
+      // the same GeoJSON but bypasses MapLibre line-layer rendering entirely.
+      renderSvg();
 
       if (visibility === "none") {
         onFlowRenderStats?.(null);
@@ -363,6 +429,9 @@ export default function ResultMap({
       map.triggerRepaint();
     };
 
+    map.on("move", renderSvg);
+    map.on("resize", renderSvg);
+
     if (map.getSource(FLOW_SOURCE_ID)) {
       update();
     } else {
@@ -370,7 +439,11 @@ export default function ResultMap({
     }
     return () => {
       map.off("load", update);
+      map.off("move", renderSvg);
+      map.off("resize", renderSvg);
       if (idleReporter) map.off("idle", idleReporter);
+      svg.replaceChildren();
+      svg.dataset.flowSvgArrows = "0";
     };
   }, [flowVectorData, onFlowRenderStats]);
 
@@ -385,6 +458,12 @@ export default function ResultMap({
       <div
         ref={overlayContainerRef}
         className="result-map result-map-overlay"
+      />
+      <svg
+        ref={flowSvgRef}
+        className="result-flow-svg"
+        aria-hidden="true"
+        data-flow-svg-arrows="0"
       />
     </div>
   );

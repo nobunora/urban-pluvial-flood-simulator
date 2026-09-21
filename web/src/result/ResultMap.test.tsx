@@ -62,6 +62,9 @@ vi.mock("maplibre-gl", () => {
       return flowData.features;
     }
     getStyle() { return this.style; }
+    project(lngLat: [number, number]) {
+      return { x: lngLat[0] * 10, y: lngLat[1] * 10 };
+    }
     getBounds() {
       return {
         getWest: () => 139.7,
@@ -262,8 +265,12 @@ describe("ResultMap", () => {
       expect.objectContaining({
         sourceFeatureCount: 1,
         renderedFeatureCount: 1,
+        svgArrowCount: 1,
       }),
     );
+    const svg = view.container.querySelector(".result-flow-svg");
+    expect(svg).toHaveAttribute("data-flow-svg-arrows", "1");
+    expect(svg?.querySelectorAll("path")).toHaveLength(2);
 
     const overlay = options(1);
     const vectorPaint = overlay.style.layers.find(
