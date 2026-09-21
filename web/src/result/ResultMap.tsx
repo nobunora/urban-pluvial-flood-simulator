@@ -379,19 +379,42 @@ export default function ResultMap({
 
       const namespace = "http://www.w3.org/2000/svg";
       for (const feature of displayFlow.features) {
-        const commands: string[] = [];
-        for (const line of feature.geometry.coordinates) {
-          if (line.length < 2) continue;
-          const startPoint = map.project([line[0][0], line[0][1]]);
-          commands.push(`M ${startPoint.x.toFixed(2)} ${startPoint.y.toFixed(2)}`);
-          for (let index = 1; index < line.length; index += 1) {
-            const point = map.project([line[index][0], line[index][1]]);
-            commands.push(`L ${point.x.toFixed(2)} ${point.y.toFixed(2)}`);
-          }
-        }
-        if (commands.length === 0) continue;
+        const shaft = feature.geometry.coordinates[0];
+        if (!shaft || shaft.length < 2) continue;
+        const projectedTail = map.project([shaft[0][0], shaft[0][1]]);
+        const projectedTip = map.project([
+          shaft[shaft.length - 1][0],
+          shaft[shaft.length - 1][1],
+        ]);
+        let dx = projectedTip.x - projectedTail.x;
+        let dy = projectedTip.y - projectedTail.y;
+        const rawLength = Math.hypot(dx, dy);
+        if (rawLength <= 1e-6) continue;
+        dx /= rawLength;
+        dy /= rawLength;
 
-        const d = commands.join(" ");
+        // Geographic vector geometry naturally becomes tiny when zooming out.
+        // Keep a screen-space minimum so fitted/overview maps remain readable,
+        // while allowing the physical geometry to grow normally when zoomed in.
+        const shaftLength = Math.max(16, rawLength);
+        const tipX = projectedTip.x;
+        const tipY = projectedTip.y;
+        const tailX = tipX - dx * shaftLength;
+        const tailY = tipY - dy * shaftLength;
+        const headLength = Math.max(6, Math.min(11, shaftLength * 0.34));
+        const headWidth = headLength * 0.58;
+        const baseX = tipX - dx * headLength;
+        const baseY = tipY - dy * headLength;
+        const leftX = baseX - dy * headWidth;
+        const leftY = baseY + dx * headWidth;
+        const rightX = baseX + dy * headWidth;
+        const rightY = baseY - dx * headWidth;
+        const d = [
+          `M ${tailX.toFixed(2)} ${tailY.toFixed(2)} L ${tipX.toFixed(2)} ${tipY.toFixed(2)}`,
+          `M ${tipX.toFixed(2)} ${tipY.toFixed(2)} L ${leftX.toFixed(2)} ${leftY.toFixed(2)}`,
+          `M ${tipX.toFixed(2)} ${tipY.toFixed(2)} L ${rightX.toFixed(2)} ${rightY.toFixed(2)}`,
+        ].join(" ");
+
         const halo = document.createElementNS(namespace, "path");
         halo.setAttribute("d", d);
         halo.setAttribute("fill", "none");
