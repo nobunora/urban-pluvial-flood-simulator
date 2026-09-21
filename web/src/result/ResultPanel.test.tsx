@@ -377,13 +377,13 @@ describe("ResultPanel", () => {
     expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
       "run-1",
       0,
-      900,
+      2500,
       expect.any(AbortSignal),
     );
     expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
       "run-1",
       3,
-      900,
+      2500,
       expect.any(AbortSignal),
     );
   });

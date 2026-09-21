@@ -325,7 +325,7 @@ export default function ResultMap({
       const height = Math.max(1, map.getCanvas().clientHeight);
       const bins = new Map<string, (typeof flowVectorData.features)[number]>();
 
-      for (const feature of displayFlow.features) {
+      for (const feature of flowVectorData.features) {
         const firstLine = feature.geometry.coordinates[0];
         if (!firstLine || firstLine.length === 0) continue;
         const anchorPoint = firstLine[Math.floor(firstLine.length / 2)];
@@ -378,7 +378,7 @@ export default function ResultMap({
       }
 
       const namespace = "http://www.w3.org/2000/svg";
-      for (const feature of flowVectorData.features) {
+      for (const feature of displayFlow.features) {
         const commands: string[] = [];
         for (const line of feature.geometry.coordinates) {
           if (line.length < 2) continue;

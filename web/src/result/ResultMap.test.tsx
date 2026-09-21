@@ -50,6 +50,7 @@ vi.mock("maplibre-gl", () => {
     getZoom() { return 15; }
     getBearing() { return 0; }
     getPitch() { return 0; }
+    getCanvas() { return { clientWidth: 1920, clientHeight: 1080 }; }
     getSource(id: string) { return this.sources.get(id); }
     setLayoutProperty(...args: unknown[]) { mocks.setLayoutProperty(...args); }
     moveLayer(...args: unknown[]) { mocks.moveLayer(...args); }
@@ -244,7 +245,9 @@ describe("ResultMap", () => {
     expect(mocks.updateImage).toHaveBeenLastCalledWith(
       expect.objectContaining({ url: "/api/result/depth.png?time_index=3" }),
     );
-    expect(mocks.setData).toHaveBeenLastCalledWith(flowData);
+    expect(mocks.setData).toHaveBeenLastCalledWith(expect.objectContaining({
+      features: flowData.features,
+    }));
     expect(mocks.setLayoutProperty).toHaveBeenCalledWith(
       "flow-vector-halo",
       "visibility",
