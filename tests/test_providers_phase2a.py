@@ -120,6 +120,23 @@ def test_plateau_rectangular_clip_and_axis_order():
     assert np.max(np.abs(buildings[0][:, 1])) <= 10.0
 
 
+def test_plateau_accepts_gml_pos_with_element_dimension():
+    citygml = b'''<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0"
+      xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
+      <core:cityObjectMember><bldg:Building><bldg:lod0FootPrint><gml:MultiSurface><gml:surfaceMember>
+      <gml:Polygon><gml:exterior><gml:LinearRing srsDimension="2">
+      <gml:pos>35.68100 139.76700</gml:pos><gml:pos>35.68100 139.76710</gml:pos>
+      <gml:pos>35.68110 139.76710</gml:pos><gml:pos>35.68110 139.76700</gml:pos>
+      <gml:pos>35.68100 139.76700</gml:pos>
+      </gml:LinearRing></gml:exterior></gml:Polygon>
+      </gml:surfaceMember></gml:MultiSurface></bldg:lod0FootPrint></bldg:Building></core:cityObjectMember>
+      </core:CityModel>'''
+    buildings, lines, polygons = extract_citygml(citygml, rectangle(), margin_m=0.0)
+    assert len(buildings) == 1
+    assert not lines and not polygons
+
+
+
 def test_plateau_provider_writes_provenance_and_prefers_road_polygons(tmp_path):
     citygml = b'''<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0"
       xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0"
