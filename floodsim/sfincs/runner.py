@@ -127,6 +127,7 @@ class SfincsRunner:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._process: subprocess.Popen[str] | None = None
+        self._cancel_process: subprocess.Popen[str] | None = None
 
     @property
     def process_id(self) -> int | None:
@@ -134,16 +135,39 @@ class SfincsRunner:
             return None if self._process is None else self._process.pid
 
     def cancel(self) -> None:
+        """Request process termination without blocking the API caller."""
         with self._lock:
             process = self._process
-        if process is None or process.poll() is not None:
-            return
+            if (
+                process is None
+                or process.poll() is not None
+                or self._cancel_process is process
+            ):
+                return
+            self._cancel_process = process
+
         process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=5)
+
+        def escalate() -> None:
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                if process.poll() is None:
+                    process.kill()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    return
+            finally:
+                with self._lock:
+                    if self._cancel_process is process:
+                        self._cancel_process = None
+
+        threading.Thread(
+            target=escalate,
+            name=f"sfincs-cancel-{process.pid}",
+            daemon=True,
+        ).start()
 
     def run(
         self,
