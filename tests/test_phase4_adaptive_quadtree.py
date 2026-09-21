@@ -238,3 +238,39 @@ def test_asymmetric_domain_preserves_n_m_orientation_and_source_coverage(tmp_pat
     assert fields.hydraulic_weighted_area_m2 == pytest.approx(
         float(np.sum(full.rain_weight, dtype=np.float64)), abs=1e-6
     )
+
+
+def test_face_rain_weights_preserve_float64_mass_at_realistic_scale(tmp_path: Path) -> None:
+    """Many refined faces must not accumulate float32 round-off into mass loss."""
+    full = _full_grid(257, 257)
+    # Use a non-binary redistribution field so aggregation exercises fractional
+    # weights rather than the trivial all-ones open-area case.
+    building_mask = full.building_mask.copy()
+    building_mask[128, 128] = True
+    allocation = allocate_roof_rainfall(building_mask)
+    full = FullGridProduct(
+        elevation_m=full.elevation_m,
+        building_mask=building_mask,
+        road_mask=full.road_mask,
+        sfincs_mask=np.where(building_mask, 0, full.sfincs_mask).astype(np.uint8),
+        manning_n=full.manning_n,
+        rain_weight=allocation.rain_weight.astype(np.float32),
+        roof_allocation=allocation,
+        width_cells=full.width_cells,
+        height_cells=full.height_cells,
+        dx_m=full.dx_m,
+        dy_m=full.dy_m,
+        x0_m=full.x0_m,
+        y0_m=full.y0_m,
+        crs_wkt=full.crs_wkt,
+    )
+    adaptive = build_adaptive_grid(full, policy=_EXTENSION_POLICY)
+    model = _model(tmp_path)
+
+    result = create_adaptive_quadtree(model, full, adaptive)
+
+    assert result.face_fields.rain_weight.dtype == np.float64
+    expected = float(np.sum(full.rain_weight, dtype=np.float64))
+    assert result.face_fields.hydraulic_weighted_area_m2 == pytest.approx(
+        expected, rel=1e-12, abs=1e-9
+    )
