@@ -89,50 +89,163 @@ class NormalizedArrays:
         return self.max_depth_m.shape
 
 
+
+@dataclass(frozen=True)
+class AdaptiveNormalizedArrays:
+    """Native quadtree-face result plus mapping to the source 1 m analysis grid."""
+
+    depth_time_m: np.ndarray
+    max_depth_m: np.ndarray
+    terrain_elevation_m: np.ndarray
+    active_mask: np.ndarray
+    time_values: tuple[str, ...]
+    face_resolution_m: np.ndarray
+    face_row_index: np.ndarray
+    face_col_index: np.ndarray
+    face_source_overlap_area_m2: np.ndarray
+    source_height_cells: int
+    source_width_cells: int
+    velocity_u_mps: np.ndarray | None = None
+    velocity_v_mps: np.ndarray | None = None
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        return (self.source_height_cells, self.source_width_cells)
+
+
+ResultArrays = NormalizedArrays | AdaptiveNormalizedArrays
+
+
 def depth_legend_metadata() -> list[dict[str, Any]]:
     return [band.to_metadata() for band in DEPTH_BANDS]
 
 
-def load_normalized_arrays(path: str | Path) -> NormalizedArrays:
+def load_normalized_arrays(path: str | Path) -> ResultArrays:
     source = Path(path)
     if not source.is_file():
         raise ResultArtifactMissing(f"normalized result file is missing: {source.name}")
     try:
         with np.load(source, allow_pickle=False) as archive:
+            storage_kind = (
+                str(np.asarray(archive["storage_kind"]).item())
+                if "storage_kind" in archive.files
+                else "regular_dense"
+            )
             depth = np.asarray(archive["depth_time_m"], dtype=np.float32)
             max_depth = np.asarray(archive["max_depth_m"], dtype=np.float32)
             terrain = np.asarray(archive["terrain_elevation_m"], dtype=np.float32)
             active = np.asarray(archive["active_mask"], dtype=bool)
-            time_values = tuple(str(value) for value in np.asarray(archive["time_values"]).tolist())
-            raw_resolution = np.asarray(archive["grid_resolution_m"], dtype=np.float32)
+            time_values = tuple(
+                str(value) for value in np.asarray(archive["time_values"]).tolist()
+            )
             has_u = "velocity_u_mps" in archive.files
             has_v = "velocity_v_mps" in archive.files
             if has_u != has_v:
-                raise ResultViewError("normalized velocity arrays must contain both u and v")
+                raise ResultViewError(
+                    "normalized velocity arrays must contain both u and v"
+                )
             velocity_u = (
-                np.asarray(archive["velocity_u_mps"], dtype=np.float32) if has_u else None
+                np.asarray(archive["velocity_u_mps"], dtype=np.float32)
+                if has_u
+                else None
             )
             velocity_v = (
-                np.asarray(archive["velocity_v_mps"], dtype=np.float32) if has_v else None
+                np.asarray(archive["velocity_v_mps"], dtype=np.float32)
+                if has_v
+                else None
             )
+
+            if storage_kind == "quadtree_faces":
+                resolution = np.asarray(archive["face_resolution_m"], dtype=np.int16)
+                rows = np.asarray(archive["face_row_index"], dtype=np.int32)
+                cols = np.asarray(archive["face_col_index"], dtype=np.int32)
+                overlap = np.asarray(
+                    archive["face_source_overlap_area_m2"], dtype=np.float64
+                )
+                source_height = int(
+                    np.asarray(archive["source_height_cells"]).item()
+                )
+                source_width = int(
+                    np.asarray(archive["source_width_cells"]).item()
+                )
+            elif storage_kind == "regular_dense":
+                raw_resolution = np.asarray(
+                    archive["grid_resolution_m"], dtype=np.float32
+                )
+            else:
+                raise ResultViewError(
+                    f"normalized result storage kind is unsupported: {storage_kind}"
+                )
+    except ResultViewError:
+        raise
     except (KeyError, OSError, ValueError) as exc:
         raise ResultViewError("normalized result file is invalid") from exc
 
-    if depth.ndim != 3 or max_depth.ndim != 2 or terrain.ndim != 2 or active.ndim != 2:
-        raise ResultViewError("normalized result arrays have invalid dimensions")
-    if depth.shape[1:] != max_depth.shape or terrain.shape != max_depth.shape or active.shape != max_depth.shape:
-        raise ResultViewError("normalized result grid shapes are inconsistent")
     if depth.shape[0] != len(time_values):
         raise ResultViewError("normalized result time axis is inconsistent")
+
+    if storage_kind == "quadtree_faces":
+        if depth.ndim != 2 or max_depth.ndim != 1 or terrain.ndim != 1 or active.ndim != 1:
+            raise ResultViewError("Adaptive normalized result arrays have invalid dimensions")
+        face_count = max_depth.size
+        if (
+            depth.shape[1] != face_count
+            or terrain.size != face_count
+            or active.size != face_count
+        ):
+            raise ResultViewError("Adaptive normalized face arrays are inconsistent")
+        if any(
+            values.shape != (face_count,)
+            for values in (resolution, rows, cols, overlap)
+        ):
+            raise ResultViewError("Adaptive normalized face layout is inconsistent")
+        if source_height <= 0 or source_width <= 0:
+            raise ResultViewError("Adaptive normalized source dimensions are invalid")
+        if np.any(resolution <= 0) or np.any(rows < 0) or np.any(cols < 0):
+            raise ResultViewError("Adaptive normalized face layout contains invalid indices")
+        if velocity_u is not None and (
+            velocity_u.shape != depth.shape
+            or velocity_v is None
+            or velocity_v.shape != depth.shape
+        ):
+            raise ResultViewError(
+                "Adaptive normalized velocity face/time shape is inconsistent"
+            )
+        return AdaptiveNormalizedArrays(
+            depth_time_m=depth,
+            max_depth_m=max_depth,
+            terrain_elevation_m=terrain,
+            active_mask=active,
+            time_values=time_values,
+            face_resolution_m=resolution,
+            face_row_index=rows,
+            face_col_index=cols,
+            face_source_overlap_area_m2=overlap,
+            source_height_cells=source_height,
+            source_width_cells=source_width,
+            velocity_u_mps=velocity_u,
+            velocity_v_mps=velocity_v,
+        )
+
+    if depth.ndim != 3 or max_depth.ndim != 2 or terrain.ndim != 2 or active.ndim != 2:
+        raise ResultViewError("normalized result arrays have invalid dimensions")
+    if (
+        depth.shape[1:] != max_depth.shape
+        or terrain.shape != max_depth.shape
+        or active.shape != max_depth.shape
+    ):
+        raise ResultViewError("normalized result grid shapes are inconsistent")
     if velocity_u is not None and (
-        velocity_u.shape != depth.shape or velocity_v is None or velocity_v.shape != depth.shape
+        velocity_u.shape != depth.shape
+        or velocity_v is None
+        or velocity_v.shape != depth.shape
     ):
         raise ResultViewError("normalized velocity grid/time shape is inconsistent")
 
     if raw_resolution.ndim == 0:
-        resolution: np.ndarray | float = float(raw_resolution)
+        regular_resolution: np.ndarray | float = float(raw_resolution)
     elif raw_resolution.shape == max_depth.shape:
-        resolution = raw_resolution
+        regular_resolution = raw_resolution
     else:
         raise ResultViewError("normalized grid-resolution shape is inconsistent")
 
@@ -142,7 +255,7 @@ def load_normalized_arrays(path: str | Path) -> NormalizedArrays:
         terrain_elevation_m=terrain,
         active_mask=active,
         time_values=time_values,
-        grid_resolution_m=resolution,
+        grid_resolution_m=regular_resolution,
         velocity_u_mps=velocity_u,
         velocity_v_mps=velocity_v,
     )
@@ -185,27 +298,85 @@ def _depth_rgba(values: np.ndarray, active_mask: np.ndarray) -> np.ndarray:
     return rgba
 
 
-def render_max_depth_png(arrays: NormalizedArrays, *, max_px: int = MAX_RENDER_PX) -> bytes:
-    return _png_bytes(
-        _depth_rgba(arrays.max_depth_m, arrays.active_mask),
-        max_px=max_px,
-        categorical=True,
+
+def _adaptive_face_bounds(
+    arrays: AdaptiveNormalizedArrays,
+    index: int,
+) -> tuple[int, int, int, int]:
+    size = int(arrays.face_resolution_m[index])
+    row0 = int(arrays.face_row_index[index]) * size
+    col0 = int(arrays.face_col_index[index]) * size
+    row1 = min(row0 + size, arrays.source_height_cells)
+    col1 = min(col0 + size, arrays.source_width_cells)
+    return row0, row1, col0, col1
+
+
+def _adaptive_depth_rgba(
+    arrays: AdaptiveNormalizedArrays,
+    values: np.ndarray,
+) -> np.ndarray:
+    if values.shape != arrays.max_depth_m.shape:
+        raise ResultViewError("Adaptive face depth shape is inconsistent")
+    rgba = np.zeros((*arrays.shape, 4), dtype=np.uint8)
+    for index, value in enumerate(values):
+        if not arrays.active_mask[index] or not np.isfinite(value):
+            continue
+        depth = float(value)
+        if depth < DISPLAY_DRY_THRESHOLD_M:
+            continue
+        band_color: tuple[int, int, int, int] | None = None
+        for band in DEPTH_BANDS:
+            if depth < band.minimum_m:
+                continue
+            if band.maximum_m is None or depth < band.maximum_m:
+                band_color = band.rgba
+                break
+        if band_color is None:
+            continue
+        row0, row1, col0, col1 = _adaptive_face_bounds(arrays, index)
+        if row1 > row0 and col1 > col0:
+            rgba[row0:row1, col0:col1] = band_color
+    return rgba
+
+
+def _adaptive_resolution_rgba(arrays: AdaptiveNormalizedArrays) -> np.ndarray:
+    rgba = np.zeros((*arrays.shape, 4), dtype=np.uint8)
+    for index, resolution in enumerate(arrays.face_resolution_m):
+        if not arrays.active_mask[index]:
+            continue
+        color = GRID_RESOLUTION_COLORS.get(int(resolution))
+        if color is None:
+            continue
+        row0, row1, col0, col1 = _adaptive_face_bounds(arrays, index)
+        if row1 > row0 and col1 > col0:
+            rgba[row0:row1, col0:col1] = color
+    return rgba
+
+
+def render_max_depth_png(arrays: ResultArrays, *, max_px: int = MAX_RENDER_PX) -> bytes:
+    rgba = (
+        _adaptive_depth_rgba(arrays, arrays.max_depth_m)
+        if isinstance(arrays, AdaptiveNormalizedArrays)
+        else _depth_rgba(arrays.max_depth_m, arrays.active_mask)
     )
+    return _png_bytes(rgba, max_px=max_px, categorical=True)
 
 
 def render_time_depth_png(
-    arrays: NormalizedArrays,
+    arrays: ResultArrays,
     *,
     time_index: int,
     max_px: int = MAX_RENDER_PX,
 ) -> bytes:
     if time_index < 0 or time_index >= arrays.depth_time_m.shape[0]:
         raise ResultTimeIndexInvalid(f"time_index {time_index} is outside available output")
-    return _png_bytes(
-        _depth_rgba(arrays.depth_time_m[time_index], arrays.active_mask),
-        max_px=max_px,
-        categorical=True,
+    values = arrays.depth_time_m[time_index]
+    rgba = (
+        _adaptive_depth_rgba(arrays, values)
+        if isinstance(arrays, AdaptiveNormalizedArrays)
+        else _depth_rgba(values, arrays.active_mask)
     )
+    return _png_bytes(rgba, max_px=max_px, categorical=True)
 
 
 def _grid_resolution_values(arrays: NormalizedArrays) -> np.ndarray:
@@ -215,14 +386,17 @@ def _grid_resolution_values(arrays: NormalizedArrays) -> np.ndarray:
 
 
 def render_grid_resolution_png(
-    arrays: NormalizedArrays,
+    arrays: ResultArrays,
     *,
     max_px: int = MAX_RENDER_PX,
 ) -> bytes:
-    values = _grid_resolution_values(arrays)
-    rgba = np.zeros((*arrays.shape, 4), dtype=np.uint8)
-    for level, color in GRID_RESOLUTION_COLORS.items():
-        rgba[arrays.active_mask & np.isclose(values, float(level))] = color
+    if isinstance(arrays, AdaptiveNormalizedArrays):
+        rgba = _adaptive_resolution_rgba(arrays)
+    else:
+        values = _grid_resolution_values(arrays)
+        rgba = np.zeros((*arrays.shape, 4), dtype=np.uint8)
+        for level, color in GRID_RESOLUTION_COLORS.items():
+            rgba[arrays.active_mask & np.isclose(values, float(level))] = color
     return _png_bytes(rgba, max_px=max_px, categorical=True)
 
 
@@ -372,7 +546,7 @@ def flow_vectors_geojson(
 
 
 def inspect_native_point(
-    arrays: NormalizedArrays,
+    arrays: ResultArrays,
     *,
     area: AnalysisArea,
     lon_deg: float,
@@ -402,6 +576,56 @@ def inspect_native_point(
         raise PointOutsideResult("point is outside result grid")
 
     time_value = arrays.time_values[time_index] if time_index is not None else None
+    if isinstance(arrays, AdaptiveNormalizedArrays):
+        sizes = arrays.face_resolution_m.astype(np.int64)
+        row0 = arrays.face_row_index.astype(np.int64) * sizes
+        col0 = arrays.face_col_index.astype(np.int64) * sizes
+        row1 = np.minimum(row0 + sizes, arrays.source_height_cells)
+        col1 = np.minimum(col0 + sizes, arrays.source_width_cells)
+        matches = np.flatnonzero(
+            (row >= row0) & (row < row1) & (col >= col0) & (col < col1)
+        )
+        if matches.size != 1:
+            raise ResultViewError("Adaptive point does not resolve to exactly one face")
+        face = int(matches[0])
+        if not bool(arrays.active_mask[face]):
+            return {
+                "lon_deg": lon_deg,
+                "lat_deg": lat_deg,
+                "has_data": False,
+                "row": row,
+                "column": col,
+                "time_index": time_index,
+                "time_value": time_value,
+                "depth_m": None,
+                "max_depth_m": None,
+                "max_time_index": None,
+                "max_time_value": None,
+                "terrain_elevation_m": None,
+                "grid_resolution_m": None,
+            }
+        depth_series = arrays.depth_time_m[:, face]
+        max_time_index = int(np.nanargmax(depth_series))
+        return {
+            "lon_deg": lon_deg,
+            "lat_deg": lat_deg,
+            "has_data": True,
+            "row": row,
+            "column": col,
+            "time_index": time_index,
+            "time_value": time_value,
+            "depth_m": (
+                float(depth_series[time_index])
+                if time_index is not None
+                else None
+            ),
+            "max_depth_m": float(arrays.max_depth_m[face]),
+            "max_time_index": max_time_index,
+            "max_time_value": arrays.time_values[max_time_index],
+            "terrain_elevation_m": float(arrays.terrain_elevation_m[face]),
+            "grid_resolution_m": float(arrays.face_resolution_m[face]),
+        }
+
     if not bool(arrays.active_mask[row, col]):
         return {
             "lon_deg": lon_deg,
