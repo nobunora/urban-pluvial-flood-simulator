@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from floodsim.domain.geometry import AnalysisArea, GeoBounds, LonLat
 from floodsim.preprocessing.adaptive_grid import (
     ADAPTIVE_LEVELS_M,
     ADAPTIVE_THRESHOLD_IDENTITY,
@@ -18,7 +19,6 @@ from floodsim.preprocessing.adaptive_grid import (
     build_adaptive_grid,
     fit_plane_metrics,
 )
-from floodsim.domain.geometry import AnalysisArea, GeoBounds, LonLat
 from floodsim.preprocessing.full_grid import FullGridProduct, build_full_1m_grid
 from floodsim.preprocessing.roof_rainfall import allocate_roof_rainfall
 
