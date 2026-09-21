@@ -222,7 +222,11 @@ def test_enabled_adaptive_runs_through_native_face_result_path(tmp_path: Path) -
     assert record.future is not None
     record.future.result(timeout=10)
 
-    assert record.machine.state is RunState.COMPLETE
+    assert record.machine.state is RunState.COMPLETE, (
+        record.failure_code,
+        record.failure_message,
+        record.activity_lines,
+    )
     assert builder.adaptive is not None
     assert record.result_metadata is not None
     assert record.result_metadata["grid_level_summary"] == {"4m": 1}
