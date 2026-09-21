@@ -114,7 +114,7 @@ const metadata: ResultMetadataResponse = {
     "2026-01-01T00:30:00",
   ],
   max_depth_summary: { global_max_depth_m: 1.0 },
-  grid_level_summary: { "1m": 250000 },
+  grid_level_summary: { "1m": 1200000 },
   depth_legend: [],
   provider_summary: { warnings: [] },
   engine_summary: {},
