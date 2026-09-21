@@ -134,6 +134,8 @@ class RunRecord:
     estimated_remaining_seconds: float | None = None
     progress_detail: str | None = None
     activity_lines: list[str] = field(default_factory=list)
+    started_monotonic: float = field(default_factory=time.monotonic)
+    stage_started_monotonic: float = field(default_factory=time.monotonic)
     lock: threading.RLock = field(default_factory=threading.RLock)
     client_lease_enabled: bool = False
     last_client_heartbeat_monotonic: float | None = None
@@ -269,12 +271,26 @@ class RunCoordinator:
             line = f"[APP] {line}"
         with record.lock:
             record.activity_lines.append(line)
-            if len(record.activity_lines) > 80:
-                del record.activity_lines[:-80]
+
+    def _append_stage_timing(self, record: RunRecord, *, now: float | None = None) -> None:
+        measured_at = time.monotonic() if now is None else now
+        with record.lock:
+            current_state = record.machine.state
+            stage_elapsed = max(0.0, measured_at - record.stage_started_monotonic)
+            total_elapsed = max(0.0, measured_at - record.started_monotonic)
+            self._append_activity(
+                record,
+                f"処理時間: {STAGE_LABELS[current_state]} {stage_elapsed:.2f} s / "
+                f"トータル {total_elapsed:.2f} s",
+            )
 
     def _set_state(self, record: RunRecord, state: RunState, message: str) -> None:
+        now = time.monotonic()
         with record.lock:
+            if record.machine.state is not RunState.CREATED:
+                self._append_stage_timing(record, now=now)
             record.machine.transition(state)
+            record.stage_started_monotonic = now
             record.manifest = record.manifest.model_copy(update={"run_status": state})
             record.progress_fraction = None
             record.estimated_remaining_seconds = None
