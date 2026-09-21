@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
+import shutil
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -258,6 +260,7 @@ class AdaptiveSfincsModelBuilder:
         *,
         subgrid_pixels: int = ADAPTIVE_SUBGRID_PIXELS,
         subgrid_levels: int = ADAPTIVE_SUBGRID_LEVELS,
+        cache_root: str | Path | None = None,
     ) -> None:
         if subgrid_pixels < 1:
             raise ValueError("subgrid_pixels must be positive")
@@ -265,6 +268,24 @@ class AdaptiveSfincsModelBuilder:
             raise ValueError("subgrid_levels must be at least two")
         self.subgrid_pixels = int(subgrid_pixels)
         self.subgrid_levels = int(subgrid_levels)
+        self.cache_root = Path(cache_root) if cache_root is not None else None
+
+    def _subgrid_cache_key(
+        self,
+        grid: FullGridProduct,
+        adaptive: AdaptiveGridProduct,
+    ) -> str:
+        digest = hashlib.sha256()
+        digest.update(b"adaptive-subgrid-v1")
+        digest.update(str(self.subgrid_pixels).encode())
+        digest.update(str(self.subgrid_levels).encode())
+        digest.update(grid.crs_wkt.encode("utf-8"))
+        for values in (grid.elevation_m, grid.manning_n, adaptive.resolution_m):
+            array = np.ascontiguousarray(values)
+            digest.update(str(array.shape).encode())
+            digest.update(array.dtype.str.encode())
+            digest.update(memoryview(array).cast("B"))
+        return digest.hexdigest()[:32]
 
     def build(
         self,
@@ -290,17 +311,28 @@ class AdaptiveSfincsModelBuilder:
                 raise ModelBuildError(
                     "HydroMT-SFINCS quadtree subgrid component is incompatible"
                 )
-            component.create(
-                elevation_list=[{"elevation": elevation}],
-                roughness_list=[{"manning": roughness}],
-                nr_levels=self.subgrid_levels,
-                nr_subgrid_pixels=self.subgrid_pixels,
-                write_dep_tif=False,
-                write_man_tif=False,
-                quiet=True,
-            )
-            if not getattr(component.data, "data_vars", None):
-                raise ModelBuildError("Adaptive subgrid generation produced no data")
+            subgrid_cache_hit = False
+            cached_subgrid: Path | None = None
+            if self.cache_root is not None:
+                cache_key = self._subgrid_cache_key(grid, adaptive)
+                cached_subgrid = self.cache_root / cache_key / "sfincs_subgrid.nc"
+            target_subgrid = root / "sfincs_subgrid.nc"
+            if cached_subgrid is not None and cached_subgrid.is_file():
+                shutil.copy2(cached_subgrid, target_subgrid)
+                model.config.set("sbgfile", target_subgrid.name)
+                subgrid_cache_hit = True
+            else:
+                component.create(
+                    elevation_list=[{"elevation": elevation}],
+                    roughness_list=[{"manning": roughness}],
+                    nr_levels=self.subgrid_levels,
+                    nr_subgrid_pixels=self.subgrid_pixels,
+                    write_dep_tif=False,
+                    write_man_tif=False,
+                    quiet=True,
+                )
+                if not getattr(component.data, "data_vars", None):
+                    raise ModelBuildError("Adaptive subgrid generation produced no data")
 
             duration_seconds = float(rainfall.elapsed_seconds[-1])
             output_interval = derive_output_interval_seconds(duration_seconds)
@@ -335,7 +367,13 @@ class AdaptiveSfincsModelBuilder:
             # authority-less AEQD CRS. Use the narrow compatibility writer for
             # the grid, then let upstream components write subgrid/meteo files.
             write_quadtree_grid_compat(model.quadtree_grid, filename="sfincs.nc")
-            component.write(filename="sfincs_subgrid.nc")
+            if not subgrid_cache_hit:
+                component.write(filename="sfincs_subgrid.nc")
+                if cached_subgrid is not None:
+                    cached_subgrid.parent.mkdir(parents=True, exist_ok=True)
+                    temp_cache = cached_subgrid.with_suffix(".tmp")
+                    shutil.copy2(target_subgrid, temp_cache)
+                    os.replace(temp_cache, cached_subgrid)
             model.precipitation.write(filename="sfincs_netampr.nc")
             model.config.write()
 
@@ -393,11 +431,16 @@ class AdaptiveSfincsModelBuilder:
             "blocked_building_source_cells": int(np.count_nonzero(grid.building_mask)),
             "roughness": {"general": 0.030, "road": 0.020},
             "subgrid": {
+                "cache_hit": subgrid_cache_hit,
                 "source_terrain_resolution_m": 1.0,
                 "source_roughness_resolution_m": 1.0,
                 "pixels_per_hydraulic_cell": self.subgrid_pixels,
                 "hypsometric_levels": self.subgrid_levels,
-                "variables": sorted(str(name) for name in component.data.data_vars),
+                "variables": (
+                    sorted(str(name) for name in component.data.data_vars)
+                    if not subgrid_cache_hit
+                    else sorted(str(name) for name in xr.open_dataset(root / "sfincs_subgrid.nc").data_vars)
+                ),
             },
             "rainfall_forcing": {
                 "grid_resolution_m": 1.0,
