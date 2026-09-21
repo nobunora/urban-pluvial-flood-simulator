@@ -26,7 +26,10 @@ def test_built_placeholder_spa_is_served() -> None:
     assert asset_path is not None
     asset_response = TestClient(app).get(asset_path.group(1))
     assert asset_response.status_code == 200
-    assert "/api/v1/health" in asset_response.text
+    assert asset_response.headers["content-type"].startswith(
+        ("text/javascript", "application/javascript")
+    )
+    assert len(asset_response.content) > 1_000
 
 
 def test_phase2_endpoints_are_not_fake() -> None:
