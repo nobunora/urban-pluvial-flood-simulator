@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 from pyproj import Transformer
-from shapely.geometry import LineString, Polygon, box  # type: ignore[import-untyped]
+from shapely.geometry import LineString, Polygon, box  # type: ignore[import-untyped]\nfrom shapely.ops import polygonize, unary_union  # type: ignore[import-untyped]
 
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.providers.common import (
@@ -76,7 +76,7 @@ def _cache_path(cache_dir: Path, area: AnalysisArea, margin_m: float) -> Path:
         "width_m": area.width_m,
         "height_m": area.height_m,
         "margin_m": margin_m,
-        "query_revision": "building-relation-v3",
+        "query_revision": "building-relation-v4",
     }
     digest = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:20]
     return cache_dir / "osm" / f"{digest}.json"
@@ -199,12 +199,49 @@ out geom;'''
 
             is_building = "building" in tags or "building:part" in tags
             if is_building:
-                append_building_geometry(element.get("geometry") or [])
-                if element.get("type") == "relation":
+                if element.get("type") != "relation":
+                    append_building_geometry(element.get("geometry") or [])
+                else:
+                    # Overpass relation members may each be only a fragment of a
+                    # multipolygon ring. Assemble all outer/inner linework before
+                    # polygonization instead of treating every member as a polygon.
+                    role_lines: dict[str, list[LineString]] = {"outer": [], "inner": []}
                     for member in element.get("members") or []:
-                        if not isinstance(member, dict) or member.get("role") == "inner":
+                        if not isinstance(member, dict):
                             continue
-                        append_building_geometry(member.get("geometry") or [])
+                        role = member.get("role") or "outer"
+                        if role not in role_lines:
+                            continue
+                        geometry = member.get("geometry") or []
+                        if not isinstance(geometry, list) or len(geometry) < 2:
+                            continue
+                        try:
+                            lon = [point["lon"] for point in geometry]
+                            lat = [point["lat"] for point in geometry]
+                        except (KeyError, TypeError):
+                            continue
+                        x, y = transformer.transform(lon, lat)
+                        role_lines[role].append(LineString(np.column_stack((x, y))))
+
+                    outer_polygons = list(polygonize(unary_union(role_lines["outer"])))
+                    if outer_polygons:
+                        relation_geometry = unary_union(outer_polygons)
+                        inner_polygons = list(polygonize(unary_union(role_lines["inner"])))
+                        if inner_polygons:
+                            relation_geometry = relation_geometry.difference(
+                                unary_union(inner_polygons)
+                            )
+                        clipped = relation_geometry.intersection(clip)
+                        if clipped.geom_type == "Polygon":
+                            buildings.append(
+                                np.asarray(clipped.exterior.coords, dtype=float)
+                            )
+                        elif clipped.geom_type == "MultiPolygon":
+                            buildings.extend(
+                                np.asarray(item.exterior.coords, dtype=float)
+                                for item in clipped.geoms
+                                if not item.is_empty
+                            )
             elif "highway" in tags:
                 geometry = element.get("geometry") or []
                 if isinstance(geometry, list) and len(geometry) >= 2:
