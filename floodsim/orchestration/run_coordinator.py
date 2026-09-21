@@ -757,7 +757,11 @@ class RunCoordinator:
 
             self._set_state(record, RunState.RUNNING_ENGINE, "SFINCSを実行しています。")
             runner = self.runner_factory()
-            record.runner = runner
+            with record.lock:
+                record.runner = runner
+                cancelled_before_runner_registration = record.cancel_event.is_set()
+            if cancelled_before_runner_registration:
+                self._check_cancel(record)
             engine_started = time.monotonic()
 
             def append_engine_line(line: str) -> None:
