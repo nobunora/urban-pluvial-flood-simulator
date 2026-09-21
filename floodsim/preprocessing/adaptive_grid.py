@@ -312,11 +312,22 @@ def fit_plane_metrics(elevation_m: np.ndarray) -> PlaneFitMetrics:
 
 def _shift_mask(source: np.ndarray, dy: int, dx: int) -> np.ndarray:
     shifted = np.zeros_like(source, dtype=bool)
-    source_y = slice(max(0, -dy), min(source.shape[0], source.shape[0] - dy))
-    source_x = slice(max(0, -dx), min(source.shape[1], source.shape[1] - dx))
-    target_y = slice(max(0, dy), min(source.shape[0], source.shape[0] + dy))
-    target_x = slice(max(0, dx), min(source.shape[1], source.shape[1] + dx))
-    shifted[target_y, target_x] = source[source_y, source_x]
+    height, width = source.shape
+    source_y0 = max(0, -dy)
+    source_y1 = min(height, height - dy)
+    source_x0 = max(0, -dx)
+    source_x1 = min(width, width - dx)
+    if source_y0 >= source_y1 or source_x0 >= source_x1:
+        return shifted
+
+    target_y0 = source_y0 + dy
+    target_y1 = source_y1 + dy
+    target_x0 = source_x0 + dx
+    target_x1 = source_x1 + dx
+    shifted[target_y0:target_y1, target_x0:target_x1] = source[
+        source_y0:source_y1,
+        source_x0:source_x1,
+    ]
     return shifted
 
 
