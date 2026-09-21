@@ -401,8 +401,137 @@ def render_grid_resolution_png(
 
 
 
+def _adaptive_flow_vectors_geojson(
+    arrays: AdaptiveNormalizedArrays,
+    *,
+    area: AnalysisArea,
+    time_index: int,
+    max_vectors: int,
+    min_speed_mps: float,
+) -> dict[str, Any]:
+    if time_index < 0 or time_index >= arrays.depth_time_m.shape[0]:
+        raise ResultTimeIndexInvalid(
+            f"time_index {time_index} is outside available output"
+        )
+    if arrays.velocity_u_mps is None or arrays.velocity_v_mps is None:
+        raise ResultArtifactMissing("flow-vector output is not available for this run")
+    if max_vectors <= 0:
+        raise ResultViewError("max_vectors must be positive")
+
+    depth = arrays.depth_time_m[time_index]
+    u = arrays.velocity_u_mps[time_index]
+    vv = arrays.velocity_v_mps[time_index]
+    speed = np.hypot(u, vv)
+    valid = (
+        arrays.active_mask
+        & np.isfinite(depth)
+        & (depth >= DISPLAY_DRY_THRESHOLD_M)
+        & np.isfinite(u)
+        & np.isfinite(vv)
+        & np.isfinite(speed)
+        & (speed >= min_speed_mps)
+    )
+    candidates = np.flatnonzero(valid)
+    if candidates.size > max_vectors:
+        ranked = candidates[np.argsort(speed[candidates])[::-1]]
+        candidates = ranked[:max_vectors]
+
+    transformer = Transformer.from_crs(
+        local_crs(area),
+        CRS.from_epsg(4326),
+        always_xy=True,
+    )
+    xmin = -area.width_m / 2.0
+    ymin = -area.height_m / 2.0
+    features: list[dict[str, Any]] = []
+
+    for raw_index in candidates:
+        index = int(raw_index)
+        row0, row1, col0, col1 = _adaptive_face_bounds(arrays, index)
+        if row1 <= row0 or col1 <= col0:
+            continue
+        sample_u = float(u[index])
+        sample_v = float(vv[index])
+        sample_speed = float(speed[index])
+        direction_x = sample_u / sample_speed
+        direction_y = sample_v / sample_speed
+        center_x = xmin + 0.5 * (col0 + col1)
+        center_y = ymin + 0.5 * (row0 + row1)
+        face_span_m = float(min(row1 - row0, col1 - col0))
+        arrow_length_m = max(2.0, min(14.0, face_span_m * 0.62))
+        tail_scale = arrow_length_m * 0.42
+        tip_scale = arrow_length_m * 0.58
+        tail = (
+            center_x - direction_x * tail_scale,
+            center_y - direction_y * tail_scale,
+        )
+        tip = (
+            center_x + direction_x * tip_scale,
+            center_y + direction_y * tip_scale,
+        )
+        head_length = max(1.2, arrow_length_m * 0.28)
+        head_angle = np.deg2rad(30.0)
+        cos_a = float(np.cos(head_angle))
+        sin_a = float(np.sin(head_angle))
+        back_x = -direction_x
+        back_y = -direction_y
+        left_dir = (
+            back_x * cos_a - back_y * sin_a,
+            back_x * sin_a + back_y * cos_a,
+        )
+        right_dir = (
+            back_x * cos_a + back_y * sin_a,
+            -back_x * sin_a + back_y * cos_a,
+        )
+        left = (
+            tip[0] + left_dir[0] * head_length,
+            tip[1] + left_dir[1] * head_length,
+        )
+        right = (
+            tip[0] + right_dir[0] * head_length,
+            tip[1] + right_dir[1] * head_length,
+        )
+
+        def lonlat(point: tuple[float, float]) -> list[float]:
+            lon, lat = transformer.transform(point[0], point[1])
+            return [float(lon), float(lat)]
+
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "MultiLineString",
+                    "coordinates": [
+                        [lonlat(tail), lonlat(tip)],
+                        [lonlat(tip), lonlat(left)],
+                        [lonlat(tip), lonlat(right)],
+                    ],
+                },
+                "properties": {
+                    "speed_mps": sample_speed,
+                    "u_mps": sample_u,
+                    "v_mps": sample_v,
+                    "time_index": time_index,
+                    "face_index": index,
+                    "grid_resolution_m": float(arrays.face_resolution_m[index]),
+                },
+            }
+        )
+
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "metadata": {
+            "speed_unit": "m/s",
+            "min_speed_mps": float(min_speed_mps),
+            "arrow_count": len(features),
+            "sampling_method": "native-quadtree-face-top-speed",
+        },
+    }
+
+
 def flow_vectors_geojson(
-    arrays: NormalizedArrays,
+    arrays: ResultArrays,
     *,
     area: AnalysisArea,
     time_index: int,
@@ -410,6 +539,14 @@ def flow_vectors_geojson(
     min_speed_mps: float = 0.001,
 ) -> dict[str, Any]:
     """Return sampled flow arrows as vector GeoJSON with speed metadata."""
+    if isinstance(arrays, AdaptiveNormalizedArrays):
+        return _adaptive_flow_vectors_geojson(
+            arrays,
+            area=area,
+            time_index=time_index,
+            max_vectors=max_vectors,
+            min_speed_mps=min_speed_mps,
+        )
     if time_index < 0 or time_index >= arrays.depth_time_m.shape[0]:
         raise ResultTimeIndexInvalid(f"time_index {time_index} is outside available output")
     if arrays.velocity_u_mps is None or arrays.velocity_v_mps is None:

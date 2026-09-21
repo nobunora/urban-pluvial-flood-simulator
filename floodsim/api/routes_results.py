@@ -16,7 +16,7 @@ from floodsim.api.schemas import PointInspectionResponse, ResultMetadataResponse
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.orchestration.run_coordinator import ResultNotReady, RunNotFound
 from floodsim.results.view import (
-    NormalizedArrays,
+    ResultArrays,
     PointOutsideResult,
     ResultTimeIndexInvalid,
     ResultViewError,
@@ -46,7 +46,7 @@ def _map_result_error(exc: Exception) -> ApiContractError:
 
 
 @lru_cache(maxsize=16)
-def _load_arrays_cached(path_text: str, mtime_ns: int) -> NormalizedArrays:
+def _load_arrays_cached(path_text: str, mtime_ns: int) -> ResultArrays:
     del mtime_ns
     return load_normalized_arrays(Path(path_text))
 
@@ -84,7 +84,7 @@ def _arrays_path_for_run(run_id: UUID) -> tuple[Path, int]:
     return path, path.stat().st_mtime_ns
 
 
-def _arrays_for_run(run_id: UUID) -> NormalizedArrays:
+def _arrays_for_run(run_id: UUID) -> ResultArrays:
     try:
         path, mtime_ns = _arrays_path_for_run(run_id)
         return _load_arrays_cached(str(path), mtime_ns)

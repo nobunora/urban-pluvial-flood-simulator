@@ -12,6 +12,7 @@ from floodsim.results.view import (
     DEPTH_BANDS,
     GRID_RESOLUTION_COLORS,
     AdaptiveNormalizedArrays,
+    flow_vectors_geojson,
     inspect_native_point,
     load_normalized_arrays,
     render_grid_resolution_png,
@@ -119,3 +120,33 @@ def test_adaptive_point_inspection_returns_native_face_value() -> None:
     assert inspected["max_depth_m"] == pytest.approx(0.40)
     assert inspected["grid_resolution_m"] == pytest.approx(2.0)
     assert inspected["terrain_elevation_m"] == pytest.approx(4.0)
+
+
+
+def test_adaptive_flow_vectors_use_native_face_centers() -> None:
+    arrays = _arrays()
+    u = np.zeros_like(arrays.depth_time_m)
+    vv = np.zeros_like(arrays.depth_time_m)
+    u[1, 3] = 0.3
+    vv[1, 3] = 0.4
+    arrays = AdaptiveNormalizedArrays(
+        **{
+            **arrays.__dict__,
+            "velocity_u_mps": u,
+            "velocity_v_mps": vv,
+        }
+    )
+
+    payload = flow_vectors_geojson(
+        arrays,
+        area=_area(),
+        time_index=1,
+        max_vectors=10,
+    )
+
+    assert payload["metadata"]["arrow_count"] == 1
+    assert payload["metadata"]["sampling_method"] == "native-quadtree-face-top-speed"
+    feature = payload["features"][0]
+    assert feature["properties"]["face_index"] == 3
+    assert feature["properties"]["grid_resolution_m"] == pytest.approx(2.0)
+    assert feature["properties"]["speed_mps"] == pytest.approx(0.5)
