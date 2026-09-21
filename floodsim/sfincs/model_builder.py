@@ -315,6 +315,8 @@ class AdaptiveSfincsModelBuilder:
             model.config.set("storevel", 1)
             # SFINCS suppresses h/hmax on subgrid runs unless this is enabled.
             model.config.set("storehsubgrid", 1)
+            # Needed for the Adaptive Full-vs-Adaptive volume validation gate.
+            model.config.set("storezvolume", 1)
 
             # Keep the already mass-conserving 1 m roof-allocation raster as
             # SFINCS distributed precipitation forcing. The meteorological field
@@ -398,6 +400,7 @@ class AdaptiveSfincsModelBuilder:
             "roof_rain_relative_mass_error": grid.roof_allocation.relative_mass_error,
             "output_interval_seconds": output_interval,
             "depth_output": {"storehsubgrid": 1, "variables": ["h", "hmax"]},
+            "volume_output": {"storezvolume": 1, "variable": "subgrid_volume"},
             "velocity_output": {"storevel": 1, "variables": ["u", "v"]},
             "adaptive_face_layout": "adaptive_face_layout.npz",
             "unsupported_physics": {

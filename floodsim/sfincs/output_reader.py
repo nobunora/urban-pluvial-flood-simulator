@@ -23,6 +23,7 @@ class SfincsRegularResult:
     time_values: tuple[str, ...]
     velocity_u_mps: np.ndarray | None = None
     velocity_v_mps: np.ndarray | None = None
+    subgrid_volume_m3: np.ndarray | None = None
     hmax_reconstructed_cells: int = 0
     negative_depth_clipped_values: int = 0
     negative_max_depth_clipped_cells: int = 0
@@ -117,6 +118,27 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
                     "active SFINCS maximum depth could not be reconstructed"
                 )
 
+            subgrid_volume: np.ndarray | None = None
+            if "subgrid_volume" in dataset.data_vars:
+                _require_dims(dataset, "subgrid_volume", ("time", face_dim))
+                subgrid_volume = np.asarray(
+                    dataset["subgrid_volume"].values,
+                    dtype=np.float64,
+                )
+                if subgrid_volume.shape != depth.shape:
+                    raise SfincsResultError(
+                        "SFINCS quadtree subgrid-volume face/time shape is inconsistent"
+                    )
+                if np.any(~np.isfinite(subgrid_volume[:, active])):
+                    raise SfincsResultError(
+                        "active SFINCS quadtree subgrid volume contains non-finite values"
+                    )
+                if np.any(subgrid_volume[:, active] < 0.0):
+                    raise SfincsResultError(
+                        "active SFINCS quadtree subgrid volume contains negative values"
+                    )
+                subgrid_volume[:, ~active] = np.nan
+
             has_u = "u" in dataset.data_vars
             has_v = "v" in dataset.data_vars
             if has_u != has_v:
@@ -157,6 +179,7 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
         time_values=time_values,
         velocity_u_mps=velocity_u,
         velocity_v_mps=velocity_v,
+        subgrid_volume_m3=subgrid_volume,
         hmax_reconstructed_cells=reconstructed_cells,
         negative_depth_clipped_values=negative_depth_clipped_values,
         negative_max_depth_clipped_cells=negative_max_depth_clipped_cells,
