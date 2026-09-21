@@ -387,7 +387,7 @@ def aggregate_face_fields(
     overlap_area = np.zeros(face_count, dtype=np.float64)
     mask = np.zeros(face_count, dtype=np.uint8)
     manning = np.full(face_count, GENERAL_MANNING, dtype=np.float32)
-    rain_weight = np.zeros(face_count, dtype=np.float32)
+    rain_weight = np.zeros(face_count, dtype=np.float64)
 
     full_mask = np.asarray(full_grid.sfincs_mask, dtype=np.uint8)
     full_manning = np.asarray(full_grid.manning_n, dtype=np.float32)
@@ -427,7 +427,7 @@ def aggregate_face_fields(
         active = block_mask != 0
         if np.any(active):
             manning[index] = np.float32(np.mean(block_manning[active], dtype=np.float64))
-        rain_weight[index] = np.float32(np.sum(block_rain, dtype=np.float64) / face_area)
+        rain_weight[index] = np.sum(block_rain, dtype=np.float64) / face_area
 
     fields = AdaptiveFaceFields(
         resolution_m=resolution,
