@@ -188,7 +188,9 @@ class RunCoordinator:
         self.adaptive_grid_enabled = adaptive_enabled
         self.adaptive_grid_builder = adaptive_grid_builder
         self.adaptive_grid_policy = adaptive_grid_policy
-        self.adaptive_model_builder = adaptive_model_builder or AdaptiveSfincsModelBuilder()
+        self.adaptive_model_builder = adaptive_model_builder or AdaptiveSfincsModelBuilder(
+            cache_root=self.store.root.parent / "cache" / "adaptive_subgrid"
+        )
         self.engine_resolver = engine_resolver
         self.runner_factory = runner_factory
         self.result_reader = result_reader
