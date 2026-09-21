@@ -126,7 +126,13 @@ def test_small_depression_on_flat_surface_remains_high_resolution_with_buffer() 
 
 
 def test_steep_flat_boundary_has_transition_and_never_jumps_one_to_eight() -> None:
-    full = _full_grid(building=True)
+    full = _full_grid()
+    terrain = np.zeros_like(full.elevation_m)
+    x = np.arange(32, dtype=np.float32)
+    terrain[:, :32] = x[None, :] * 0.5
+    terrain[:, 32:] = terrain[:, 31:32]
+    full = replace(full, elevation_m=terrain)
+
     result = build_adaptive_grid(full, policy=_classifier_policy())
 
     assert 1 in np.unique(result.resolution_m)
@@ -214,22 +220,26 @@ def test_same_inputs_produce_identical_topology_counts_and_assignment() -> None:
     assert first.diagnostics == second.diagnostics
 
 
-def test_default_target_protection_enforces_one_and_two_metre_zones() -> None:
-    full = _full_grid(256)
-    result = build_adaptive_grid(full)
+def test_target_protection_enforces_configurable_one_and_two_metre_zones() -> None:
+    assert DEFAULT_ADAPTIVE_GRID_POLICY.target_core_radius_m == 100.0
+    assert DEFAULT_ADAPTIVE_GRID_POLICY.target_mid_radius_m == 250.0
 
-    yy, xx = np.indices((256, 256), dtype=np.float64)
-    radius = np.hypot(xx + 0.5 - 128.0, yy + 0.5 - 128.0)
-    core = radius <= DEFAULT_ADAPTIVE_GRID_POLICY.target_core_radius_m
-    mid = (
-        radius <= DEFAULT_ADAPTIVE_GRID_POLICY.target_mid_radius_m
-    ) & ~core
+    policy = replace(
+        DEFAULT_ADAPTIVE_GRID_POLICY,
+        target_core_radius_m=10.0,
+        target_mid_radius_m=24.0,
+    )
+    full = _full_grid(64)
+    result = build_adaptive_grid(full, policy=policy)
+
+    yy, xx = np.indices((64, 64), dtype=np.float64)
+    radius = np.hypot(xx + 0.5 - 32.0, yy + 0.5 - 32.0)
+    core = radius <= policy.target_core_radius_m
+    mid = (radius <= policy.target_mid_radius_m) & ~core
 
     assert np.all(result.resolution_m[core] == 1)
-    assert np.all(
-        result.resolution_m[mid]
-        <= DEFAULT_ADAPTIVE_GRID_POLICY.target_mid_max_resolution_m
-    )
+    assert np.all(result.resolution_m[mid] <= policy.target_mid_max_resolution_m)
+    assert np.max(result.resolution_m[radius > policy.target_mid_radius_m]) == 8
     assert result.protection_counts["target"] > 0
 
 
