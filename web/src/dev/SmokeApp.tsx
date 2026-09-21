@@ -215,13 +215,23 @@ export default function SmokeApp() {
 
   const handleCancel = async () => {
     if (!runId) return;
+    setError(null);
+    // Cancellation is best-effort from the browser's point of view. The
+    // backend may terminate the SFINCS process quickly enough to close/reset
+    // the in-flight HTTP connection on some local Windows setups. Do not turn
+    // that transport symptom into a false cancellation failure; reconcile
+    // state through the normal status endpoint.
     try {
       await cancelRun(runId);
+    } catch {
+      // Status reconciliation below is authoritative.
+    }
+    try {
       const next = await getRun(runId);
       setStatus(next);
       setLastPollAtMs(Date.now());
     } catch (cause: unknown) {
-      setError(String(cause));
+      setError(`キャンセル後の状態確認に失敗しました: ${String(cause)}`);
     }
   };
 
