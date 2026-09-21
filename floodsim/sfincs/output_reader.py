@@ -196,6 +196,8 @@ class SfincsQuadtreeResult:
     velocity_u_mps: np.ndarray | None = None
     velocity_v_mps: np.ndarray | None = None
     subgrid_volume_m3: np.ndarray | None = None
+    negative_subgrid_volume_clipped_values: int = 0
+    min_raw_active_subgrid_volume_m3: float = 0.0
     hmax_reconstructed_cells: int = 0
     dry_fill_depth_values: int = 0
     negative_depth_clipped_values: int = 0
@@ -363,6 +365,8 @@ def read_quadtree_result(
                 )
 
             subgrid_volume: np.ndarray | None = None
+            negative_subgrid_volume_clipped_values = 0
+            min_raw_active_subgrid_volume = 0.0
             if "subgrid_volume" in dataset.data_vars:
                 _require_dims(dataset, "subgrid_volume", ("time", face_dim))
                 subgrid_volume = np.asarray(
@@ -377,10 +381,20 @@ def read_quadtree_result(
                     raise SfincsResultError(
                         "active SFINCS quadtree subgrid volume contains non-finite values"
                     )
-                if np.any(subgrid_volume[:, active] < 0.0):
-                    raise SfincsResultError(
-                        "active SFINCS quadtree subgrid volume contains negative values"
-                    )
+                active_subgrid_volume = subgrid_volume[:, active]
+                min_raw_active_subgrid_volume = (
+                    float(np.min(active_subgrid_volume))
+                    if active_subgrid_volume.size
+                    else 0.0
+                )
+                negative_subgrid_volume_clipped_values = int(
+                    np.count_nonzero(active_subgrid_volume < 0.0)
+                )
+                # SFINCS can emit small negative subgrid storage values from its
+                # numerical update while water depth remains physically valid.
+                # Storage volume is non-negative by definition, so normalize
+                # those finite undershoots to zero and retain diagnostics.
+                subgrid_volume[:, active] = np.maximum(active_subgrid_volume, 0.0)
                 subgrid_volume[:, ~active] = np.nan
 
             has_u = "u" in dataset.data_vars
@@ -434,6 +448,8 @@ def read_quadtree_result(
         velocity_u_mps=velocity_u,
         velocity_v_mps=velocity_v,
         subgrid_volume_m3=subgrid_volume,
+        negative_subgrid_volume_clipped_values=negative_subgrid_volume_clipped_values,
+        min_raw_active_subgrid_volume_m3=min_raw_active_subgrid_volume,
         hmax_reconstructed_cells=reconstructed_cells,
         dry_fill_depth_values=dry_fill_depth_values,
         negative_depth_clipped_values=negative_depth_clipped_values,
