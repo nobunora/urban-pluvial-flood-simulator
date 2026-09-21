@@ -383,7 +383,16 @@ def _terrain_structure_mask(
         | (center > np.max(neighbours, axis=0))
     ) & (neighbour_delta >= min_relief_m)
 
-    return (curvature >= curvature_threshold_m) | local_extrema
+    structure = (curvature >= curvature_threshold_m) | local_extrema
+    # The analysis-domain edge is not itself terrain evidence. Edge padding
+    # would otherwise create false curvature on a perfectly planar slope.
+    if structure.shape[0] > 1:
+        structure[0, :] = False
+        structure[-1, :] = False
+    if structure.shape[1] > 1:
+        structure[:, 0] = False
+        structure[:, -1] = False
+    return structure
 
 
 def _target_ceiling(
