@@ -22,13 +22,17 @@ from floodsim.domain.manifest import RunManifest
 from floodsim.domain.run_config import AccuracyMode, RunConfig
 from floodsim.domain.run_state import RunState, RunStateMachine
 from floodsim.orchestration.rainfall_resolution import resolve_rainfall
+from floodsim.preprocessing.adaptive_grid import build_adaptive_grid
 from floodsim.preprocessing.full_grid import build_full_1m_grid
 from floodsim.providers.gsi_elevation import GsiElevationProvider
 from floodsim.providers.jma import JmaCatalogProvider
 from floodsim.providers.vectors import acquire_vectors
-from floodsim.results.normalize import normalize_regular_result
-from floodsim.sfincs.model_builder import SfincsModelBuilder
-from floodsim.sfincs.output_reader import read_regular_result
+from floodsim.results.normalize import (
+    normalize_quadtree_result,
+    normalize_regular_result,
+)
+from floodsim.sfincs.model_builder import AdaptiveSfincsModelBuilder, SfincsModelBuilder
+from floodsim.sfincs.output_reader import read_quadtree_result, read_regular_result
 from floodsim.sfincs.runner import (
     ResolvedEngine,
     SfincsProgress,
@@ -142,10 +146,15 @@ class RunCoordinator:
         catalog_provider: JmaCatalogProvider | None = None,
         grid_builder: Callable[..., Any] = build_full_1m_grid,
         model_builder: Any | None = None,
+        adaptive_enabled: bool = False,
+        adaptive_grid_builder: Callable[..., Any] = build_adaptive_grid,
+        adaptive_model_builder: Any | None = None,
         engine_resolver: Callable[[], ResolvedEngine] = resolve_sfincs_executable,
         runner_factory: Callable[[], SfincsRunner] = SfincsRunner,
         result_reader: Callable[..., Any] = read_regular_result,
         result_normalizer: Callable[..., Any] = normalize_regular_result,
+        adaptive_result_reader: Callable[..., Any] = read_quadtree_result,
+        adaptive_result_normalizer: Callable[..., Any] = normalize_quadtree_result,
     ) -> None:
         default_root = user_data_path("urban-pluvial-flood-simulator", appauthor=False) / "runs"
         self.store = RunStore(runs_root or default_root)
@@ -159,10 +168,15 @@ class RunCoordinator:
         self.catalog_provider = catalog_provider or JmaCatalogProvider()
         self.grid_builder = grid_builder
         self.model_builder = model_builder or SfincsModelBuilder()
+        self.adaptive_enabled = adaptive_enabled
+        self.adaptive_grid_builder = adaptive_grid_builder
+        self.adaptive_model_builder = adaptive_model_builder or AdaptiveSfincsModelBuilder()
         self.engine_resolver = engine_resolver
         self.runner_factory = runner_factory
         self.result_reader = result_reader
         self.result_normalizer = result_normalizer
+        self.adaptive_result_reader = adaptive_result_reader
+        self.adaptive_result_normalizer = adaptive_result_normalizer
         self.prepared_cache = PreparedGridCache(self.store.root.parent / "cache")
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="floodsim-run")
         self._records: dict[UUID, RunRecord] = {}
@@ -299,8 +313,14 @@ class RunCoordinator:
         raise SfincsRunCancelled("run cancelled")
 
     def create_run(self, config: RunConfig) -> RunRecord:
-        if config.requested_accuracy_mode is not AccuracyMode.FULL_1M:
-            raise AdaptiveNotAvailable("Adaptive mode belongs to Phase 4 and is not available yet")
+        if (
+            config.requested_accuracy_mode is AccuracyMode.ADAPTIVE
+            and not self.adaptive_enabled
+        ):
+            raise AdaptiveNotAvailable(
+                "Adaptive mode is implemented but remains disabled until the "
+                "Full-vs-Adaptive validation gate is accepted"
+            )
         with self._lock:
             if self._active_run_id is not None:
                 active = self._records.get(self._active_run_id)
@@ -443,7 +463,16 @@ class RunCoordinator:
         run_root = self.store.ensure_run(record.run_id)
         runtime_diagnostic: dict[str, Any] = {}
         try:
-            self._set_state(record, RunState.VALIDATING, "Full 1 m入力条件を検証しています。")
+            mode_label = (
+                "Adaptive"
+                if record.config.requested_accuracy_mode is AccuracyMode.ADAPTIVE
+                else "Full 1 m"
+            )
+            self._set_state(
+                record,
+                RunState.VALIDATING,
+                f"{mode_label}入力条件を検証しています。",
+            )
             self._check_cancel(record)
 
             cache_entry = self.prepared_cache.load(record.config.analysis_area)
@@ -574,10 +603,29 @@ class RunCoordinator:
                     "prepared_cache_key": self.prepared_cache.key_for(record.config.analysis_area),
                 }
             )
+            adaptive_grid = None
+            final_grid_level_counts = {"1m": grid.cell_count}
+            if record.config.requested_accuracy_mode is AccuracyMode.ADAPTIVE:
+                self._update_work_progress(
+                    record,
+                    0.0,
+                    "Adaptive格子の地形複雑度を分類しています。",
+                )
+                adaptive_grid = self.adaptive_grid_builder(grid)
+                final_grid_level_counts = dict(adaptive_grid.cell_count_by_level)
+                runtime_diagnostic["adaptive_grid"] = dict(adaptive_grid.diagnostics)
+                self._append_activity(
+                    record,
+                    "Adaptive格子分類完了: "
+                    f"{adaptive_grid.total_hydraulic_cells} hydraulic cells / "
+                    f"Full 1 m比 {adaptive_grid.reduction_ratio:.4f}",
+                )
+                self._check_cancel(record)
+
             record.manifest = record.manifest.model_copy(
                 update={
                     "projected_crs": grid.crs_wkt,
-                    "final_grid_level_counts": {"1m": grid.cell_count},
+                    "final_grid_level_counts": final_grid_level_counts,
                     "elevation_provider_counts": dict(cache_metadata.get("elevation_provider_counts", {})),
                     "elevation_source_summary": elevation_summary,
                     "building_provider": cache_metadata.get("building_provider"),
@@ -595,8 +643,26 @@ class RunCoordinator:
             self._persist_manifest(record)
             self._check_cancel(record)
 
-            self._set_state(record, RunState.BUILDING_MODEL, "HydroMT-SFINCSでregular 1 mモデルを構築しています。")
-            build = self.model_builder.build(run_root / "model", grid, rainfall)
+            if record.config.requested_accuracy_mode is AccuracyMode.ADAPTIVE:
+                assert adaptive_grid is not None
+                self._set_state(
+                    record,
+                    RunState.BUILDING_MODEL,
+                    "HydroMT-SFINCSでAdaptive quadtree/subgridモデルを構築しています。",
+                )
+                build = self.adaptive_model_builder.build(
+                    run_root / "model",
+                    grid,
+                    adaptive_grid,
+                    rainfall,
+                )
+            else:
+                self._set_state(
+                    record,
+                    RunState.BUILDING_MODEL,
+                    "HydroMT-SFINCSでregular 1 mモデルを構築しています。",
+                )
+                build = self.model_builder.build(run_root / "model", grid, rainfall)
             self._append_activity(record, "SFINCSモデル構築完了。")
             self._check_cancel(record)
 
@@ -654,9 +720,24 @@ class RunCoordinator:
             record.runner = None
             self._check_cancel(record)
 
-            self._set_state(record, RunState.READING_RESULTS, "SFINCS NetCDF結果を正規化しています。")
-            raw_result = self.result_reader(execution.result_path)
-            normalized = self.result_normalizer(
+            self._set_state(
+                record,
+                RunState.READING_RESULTS,
+                "SFINCS NetCDF結果を正規化しています。",
+            )
+            normalizer = self.result_normalizer
+            if record.config.requested_accuracy_mode is AccuracyMode.ADAPTIVE:
+                if build.adaptive_layout_path is None:
+                    raise RuntimeError("Adaptive model build did not persist face layout")
+                raw_result = self.adaptive_result_reader(
+                    execution.result_path,
+                    layout_path=build.adaptive_layout_path,
+                )
+                normalizer = self.adaptive_result_normalizer
+            else:
+                raw_result = self.result_reader(execution.result_path)
+
+            normalized = normalizer(
                 raw_result,
                 area=record.config.analysis_area,
                 results_dir=run_root / "results",
@@ -696,7 +777,7 @@ class RunCoordinator:
                 }
             )
             self._persist_manifest(record)
-            self._set_state(record, RunState.COMPLETE, "Full 1 m計算が完了しました。")
+            self._set_state(record, RunState.COMPLETE, f"{mode_label}計算が完了しました。")
         except SfincsRunCancelled:
             self._mark_cancelled(record, "キャンセル要求を処理しています。")
         # Top-level worker boundary: persist unexpected operational failures as FAILED.
