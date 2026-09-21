@@ -17,7 +17,7 @@ from floodsim.domain.rainfall import RainfallTimeSeries
 from floodsim.preprocessing.adaptive_grid import build_adaptive_grid
 from floodsim.preprocessing.full_grid import FullGridProduct
 from floodsim.preprocessing.roof_rainfall import allocate_roof_rainfall
-from floodsim.sfincs.adaptive_model_builder import SfincsAdaptiveModelBuilder
+from floodsim.sfincs.model_builder import AdaptiveSfincsModelBuilder
 from floodsim.sfincs.runner import ResolvedEngine, SfincsRunner, sha256_file
 
 
@@ -80,7 +80,7 @@ def run(out_dir: Path, sfincs_exe: Path | None) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     grid = _fixture_grid()
     adaptive = build_adaptive_grid(grid)
-    build = SfincsAdaptiveModelBuilder().build(
+    build = AdaptiveSfincsModelBuilder(subgrid_pixels=2, subgrid_levels=3).build(
         out_dir / "model",
         grid,
         adaptive,
