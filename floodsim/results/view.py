@@ -360,10 +360,10 @@ def _adaptive_resolution_rgba(arrays: AdaptiveNormalizedArrays) -> np.ndarray:
     for row0, row1, col0, col1 in face_bounds:
         if row1 - row0 <= 1 and col1 - col0 <= 1:
             continue
+        # Top + left edges are sufficient to expose the face lattice while
+        # retaining at least one categorical-color pixel even for a 2 m face.
         rgba[row0, col0:col1] = boundary_color
-        rgba[row1 - 1, col0:col1] = boundary_color
         rgba[row0:row1, col0] = boundary_color
-        rgba[row0:row1, col1 - 1] = boundary_color
     return rgba
 
 
