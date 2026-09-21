@@ -107,6 +107,7 @@ def estimate_resources(request: Request, payload: ResourceEstimateRequest) -> Re
 def create_run(request: Request, config: RunConfig) -> RunCreateResponse:
     try:
         record = coordinator.create_run(config)
+        coordinator.enable_client_lease(record.run_id)
     except (RunAlreadyActive, AdaptiveNotAvailable) as exc:
         raise _map_coordinator_error(exc) from exc
     return RunCreateResponse(run_id=record.run_id)
@@ -116,6 +117,7 @@ def create_run(request: Request, config: RunConfig) -> RunCreateResponse:
 def get_run(run_id: UUID) -> RunStatusResponse:
     try:
         record = coordinator.get(run_id)
+        coordinator.client_heartbeat(run_id)
     except RunNotFound as exc:
         raise _map_coordinator_error(exc) from exc
     with record.lock:
