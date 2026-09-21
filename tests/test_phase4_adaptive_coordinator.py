@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +17,7 @@ from floodsim.orchestration.run_coordinator import (
     AdaptiveNotAvailable,
     RunCoordinator,
 )
+from floodsim.preprocessing.adaptive_grid import build_adaptive_grid
 from floodsim.preprocessing.full_grid import FullGridProduct
 from floodsim.preprocessing.roof_rainfall import allocate_roof_rainfall
 from floodsim.results.normalize import NormalizedResult
@@ -237,3 +239,93 @@ def test_enabled_adaptive_runs_through_native_face_result_path(tmp_path: Path) -
     assert record.manifest.final_grid_level_counts
     assert any("Adaptive格子分類完了" in line for line in record.activity_lines)
     assert any("Adaptive計算が完了" in line for line in record.activity_lines)
+
+
+def test_adaptive_constraints_survive_cache_and_reach_classifier(tmp_path: Path) -> None:
+    hard_boundary = np.zeros((4, 4), dtype=np.int32)
+    hard_boundary[:, 2:] = 1
+    resolution_ceiling = np.full((4, 4), 4, dtype=np.int16)
+    resolution_ceiling[:, :2] = 2
+    native_structure = np.zeros((4, 4), dtype=bool)
+    native_structure[1, 1] = True
+    constrained_grid = replace(
+        _grid(),
+        adaptive_hard_boundary_zone=hard_boundary,
+        adaptive_resolution_ceiling_m=resolution_ceiling,
+        native_structure_mask=native_structure,
+    )
+
+    captured: dict[str, object] = {}
+
+    def classifier(grid: FullGridProduct, **kwargs: object):
+        captured.update(kwargs)
+        return build_adaptive_grid(grid, **kwargs)
+
+    builder = _AdaptiveBuilder()
+
+    def reader(path: Path, *, layout_path: Path) -> dict[str, str]:
+        assert path.name == "sfincs_map.nc"
+        assert layout_path.name == "adaptive_face_layout.npz"
+        return {"kind": "adaptive"}
+
+    coordinator = RunCoordinator(
+        runs_root=tmp_path / "runs",
+        adaptive_enabled=True,
+        adaptive_grid_builder=classifier,
+        rainfall_resolver=_rainfall,
+        adaptive_model_builder=builder,
+        adaptive_result_reader=reader,
+        adaptive_result_normalizer=_normalizer,
+        engine_resolver=lambda: ResolvedEngine(
+            Path(__file__),
+            "2.4.0 Galibier",
+            "TESTSHA",
+        ),
+        runner_factory=_Runner,
+    )
+    coordinator.prepared_cache.save(
+        _area(),
+        constrained_grid,
+        metadata={
+            "elevation_provider_counts": {"test": 25},
+            "elevation_source_summary": {"grid_m": 1.0},
+            "building_provider": "test",
+            "road_provider": "test",
+            "provider_warnings": [],
+        },
+    )
+
+    loaded = coordinator.prepared_cache.load(_area())
+    assert loaded is not None
+    np.testing.assert_array_equal(
+        loaded.grid.adaptive_hard_boundary_zone,
+        hard_boundary,
+    )
+    np.testing.assert_array_equal(
+        loaded.grid.adaptive_resolution_ceiling_m,
+        resolution_ceiling,
+    )
+    np.testing.assert_array_equal(
+        loaded.grid.native_structure_mask,
+        native_structure,
+    )
+
+    record = coordinator.create_run(_config())
+    assert record.future is not None
+    record.future.result(timeout=10)
+
+    assert record.machine.state is RunState.COMPLETE, (
+        record.failure_code,
+        record.failure_message,
+        record.activity_lines,
+    )
+    np.testing.assert_array_equal(captured["hard_boundary_zone"], hard_boundary)
+    np.testing.assert_array_equal(
+        captured["existing_resolution_ceiling_m"],
+        resolution_ceiling,
+    )
+    np.testing.assert_array_equal(
+        captured["native_structure_mask"],
+        native_structure,
+    )
+    assert "policy" in captured
