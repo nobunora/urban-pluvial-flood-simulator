@@ -223,6 +223,48 @@ def test_real_sfincs_builder_writes_with_host_debug(
         assert float(values.isel(time=1).sum()) == 0.0
 
 
+def test_full_builder_uses_explicit_performance_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("DEBUG", raising=False)
+    area = _area()
+    grid = build_full_1m_grid(area, _elevation(area), _vectors(area))
+    config = _config().model_copy(
+        update={
+            "rainfall": ConstantRainfall(
+                intensity_mm_per_h=60,
+                duration_minutes=10,
+            )
+        }
+    )
+
+    result = SfincsModelBuilder().build(
+        tmp_path / "optimized-model",
+        grid,
+        resolve_rainfall(config),
+    )
+
+    settings: dict[str, str] = {}
+    for line in (result.model_dir / "sfincs.inp").read_text(encoding="utf-8").splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        settings[key.strip().lower()] = value.strip()
+
+    assert float(settings["dtmapout"]) == pytest.approx(60.0)
+    assert float(settings["dtmaxout"]) == pytest.approx(600.0)
+    assert int(float(settings["storecumprcp"])) == 0
+    assert int(float(settings["storevel"])) == 1
+    assert float(settings["alpha"]) == pytest.approx(0.75)
+
+    assert result.report["output_interval_seconds"] == 60
+    assert result.report["maximum_output_interval_seconds"] == pytest.approx(600.0)
+    assert result.report["cumulative_precipitation_output"] is False
+    assert result.report["velocity_output"]["storevel"] == 1
+    assert result.report["numerics"]["alpha"] == pytest.approx(0.75)
+
+
 def _write_synthetic_result(
     path: Path,
     *,
@@ -230,6 +272,7 @@ def _write_synthetic_result(
     missing_hmax: bool = False,
     with_velocity: bool = False,
     one_sided_velocity: bool = False,
+    hmax_frames: int = 1,
 ) -> None:
     h = np.asarray(
         [[[0.0, 0.01], [0.02, 0.03]], [[0.0, 0.02], [0.04, 0.05]]],
@@ -238,6 +281,13 @@ def _write_synthetic_result(
     if nonfinite:
         h[0, 0, 0] = np.nan
     hmax = np.nanmax(h, axis=0, keepdims=True)
+    if hmax_frames < 1:
+        raise ValueError("hmax_frames must be positive")
+    if hmax_frames > 1:
+        hmax = np.concatenate(
+            [hmax * (index + 1) / hmax_frames for index in range(hmax_frames)],
+            axis=0,
+        )
     if missing_hmax:
         hmax[:, 1, 1] = np.nan
     data_vars = {
@@ -265,7 +315,7 @@ def _write_synthetic_result(
         )
     dataset = xr.Dataset(
         data_vars,
-        coords={"time": [0, 60], "timemax": [60]},
+        coords={"time": [0, 60], "timemax": [60 * (index + 1) for index in range(hmax_frames)]},
     )
     dataset.to_netcdf(path)
 
@@ -283,6 +333,27 @@ def test_output_reader_and_normalizer_expose_max_depth(tmp_path: Path) -> None:
     )
     assert normalized.metadata["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.05)
     assert normalized.arrays_path.is_file()
+
+
+def test_output_reader_accepts_single_and_multiple_timemax_frames(
+    tmp_path: Path,
+) -> None:
+    single_path = tmp_path / "single_hmax.nc"
+    _write_synthetic_result(single_path, hmax_frames=1)
+    single = read_regular_result(single_path)
+
+    legacy_path = tmp_path / "legacy_multi_hmax.nc"
+    _write_synthetic_result(legacy_path, hmax_frames=3)
+    legacy = read_regular_result(legacy_path)
+
+    np.testing.assert_allclose(
+        single.max_depth_m,
+        legacy.max_depth_m,
+        rtol=0.0,
+        atol=1e-7,
+        equal_nan=True,
+    )
+    assert single.global_max_depth_m == pytest.approx(legacy.global_max_depth_m)
 
 
 def test_output_reader_persists_paired_velocity_and_keeps_old_results_compatible(
