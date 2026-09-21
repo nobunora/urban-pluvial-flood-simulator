@@ -40,7 +40,7 @@ def test_adaptive_benchmark_fixtures_are_deterministic_and_mass_conserving(
     else:
         assert grid.road_mask is not None
         assert np.any(grid.road_mask)
-        assert np.all(grid.manning_n[grid.road_mask] == pytest.approx(0.020))
+        assert np.allclose(grid.manning_n[grid.road_mask], 0.020)
         assert fixture.important_flow_path is not None
 
 
