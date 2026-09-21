@@ -321,6 +321,10 @@ class AdaptiveSfincsModelBuilder:
             model.config.set("storehsubgrid", 1)
             # Needed for the Adaptive Full-vs-Adaptive volume validation gate.
             model.config.set("storezvolume", 1)
+            # SFINCS reverts a one-level quadtree to regular n/m map output by
+            # default. Keep the Adaptive result contract face-native even for
+            # open-area benchmarks that need only one quadtree level.
+            model.config.set("regular_output_on_mesh", 1)
 
             # Keep the already mass-conserving 1 m roof-allocation raster as
             # SFINCS distributed precipitation forcing. The meteorological field
@@ -406,6 +410,10 @@ class AdaptiveSfincsModelBuilder:
             "depth_output": {"storehsubgrid": 1, "variables": ["h", "hmax"]},
             "volume_output": {"storezvolume": 1, "variable": "subgrid_volume"},
             "velocity_output": {"storevel": 1, "variables": ["u", "v"]},
+            "mesh_output": {
+                "regular_output_on_mesh": 1,
+                "face_dimension": "nmesh2d_face",
+            },
             "adaptive_face_layout": "adaptive_face_layout.npz",
             "unsupported_physics": {
                 "infiltration": False,
