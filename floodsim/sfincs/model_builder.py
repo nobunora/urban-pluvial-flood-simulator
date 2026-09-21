@@ -33,6 +33,7 @@ class ModelBuildResult:
     model_dir: Path
     report_path: Path
     report: dict[str, Any]
+    adaptive_layout_path: Path | None = None
 
 
 @contextmanager
@@ -219,6 +220,7 @@ class SfincsModelBuilder:
             "output_interval_seconds": output_interval,
             "depth_output": {"storehsubgrid": 1, "variables": ["h", "hmax"]},
             "velocity_output": {"storevel": 1, "variables": ["u", "v"]},
+            "adaptive_face_layout": "adaptive_face_layout.npz",
             "unsupported_physics": {
                 "infiltration": False,
                 "sewer_drainage": False,
@@ -328,6 +330,28 @@ class AdaptiveSfincsModelBuilder:
             component.write(filename="sfincs_subgrid.nc")
             model.precipitation.write(filename="sfincs_netampr.nc")
             model.config.write()
+
+            face_rows = (
+                np.asarray(model.quadtree_grid.data["n"].values, dtype=np.int32) - 1
+            )
+            face_cols = (
+                np.asarray(model.quadtree_grid.data["m"].values, dtype=np.int32) - 1
+            )
+            layout_path = root / "adaptive_face_layout.npz"
+            np.savez_compressed(
+                layout_path,
+                resolution_m=quadtree.face_fields.resolution_m.astype(
+                    np.int16, copy=False
+                ),
+                row_index=face_rows,
+                col_index=face_cols,
+                source_overlap_area_m2=quadtree.face_fields.source_overlap_area_m2,
+                sfincs_mask=quadtree.face_fields.sfincs_mask.astype(
+                    np.uint8, copy=False
+                ),
+                source_height_cells=np.int32(grid.height_cells),
+                source_width_cells=np.int32(grid.width_cells),
+            )
         except ModelBuildError:
             raise
         except Exception as exc:
@@ -389,4 +413,4 @@ class AdaptiveSfincsModelBuilder:
         }
         report_path = root / "model_build_report.json"
         atomic_write_json(report_path, report)
-        return ModelBuildResult(root, report_path, report)
+        return ModelBuildResult(root, report_path, report, layout_path)
