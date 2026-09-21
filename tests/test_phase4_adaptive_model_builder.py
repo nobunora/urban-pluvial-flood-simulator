@@ -114,6 +114,7 @@ def test_adaptive_builder_writes_quadtree_subgrid_and_distributed_rainfall(
     assert "storehsubgrid" in inp
     assert "storezvolume" in inp
     assert "regular_output_on_mesh" in inp
+    assert "alpha                 = 0.75" in inp
     assert result.adaptive_layout_path == model_dir / "adaptive_face_layout.npz"
     assert result.report["depth_output"]["storehsubgrid"] == 1
     assert result.report["volume_output"]["storezvolume"] == 1
