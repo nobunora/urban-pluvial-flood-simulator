@@ -12,7 +12,7 @@ def test_health_returns_typed_phase1_response() -> None:
     assert response.json() == {
         "status": "ok",
         "api_version": "v1",
-        "application_version": "0.1.0",
+        "application_version": "0.1.1",
         "engine": {"required": "SFINCS 2.4.0 Galibier"},
     }
 
@@ -26,7 +26,7 @@ def test_built_placeholder_spa_is_served() -> None:
     assert asset_path is not None
     asset_response = TestClient(app).get(asset_path.group(1))
     assert asset_response.status_code == 200
-    assert "Application skeleton is running." in asset_response.text
+    assert "/api/v1/health" in asset_response.text
 
 
 def test_phase2_endpoints_are_not_fake() -> None:
