@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -17,7 +18,8 @@ from floodsim.preprocessing.adaptive_grid import (
     build_adaptive_grid,
     fit_plane_metrics,
 )
-from floodsim.preprocessing.full_grid import FullGridProduct
+from floodsim.domain.geometry import AnalysisArea, GeoBounds, LonLat
+from floodsim.preprocessing.full_grid import FullGridProduct, build_full_1m_grid
 from floodsim.preprocessing.roof_rainfall import allocate_roof_rainfall
 
 
@@ -302,3 +304,48 @@ def test_diagnostics_expose_required_protection_and_resolution_counts() -> None:
     assert "transition_balance_cells" in diagnostics
     assert diagnostics["minimum_resolution_m"] == 1
     assert diagnostics["maximum_resolution_m"] <= 8
+
+
+
+def test_full_1m_mask_is_the_default_adaptive_hard_boundary_source() -> None:
+    area = AnalysisArea(
+        mode="rectangle",
+        bounds=GeoBounds(
+            west_deg=139.0,
+            south_deg=35.0,
+            east_deg=139.001,
+            north_deg=35.001,
+        ),
+        center=LonLat(lon_deg=139.0005, lat_deg=35.0005),
+        width_m=8.0,
+        height_m=8.0,
+        area_m2=64.0,
+    )
+    elevation = SimpleNamespace(z=np.zeros((8, 8), dtype=np.float32))
+    building = np.asarray(
+        [
+            [-1.0, -1.0],
+            [1.0, -1.0],
+            [1.0, 1.0],
+            [-1.0, 1.0],
+            [-1.0, -1.0],
+        ],
+        dtype=np.float64,
+    )
+    vectors = SimpleNamespace(
+        buildings=[building],
+        road_lines=[],
+        road_polygons=[],
+    )
+
+    full = build_full_1m_grid(area, elevation, vectors)
+
+    assert full.adaptive_hard_boundary_zone is not None
+    np.testing.assert_array_equal(
+        full.adaptive_hard_boundary_zone,
+        full.sfincs_mask.astype(np.int32),
+    )
+    zones = {int(value) for value in np.unique(full.adaptive_hard_boundary_zone)}
+    assert 0 in zones  # building obstacle
+    assert 1 in zones  # normal active Full 1 m cells
+    assert 3 in zones  # immutable analysis-domain edge
