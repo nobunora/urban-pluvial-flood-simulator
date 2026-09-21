@@ -72,6 +72,10 @@ class ResultNotReady(RunCoordinatorError):
 DEFAULT_PLATEAU_REVIEW_BUDGET_S = 20.0
 DEFAULT_OSM_REVIEW_BUDGET_S = 30.0
 CLIENT_LEASE_TIMEOUT_S = 60.0
+# Expensive HydroMT/GEOS/NetCDF preprocessing can hold the CPython GIL long
+# enough to delay otherwise healthy status requests. A single 60 s miss must
+# therefore not be treated as proof that the browser disappeared.
+CLIENT_LEASE_MISSED_HEARTBEATS = 3
 CLIENT_LEASE_CHECK_INTERVAL_S = 5.0
 
 
@@ -140,6 +144,7 @@ class RunRecord:
     lock: threading.RLock = field(default_factory=threading.RLock)
     client_lease_enabled: bool = False
     last_client_heartbeat_monotonic: float | None = None
+    client_lease_expiry_observations: int = 0
 
 
 class RunCoordinator:
@@ -208,6 +213,7 @@ class RunCoordinator:
         with record.lock:
             record.client_lease_enabled = True
             record.last_client_heartbeat_monotonic = time.monotonic()
+            record.client_lease_expiry_observations = 0
 
     def client_heartbeat(self, run_id: UUID) -> None:
         """Renew the browser lease used to stop abandoned calculations."""
@@ -216,6 +222,7 @@ class RunCoordinator:
             if record.machine.state in {RunState.COMPLETE, RunState.FAILED, RunState.CANCELLED}:
                 return
             record.last_client_heartbeat_monotonic = time.monotonic()
+            record.client_lease_expiry_observations = 0
 
     def _watch_client_leases(self) -> None:
         while True:
@@ -232,10 +239,17 @@ class RunCoordinator:
                         and record.machine.state
                         not in {RunState.COMPLETE, RunState.FAILED, RunState.CANCELLED}
                     )
-                if expired:
+                    if expired:
+                        record.client_lease_expiry_observations += 1
+                        expiry_observations = record.client_lease_expiry_observations
+                    else:
+                        record.client_lease_expiry_observations = 0
+                        expiry_observations = 0
+                if expiry_observations >= CLIENT_LEASE_MISSED_HEARTBEATS:
                     self._append_activity(
                         record,
-                        "ブラウザ接続が60秒以上確認できないため、解析を自動停止します。",
+                        "ブラウザ接続が60秒以上確認できない状態が継続したため、"
+                        "解析を自動停止します。",
                     )
                     self.cancel(record.run_id)
 
