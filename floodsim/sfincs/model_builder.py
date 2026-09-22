@@ -276,11 +276,30 @@ class AdaptiveSfincsModelBuilder:
         adaptive: AdaptiveGridProduct,
     ) -> str:
         digest = hashlib.sha256()
-        digest.update(b"adaptive-subgrid-v2-source-1m")
+        # This key is the identity of the rainfall-independent Adaptive
+        # hydraulic model. Geometry belongs in the key even when raster values
+        # happen to be byte-identical: quadtree/subgrid coordinates and the
+        # face layout depend on the grid origin and transform.
+        digest.update(b"adaptive-static-model-v3-source-1m")
         digest.update(str(self.subgrid_pixels).encode())
         digest.update(str(self.subgrid_levels).encode())
         digest.update(grid.crs_wkt.encode("utf-8"))
-        for values in (grid.elevation_m, grid.manning_n, adaptive.resolution_m):
+        for value in (
+            grid.width_cells,
+            grid.height_cells,
+            grid.dx_m,
+            grid.dy_m,
+            grid.x0_m,
+            grid.y0_m,
+        ):
+            digest.update(repr(value).encode("ascii"))
+            digest.update(b"\\0")
+        for values in (
+            grid.elevation_m,
+            grid.manning_n,
+            grid.sfincs_mask,
+            adaptive.resolution_m,
+        ):
             array = np.ascontiguousarray(values)
             digest.update(str(array.shape).encode())
             digest.update(array.dtype.str.encode())
