@@ -753,3 +753,16 @@ def test_coordinator_passes_bounded_vector_provider_budgets(tmp_path: Path) -> N
     assert observed["plateau_budget_s"] == DEFAULT_PLATEAU_REVIEW_BUDGET_S
     assert observed["osm_budget_s"] == DEFAULT_OSM_REVIEW_BUDGET_S
     assert observed["cancel_event"] is record.cancel_event
+
+
+def test_flow_arrow_length_scales_with_sampling_spacing() -> None:
+    from floodsim.results.view import _display_arrow_length_m
+
+    for stride, expected_length in ((1, 0.8), (2, 1.6), (4, 3.2), (8, 6.4)):
+        assert _display_arrow_length_m(sample_span_m=float(stride)) == pytest.approx(
+            expected_length
+        )
+        assert (
+            _display_arrow_length_m(sample_span_m=float(stride)) / float(stride)
+            == pytest.approx(0.8)
+        )
