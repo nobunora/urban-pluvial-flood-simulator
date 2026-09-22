@@ -603,6 +603,8 @@ class AdaptiveSfincsModelBuilder:
             ),
             "roof_rain_relative_mass_error": grid.roof_allocation.relative_mass_error,
             "output_interval_seconds": output_interval,
+            "maximum_output_interval_seconds": duration_seconds,
+            "cumulative_precipitation_output": False,
             "depth_output": {"storehsubgrid": 1, "variables": ["h", "hmax"]},
             "volume_output": {"storezvolume": 1, "variable": "subgrid_volume"},
             "velocity_output": {"storevel": 1, "variables": ["u", "v"]},
