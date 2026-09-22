@@ -15,7 +15,7 @@ from floodsim.api.routes_runs import coordinator
 from floodsim.api.schemas import PointInspectionResponse, ResultMetadataResponse
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.orchestration.run_coordinator import ResultNotReady, RunNotFound
-from floodsim.results.view import (
+from floodsim.results.vector_viewport import flow_vectors_viewport_geojson\nfrom floodsim.results.view import (
     PointOutsideResult,
     ResultArrays,
     ResultTimeIndexInvalid,
