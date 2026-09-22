@@ -255,6 +255,7 @@ export default function ResultMap({
       bounds,
       fitBoundsOptions: { padding: 32, maxZoom: 18 },
       attributionControl: false,
+      preserveDrawingBuffer: true,
     });
     overlayMapRef.current = overlayMap;
     onCaptureReady?.(async () => {
@@ -309,9 +310,11 @@ export default function ResultMap({
     };
 
     overlayMap.on("move", syncBase);
+    overlayMap.on("moveend", emitViewport);
     overlayMap.on("click", handleClick);
     overlayMap.once("load", () => {
       syncBase();
+      emitViewport();
       overlayMap.setLayoutProperty("analysis-boundary-casing", "visibility", "visible");
       overlayMap.setLayoutProperty("analysis-boundary-outline", "visibility", "visible");
       overlayMap.triggerRepaint();
@@ -320,7 +323,9 @@ export default function ResultMap({
     return () => {
       markerRef.current?.remove();
       markerRef.current = null;
+      onCaptureReady?.(null);
       overlayMap.off("move", syncBase);
+      overlayMap.off("moveend", emitViewport);
       overlayMap.off("click", handleClick);
       overlayMap.remove();
       baseMap.remove();
