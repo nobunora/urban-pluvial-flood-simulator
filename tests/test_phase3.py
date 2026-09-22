@@ -768,33 +768,3 @@ def test_flow_arrow_length_scales_with_sampling_spacing() -> None:
         )
 
 
-def test_adaptive_static_cache_key_changes_with_grid_origin(tmp_path: Path) -> None:
-    import dataclasses
-
-    from floodsim.sfincs.model_builder import AdaptiveSfincsModelBuilder
-
-    grid = _synthetic_full_grid()
-    adaptive = build_adaptive_grid(grid)
-    builder = AdaptiveSfincsModelBuilder(cache_root=tmp_path)
-
-    shifted = dataclasses.replace(grid, x0_m=grid.x0_m + 1000.0)
-    assert builder._subgrid_cache_key(grid, adaptive) != builder._subgrid_cache_key(
-        shifted, adaptive
-    )
-
-
-def test_adaptive_static_cache_key_changes_with_sfincs_mask(tmp_path: Path) -> None:
-    import dataclasses
-
-    from floodsim.sfincs.model_builder import AdaptiveSfincsModelBuilder
-
-    grid = _synthetic_full_grid()
-    adaptive = build_adaptive_grid(grid)
-    builder = AdaptiveSfincsModelBuilder(cache_root=tmp_path)
-
-    changed_mask = grid.sfincs_mask.copy()
-    changed_mask[1, 1] = 0 if changed_mask[1, 1] else 1
-    changed = dataclasses.replace(grid, sfincs_mask=changed_mask)
-    assert builder._subgrid_cache_key(grid, adaptive) != builder._subgrid_cache_key(
-        changed, adaptive
-    )

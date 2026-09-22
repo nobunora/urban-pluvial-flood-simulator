@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import re
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -198,3 +199,27 @@ def test_adaptive_static_cache_rebuilds_incomplete_bundle(tmp_path: Path) -> Non
 
     assert second.report["static_model_cache"]["cache_hit"] is False
     assert (cache_root / cache_key / "adaptive_face_layout.npz").is_file()
+
+
+def test_adaptive_static_cache_key_changes_with_grid_origin(tmp_path: Path) -> None:
+    grid = _grid()
+    adaptive = build_adaptive_grid(grid)
+    builder = AdaptiveSfincsModelBuilder(cache_root=tmp_path)
+
+    shifted = dataclasses.replace(grid, x0_m=grid.x0_m + 1000.0)
+    assert builder._subgrid_cache_key(grid, adaptive) != builder._subgrid_cache_key(
+        shifted, adaptive
+    )
+
+
+def test_adaptive_static_cache_key_changes_with_sfincs_mask(tmp_path: Path) -> None:
+    grid = _grid()
+    adaptive = build_adaptive_grid(grid)
+    builder = AdaptiveSfincsModelBuilder(cache_root=tmp_path)
+
+    changed_mask = grid.sfincs_mask.copy()
+    changed_mask[1, 1] = 0 if changed_mask[1, 1] else 1
+    changed = dataclasses.replace(grid, sfincs_mask=changed_mask)
+    assert builder._subgrid_cache_key(grid, adaptive) != builder._subgrid_cache_key(
+        changed, adaptive
+    )
