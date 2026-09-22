@@ -801,6 +801,14 @@ class RunCoordinator:
                     adaptive_grid,
                     rainfall,
                 )
+                static_cache = build.report.get("static_model_cache", {})
+                if static_cache:
+                    hit_label = "HIT" if static_cache.get("cache_hit") else "MISS"
+                    cache_key_label = static_cache.get("cache_key", "unknown")
+                    self._append_activity(
+                        record,
+                        f"Adaptive static model cache {hit_label}: {cache_key_label}",
+                    )
             else:
                 self._set_state(
                     record,
