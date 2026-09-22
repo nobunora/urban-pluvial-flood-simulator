@@ -442,6 +442,7 @@ class AdaptiveSfincsModelBuilder:
                     raise ModelBuildError(
                         "HydroMT-SFINCS quadtree subgrid component is incompatible"
                     )
+                subgrid_cpu_started = time.process_time()
                 component.create(
                     elevation_list=[{"elevation": elevation}],
                     roughness_list=[{"manning": roughness}],
@@ -452,9 +453,18 @@ class AdaptiveSfincsModelBuilder:
                     quiet=True,
                 )
                 phase_timings["subgrid_create_s"] = time.perf_counter() - phase_started
+                phase_timings["subgrid_create_cpu_s"] = (
+                    time.process_time() - subgrid_cpu_started
+                )
                 phase_started = time.perf_counter()
                 if not getattr(component.data, "data_vars", None):
                     raise ModelBuildError("Adaptive subgrid generation produced no data")
+
+                subgrid_face_count = int(component.data["z_zmin"].size)
+                subgrid_uv_point_count = int(component.data["uv_zmin"].size)
+                subgrid_sample_evaluations = (
+                    subgrid_face_count + subgrid_uv_point_count
+                ) * self.subgrid_pixels * self.subgrid_pixels
 
                 write_quadtree_grid_compat(model.quadtree_grid, filename="sfincs.nc")
                 component.write(filename="sfincs_subgrid.nc")
@@ -505,6 +515,9 @@ class AdaptiveSfincsModelBuilder:
                         quadtree.face_fields.hydraulic_weighted_area_m2
                     ),
                     "subgrid_variables": subgrid_variables,
+                    "subgrid_face_count": subgrid_face_count,
+                    "subgrid_uv_point_count": subgrid_uv_point_count,
+                    "subgrid_sample_evaluations": subgrid_sample_evaluations,
                 }
                 phase_timings["static_write_layout_s"] = time.perf_counter() - phase_started
                 phase_started = time.perf_counter()
@@ -589,6 +602,11 @@ class AdaptiveSfincsModelBuilder:
                 ),
                 "hypsometric_levels": self.subgrid_levels,
                 "variables": list(static_metadata["subgrid_variables"]),
+                "face_count": static_metadata.get("subgrid_face_count"),
+                "uv_point_count": static_metadata.get("subgrid_uv_point_count"),
+                "sample_evaluations": static_metadata.get(
+                    "subgrid_sample_evaluations"
+                ),
             },
             "rainfall_forcing": {
                 "grid_resolution_m": 1.0,

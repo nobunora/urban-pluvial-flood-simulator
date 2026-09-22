@@ -86,6 +86,13 @@ def test_adaptive_builder_writes_quadtree_subgrid_and_distributed_rainfall(
     assert result.report["subgrid"]["source_terrain_resolution_m"] == 1.0
     assert result.report["subgrid"]["pixels_per_hydraulic_cell"] == 2
     assert result.report["subgrid"]["hypsometric_levels"] == 3
+    assert result.report["subgrid"]["face_count"] == result.report["total_hydraulic_cells"]
+    assert result.report["subgrid"]["uv_point_count"] > 0
+    assert result.report["subgrid"]["sample_evaluations"] == (
+        result.report["subgrid"]["face_count"]
+        + result.report["subgrid"]["uv_point_count"]
+    ) * 4
+    assert result.report["build_phase_timings_seconds"]["subgrid_create_cpu_s"] >= 0
     assert result.report["threshold_identity"] == adaptive.threshold_identity
     assert result.report["classifier_diagnostics"]["active_levels_m"] == [1, 2, 4, 8]
     assert result.report["classifier_diagnostics"]["maximum_resolution_m"] <= 8
