@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -396,6 +397,9 @@ class AdaptiveSfincsModelBuilder:
         static_metadata: dict[str, Any] | None = None
         static_cache_hit = False
         layout_path = root / "adaptive_face_layout.npz"
+        build_started = time.perf_counter()
+        phase_started = build_started
+        phase_timings: dict[str, float] = {}
 
         try:
             if cache_dir is not None:
@@ -409,11 +413,15 @@ class AdaptiveSfincsModelBuilder:
                     # Published entries are immutable. If validation fails,
                     # discard the whole entry rather than mixing old/new files.
                     shutil.rmtree(cache_dir, ignore_errors=True)
+            phase_timings["cache_lookup_materialize_s"] = time.perf_counter() - phase_started
+            phase_started = time.perf_counter()
 
             with _sfincs_environment():
                 SfincsModel = _load_sfincs_model()
                 model = SfincsModel(root=root, mode="w+", write_gis=False)
                 _ = model.config.data
+            phase_timings["hydromt_model_init_s"] = time.perf_counter() - phase_started
+            phase_started = time.perf_counter()
 
             if static_cache_hit:
                 # Static topology/subgrid files are already complete. Do not
@@ -423,6 +431,8 @@ class AdaptiveSfincsModelBuilder:
                 model.config.set("sbgfile", "sfincs_subgrid.nc")
             else:
                 quadtree = create_adaptive_quadtree(model, grid, adaptive)
+                phase_timings["quadtree_create_s"] = time.perf_counter() - phase_started
+                phase_started = time.perf_counter()
                 elevation = _raster(grid.elevation_m, grid, "elevtn")
                 roughness = _raster(grid.manning_n, grid, "manning")
                 component = getattr(model, "quadtree_subgrid", None)
@@ -439,6 +449,8 @@ class AdaptiveSfincsModelBuilder:
                     write_man_tif=False,
                     quiet=True,
                 )
+                phase_timings["subgrid_create_s"] = time.perf_counter() - phase_started
+                phase_started = time.perf_counter()
                 if not getattr(component.data, "data_vars", None):
                     raise ModelBuildError("Adaptive subgrid generation produced no data")
 
@@ -492,10 +504,14 @@ class AdaptiveSfincsModelBuilder:
                     ),
                     "subgrid_variables": subgrid_variables,
                 }
+                phase_timings["static_write_layout_s"] = time.perf_counter() - phase_started
+                phase_started = time.perf_counter()
                 if cache_dir is not None:
                     self._publish_static_bundle(
                         cache_dir, root=root, metadata=static_metadata
                     )
+                phase_timings["static_publish_s"] = time.perf_counter() - phase_started
+                phase_started = time.perf_counter()
 
             if static_metadata is None:
                 raise ModelBuildError("Adaptive static model metadata is unavailable")
@@ -522,6 +538,8 @@ class AdaptiveSfincsModelBuilder:
             _configure_precipitation(model, _precipitation(rainfall, grid), rainfall)
             model.precipitation.write(filename="sfincs_netampr.nc")
             model.config.write()
+            phase_timings["dynamic_rainfall_config_s"] = time.perf_counter() - phase_started
+            phase_timings["total_build_s"] = time.perf_counter() - build_started
         except ModelBuildError:
             raise
         except Exception as exc:
@@ -548,6 +566,7 @@ class AdaptiveSfincsModelBuilder:
             "outflow_boundary_cells": int(static_metadata["outflow_boundary_cells"]),
             "blocked_building_source_cells": int(np.count_nonzero(grid.building_mask)),
             "roughness": {"general": 0.030, "road": 0.020},
+            "build_phase_timings_seconds": phase_timings,
             "static_model_cache": {
                 "cache_hit": static_cache_hit,
                 "cache_key": cache_key,
