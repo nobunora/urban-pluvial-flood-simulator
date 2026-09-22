@@ -5,22 +5,29 @@ from __future__ import annotations
 import numpy as np
 import xarray as xr
 from hydromt_sfincs.workflows.subgrid import subgrid_q_table, subgrid_v_table
-from numba import njit
+from numba import get_num_threads, njit, prange
 
 
-@njit(cache=True)
+@njit(cache=True, parallel=True)
 def _cell_tables(elevation, levels, rows, cols, base_size, nr_levels):
     count = levels.size
     zmin = np.empty(count, np.float32)
     zmax = np.empty(count, np.float32)
     volmax = np.empty(count, np.float32)
     zlevel = np.empty((count, nr_levels), np.float32)
-    for i in range(count):
+    for i in prange(count):
         size = base_size // (2 ** levels[i])
         row, col = rows[i] * size, cols[i] * size
         if size == 1:
             values = np.full(4, elevation[row, col], np.float64)
             pixel_size = 0.5
+        elif size == 2:
+            values = np.empty(4, np.float64)
+            values[0] = elevation[row, col]
+            values[1] = elevation[row, col + 1]
+            values[2] = elevation[row + 1, col]
+            values[3] = elevation[row + 1, col + 1]
+            pixel_size = 1.0
         else:
             values = (
                 elevation[row : row + size, col : col + size]
@@ -37,7 +44,7 @@ def _cell_tables(elevation, levels, rows, cols, base_size, nr_levels):
     return zmin, zmax, volmax, zlevel
 
 
-@njit(cache=True)
+@njit(cache=True, parallel=True)
 def _uv_tables(
     elevation,
     roughness,
@@ -61,7 +68,7 @@ def _uv_tables(
     uv_pwet = np.full((count, nr_levels), np.nan, np.float32)
     uv_ffit = np.full(count, np.nan, np.float32)
     uv_navg = np.full(count, np.nan, np.float32)
-    for i in range(count):
+    for i in prange(count):
         if not np.isfinite(zmin_a[i]) or not np.isfinite(zmin_b[i]):
             continue
         size = base_size // (2 ** levels[i])
@@ -77,19 +84,34 @@ def _uv_tables(
             start_row, start_col = row, col + size // 2
         else:
             start_row, start_col = row + size // 2, col
-        elevations = elevation[
-            start_row : start_row + size, start_col : start_col + size
-        ].copy()
-        mannings = roughness[
-            start_row : start_row + size, start_col : start_col + size
-        ].copy()
-        if directions[i] == 0:
-            elevations = elevations.T.copy()
-            mannings = mannings.T.copy()
         if size == 1:
-            flat_z = np.full(4, elevations[0, 0], np.float64)
-            flat_n = np.full(4, mannings[0, 0], np.float64)
+            flat_z = np.full(4, elevation[start_row, start_col], np.float64)
+            flat_n = np.full(4, roughness[start_row, start_col], np.float64)
+        elif size == 2:
+            flat_z = np.empty(4, np.float64)
+            flat_n = np.empty(4, np.float64)
+            if directions[i] == 0:
+                for sample in range(4):
+                    sample_row = start_row + sample % 2
+                    sample_col = start_col + sample // 2
+                    flat_z[sample] = elevation[sample_row, sample_col]
+                    flat_n[sample] = roughness[sample_row, sample_col]
+            else:
+                for sample in range(4):
+                    sample_row = start_row + sample // 2
+                    sample_col = start_col + sample % 2
+                    flat_z[sample] = elevation[sample_row, sample_col]
+                    flat_n[sample] = roughness[sample_row, sample_col]
         else:
+            elevations = elevation[
+                start_row : start_row + size, start_col : start_col + size
+            ].copy()
+            mannings = roughness[
+                start_row : start_row + size, start_col : start_col + size
+            ].copy()
+            if directions[i] == 0:
+                elevations = elevations.T.copy()
+                mannings = mannings.T.copy()
             flat_z = elevations.reshape(-1).astype(np.float64)
             flat_n = mannings.reshape(-1).astype(np.float64)
         if not np.isfinite(flat_z).all() or not np.isfinite(flat_n).all():
@@ -266,6 +288,8 @@ def build_optimized_2248_subgrid(
         "patched_faces": int(face_levels.size),
         "patched_uv_points": int(uv_indices.size),
         "patch_sample_evaluations": sample_evaluations,
+        "parallel_threads": int(get_num_threads()),
+        "specialized_cell_sizes_m": [1, 2],
     }
 
 

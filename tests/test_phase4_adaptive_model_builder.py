@@ -285,6 +285,8 @@ def test_adaptive_builder_writes_optimized_2248_strategy(tmp_path: Path) -> None
         "direct_aligned_2m_4m_8m_tables",
         "selected_uv_ordered_scan",
         "no_global_uv_sort",
+        "parallel_face_uv_tables",
+        "specialized_1m_2m_kernels",
     ]
 
 

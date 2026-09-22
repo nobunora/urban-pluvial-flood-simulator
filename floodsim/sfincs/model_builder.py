@@ -288,6 +288,8 @@ class AdaptiveSfincsModelBuilder:
         digest.update(str(self.subgrid_pixels).encode())
         digest.update(str(self.subgrid_levels).encode())
         digest.update(self.subgrid_strategy.encode())
+        if self.subgrid_strategy == "2-2-4-8-optimized":
+            digest.update(b"direct-parallel-fine-kernels-v2")
         digest.update(grid.crs_wkt.encode("utf-8"))
         for value in (
             grid.width_cells,
@@ -665,6 +667,8 @@ class AdaptiveSfincsModelBuilder:
                         "direct_aligned_2m_4m_8m_tables",
                         "selected_uv_ordered_scan",
                         "no_global_uv_sort",
+                        "parallel_face_uv_tables",
+                        "specialized_1m_2m_kernels",
                     ]
                     if self.subgrid_strategy == "2-2-4-8-optimized"
                     else []
