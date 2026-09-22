@@ -399,7 +399,7 @@ def test_result_api_exposes_png_metadata_and_native_inspection(
 
     flow = client.get(
         f"/api/v1/runs/{coordinator.run_id}/layers/flow-vectors.geojson",
-        params={"time_index": 1, "max_vectors": 50},
+        params={"time_index": 1, "west": 139.0, "south": 35.0, "east": 140.0, "north": 36.0, "stride": 4},
     )
     assert flow.status_code == 200
     assert flow.headers["content-type"].startswith("application/json")
