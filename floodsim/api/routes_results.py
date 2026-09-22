@@ -216,7 +216,7 @@ def _flow_viewport_cached(
         north=north,
         stride=stride,
     )
-@router.get("/runs/{run_id}/layers/flow-vectors.geojson")
+@router.get("/runs/{run_id}/layers/flow-vectors.geojson", include_in_schema=False)
 def flow_vectors_geojson_layer(
     run_id: UUID,
     time_index: int = Query(ge=0),
