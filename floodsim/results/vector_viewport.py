@@ -91,11 +91,11 @@ def flow_vectors_viewport_geojson(
     to_wgs84 = Transformer.from_crs(local_crs(area), CRS.from_epsg(4326), always_xy=True)
     xmin = -area.width_m / 2.0
     ymin = -area.height_m / 2.0
-    arrow_length_m = 0.8 * float(stride)
+    arrow_length_m = 0.8 * float(stride) * min(cell_width_m, cell_height_m)
     features: list[dict[str, Any]] = []
 
     adaptive = isinstance(arrays, AdaptiveNormalizedArrays)
-    face_lookup = _face_lookup(arrays) if adaptive else None
+    face_lookup = _face_lookup(arrays) if adaptive else None\n    cell_width_m = area.width_m / float(arrays.shape[1])\n    cell_height_m = area.height_m / float(arrays.shape[0])
 
     for row in range(row0, row1, stride):
         for col in range(col0, col1, stride):
