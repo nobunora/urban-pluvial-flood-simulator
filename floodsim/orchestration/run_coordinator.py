@@ -809,6 +809,12 @@ class RunCoordinator:
                         record,
                         f"Adaptive static model cache {hit_label}: {cache_key_label}",
                     )
+                build_timings = build.report.get("build_phase_timings_seconds", {})
+                for phase_name, seconds in build_timings.items():
+                    self._append_activity(
+                        record,
+                        f"Adaptive build {phase_name}: {float(seconds):.2f} s",
+                    )
             else:
                 self._set_state(
                     record,
