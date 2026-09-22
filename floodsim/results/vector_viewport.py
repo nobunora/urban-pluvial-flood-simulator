@@ -45,10 +45,12 @@ def _viewport_cell_bounds(
     xmin = -area.width_m / 2.0
     ymin = -area.height_m / 2.0
     height, width = arrays.shape
-    col0 = max(0, min(width, int(np.floor(min(xs) - xmin))))
-    col1 = max(0, min(width, int(np.ceil(max(xs) - xmin))))
-    row0 = max(0, min(height, int(np.floor(min(ys) - ymin))))
-    row1 = max(0, min(height, int(np.ceil(max(ys) - ymin))))
+    cell_width_m = area.width_m / float(width)
+    cell_height_m = area.height_m / float(height)
+    col0 = max(0, min(width, int(np.floor((min(xs) - xmin) / cell_width_m))))
+    col1 = max(0, min(width, int(np.ceil((max(xs) - xmin) / cell_width_m))))
+    row0 = max(0, min(height, int(np.floor((min(ys) - ymin) / cell_height_m))))
+    row1 = max(0, min(height, int(np.ceil((max(ys) - ymin) / cell_height_m))))
     return row0, row1, col0, col1
 
 
@@ -137,8 +139,8 @@ def flow_vectors_viewport_geojson(
 
             dx = u / speed
             dy = v / speed
-            cx = xmin + col + 0.5
-            cy = ymin + row + 0.5
+            cx = xmin + (col + 0.5) * cell_width_m
+            cy = ymin + (row + 0.5) * cell_height_m
             tail = (cx - dx * arrow_length_m * 0.42, cy - dy * arrow_length_m * 0.42)
             tip = (cx + dx * arrow_length_m * 0.58, cy + dy * arrow_length_m * 0.58)
             head = arrow_length_m * 0.28
