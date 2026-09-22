@@ -219,6 +219,56 @@ def test_adaptive_static_cache_key_changes_with_grid_origin(tmp_path: Path) -> N
     )
 
 
+def test_adaptive_subgrid_strategy_changes_cache_key(tmp_path: Path) -> None:
+    grid = _grid()
+    adaptive = build_adaptive_grid(grid)
+    uniform = AdaptiveSfincsModelBuilder(cache_root=tmp_path)
+    variable = AdaptiveSfincsModelBuilder(
+        cache_root=tmp_path, subgrid_strategy="2-2-4-8"
+    )
+
+    assert uniform._subgrid_cache_key(grid, adaptive) != variable._subgrid_cache_key(
+        grid, adaptive
+    )
+
+
+def test_adaptive_builder_rejects_unknown_subgrid_strategy() -> None:
+    with pytest.raises(ValueError, match="unsupported subgrid_strategy"):
+        AdaptiveSfincsModelBuilder(subgrid_strategy="unknown")
+
+
+def test_adaptive_builder_writes_2248_subgrid_strategy(tmp_path: Path) -> None:
+    full = _grid()
+    adaptive = build_adaptive_grid(full)
+    result = AdaptiveSfincsModelBuilder(
+        subgrid_levels=3,
+        subgrid_strategy="2-2-4-8",
+    ).build(tmp_path / "model", full, adaptive, _rainfall())
+
+    assert result.report["subgrid"]["strategy"] == "2-2-4-8"
+    assert result.report["subgrid"]["pixels_by_cell_size_m"] == {
+        "1": 2,
+        "2": 2,
+        "4": 4,
+        "8": 8,
+    }
+    assert result.report["subgrid"]["effective_coarsest_subpixel_m"] == 1.0
+    with xr.open_dataset(result.model_dir / "sfincs_subgrid.nc") as dataset:
+        assert set(dataset.data_vars) == {
+            "z_zmin",
+            "z_zmax",
+            "z_volmax",
+            "z_level",
+            "uv_zmin",
+            "uv_zmax",
+            "uv_havg",
+            "uv_nrep",
+            "uv_pwet",
+            "uv_ffit",
+            "uv_navg",
+        }
+
+
 def test_adaptive_static_cache_key_changes_with_sfincs_mask(tmp_path: Path) -> None:
     grid = _grid()
     adaptive = build_adaptive_grid(grid)
