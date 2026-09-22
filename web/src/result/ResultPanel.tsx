@@ -213,7 +213,9 @@ export default function ResultPanel({
     setGifProgress(null);
   }, [loop, metadata.available_time_indices, metadata.time_values, runId]);
 
-\n\n  return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+
+
+  return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
   const toggleFullscreen = useCallback(() => {
@@ -335,7 +337,9 @@ export default function ResultPanel({
     metadata.flow_vectors_available,
     runId,
     selectedTimeIndex,
-    timePosition,\n    flowViewport,\n    flowStride,
+    timePosition,
+    flowViewport,
+    flowStride,
   ]);
 
   useEffect(() => {
