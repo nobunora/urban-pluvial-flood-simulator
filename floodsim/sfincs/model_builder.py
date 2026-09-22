@@ -405,6 +405,10 @@ class AdaptiveSfincsModelBuilder:
                 if static_metadata is not None:
                     self._materialize_static_bundle(cache_dir, root)
                     static_cache_hit = True
+                elif cache_dir.exists():
+                    # Published entries are immutable. If validation fails,
+                    # discard the whole entry rather than mixing old/new files.
+                    shutil.rmtree(cache_dir, ignore_errors=True)
 
             with _sfincs_environment():
                 SfincsModel = _load_sfincs_model()
