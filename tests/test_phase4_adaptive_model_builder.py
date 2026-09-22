@@ -165,10 +165,36 @@ def test_adaptive_subgrid_cache_reuses_rainfall_independent_table(tmp_path: Path
     )
     second = builder.build(tmp_path / "second", full, adaptive, changed_rain)
 
-    assert first.report["subgrid"]["cache_hit"] is False
-    assert second.report["subgrid"]["cache_hit"] is True
-    assert (second.model_dir / "sfincs_subgrid.nc").read_bytes() == (
-        first.model_dir / "sfincs_subgrid.nc"
-    ).read_bytes()
+    assert first.report["static_model_cache"]["cache_hit"] is False
+    assert second.report["static_model_cache"]["cache_hit"] is True
+    assert first.report["static_model_cache"]["cache_key"] == second.report["static_model_cache"]["cache_key"]
+    for name in ("sfincs.nc", "sfincs_subgrid.nc", "adaptive_face_layout.npz"):
+        assert (second.model_dir / name).read_bytes() == (first.model_dir / name).read_bytes()
     with xr.open_dataset(second.model_dir / "sfincs_netampr.nc") as dataset:
         assert float(dataset["Precipitation"].isel(time=0).max()) == pytest.approx(75.0)
+
+
+def test_adaptive_static_cache_rebuilds_incomplete_bundle(tmp_path: Path) -> None:
+    full = _grid()
+    adaptive = build_adaptive_grid(
+        full,
+        policy=replace(
+            DEFAULT_ADAPTIVE_GRID_POLICY,
+            target_core_radius_m=0.0,
+            target_mid_radius_m=0.0,
+        ),
+    )
+    cache_root = tmp_path / "cache"
+    builder = AdaptiveSfincsModelBuilder(
+        subgrid_pixels=2,
+        subgrid_levels=3,
+        cache_root=cache_root,
+    )
+    first = builder.build(tmp_path / "first", full, adaptive, _rainfall())
+    cache_key = first.report["static_model_cache"]["cache_key"]
+    (cache_root / cache_key / "adaptive_face_layout.npz").unlink()
+
+    second = builder.build(tmp_path / "second", full, adaptive, _rainfall())
+
+    assert second.report["static_model_cache"]["cache_hit"] is False
+    assert (cache_root / cache_key / "adaptive_face_layout.npz").is_file()
