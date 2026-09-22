@@ -242,7 +242,7 @@ export default function ResultMap({
       fitBoundsOptions: { padding: 32, maxZoom: 18 },
       attributionControl: false,
     });
-    overlayMapRef.current = overlayMap;
+    overlayMapRef.current = overlayMap;\n    onCaptureReady?.(async () => {\n      const source = overlayMap.getCanvas();\n      const output = document.createElement("canvas");\n      output.width = source.width;\n      output.height = source.height;\n      const context = output.getContext("2d");\n      if (!context) throw new Error("Canvas 2D context is unavailable");\n      context.drawImage(source, 0, 0);\n      const svg = flowSvgRef.current;\n      if (svg && svg.childElementCount > 0) {\n        const markup = new XMLSerializer().serializeToString(svg);\n        const blobUrl = URL.createObjectURL(new Blob([markup], { type: "image/svg+xml" }));\n        try {\n          const image = new Image();\n          await new Promise<void>((resolve, reject) => {\n            image.onload = () => resolve();\n            image.onerror = () => reject(new Error("SVG capture failed"));\n            image.src = blobUrl;\n          });\n          context.drawImage(image, 0, 0, output.width, output.height);\n        } finally {\n          URL.revokeObjectURL(blobUrl);\n        }\n      }\n      return output;\n    });
     overlayMap.addControl(new NavigationControl({ showCompass: false }), "top-right");
 
     const syncBase = () => {
