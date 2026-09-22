@@ -207,8 +207,6 @@ export default function ResultMap({
   const flowSvgRef = useRef<SVGSVGElement | null>(null);
   const inspectRef = useRef(onInspect);
   const viewportRef = useRef(onViewportChange);
-  const viewportRef = useRef(onViewportChange);
-  const viewportRef = useRef(onViewportChange);
   const initialImageUrlRef = useRef(imageUrl);
 
   useEffect(() => {
