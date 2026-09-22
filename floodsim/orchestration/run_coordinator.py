@@ -44,6 +44,7 @@ from floodsim.sfincs.runner import (
     SfincsRunner,
     resolve_sfincs_executable,
 )
+from floodsim.storage.adaptive_grid_cache import AdaptiveGridCache
 from floodsim.storage.prepared_grid_cache import PreparedGridCache
 from floodsim.storage.run_store import RunStore
 
@@ -198,6 +199,7 @@ class RunCoordinator:
         self.adaptive_result_reader = adaptive_result_reader
         self.adaptive_result_normalizer = adaptive_result_normalizer
         self.prepared_cache = PreparedGridCache(self.store.root.parent / "cache")
+        self.adaptive_grid_cache = AdaptiveGridCache(self.store.root.parent / "cache")
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="floodsim-run")
         self._records: dict[UUID, RunRecord] = {}
         self._active_run_id: UUID | None = None
@@ -717,27 +719,44 @@ class RunCoordinator:
             adaptive_grid = None
             final_grid_level_counts = {"1m": grid.cell_count}
             if record.config.requested_accuracy_mode is AccuracyMode.ADAPTIVE:
-                self._update_work_progress(
-                    record,
-                    0.0,
-                    "Adaptive格子の地形複雑度を分類しています。",
+                prepared_grid_key = self.prepared_cache.key_for(record.config.analysis_area)
+                cached_adaptive = (
+                    self.adaptive_grid_cache.load(prepared_grid_key, self.adaptive_grid_policy)
+                    if self.adaptive_grid_builder is build_adaptive_grid
+                    else None
                 )
-                adaptive_signature = inspect.signature(self.adaptive_grid_builder)
-                accepts_kwargs = any(
-                    parameter.kind is inspect.Parameter.VAR_KEYWORD
-                    for parameter in adaptive_signature.parameters.values()
-                )
-                adaptive_kwargs: dict[str, Any] = {}
-                adaptive_inputs = {
-                    "policy": self.adaptive_grid_policy,
-                    "hard_boundary_zone": grid.adaptive_hard_boundary_zone,
-                    "existing_resolution_ceiling_m": grid.adaptive_resolution_ceiling_m,
-                    "native_structure_mask": grid.native_structure_mask,
-                }
-                for name, value in adaptive_inputs.items():
-                    if accepts_kwargs or name in adaptive_signature.parameters:
-                        adaptive_kwargs[name] = value
-                adaptive_grid = self.adaptive_grid_builder(grid, **adaptive_kwargs)
+                if cached_adaptive is not None:
+                    adaptive_cache_key, adaptive_grid = cached_adaptive
+                    self._append_activity(record, f"Adaptive格子分類 cache hit: {adaptive_cache_key}")
+                    runtime_diagnostic["adaptive_grid_cache"] = {"hit": True, "key": adaptive_cache_key}
+                else:
+                    self._update_work_progress(
+                        record,
+                        0.0,
+                        "Adaptive格子の地形複雑度を分類しています。",
+                    )
+                    adaptive_signature = inspect.signature(self.adaptive_grid_builder)
+                    accepts_kwargs = any(
+                        parameter.kind is inspect.Parameter.VAR_KEYWORD
+                        for parameter in adaptive_signature.parameters.values()
+                    )
+                    adaptive_kwargs: dict[str, Any] = {}
+                    adaptive_inputs = {
+                        "policy": self.adaptive_grid_policy,
+                        "hard_boundary_zone": grid.adaptive_hard_boundary_zone,
+                        "existing_resolution_ceiling_m": grid.adaptive_resolution_ceiling_m,
+                        "native_structure_mask": grid.native_structure_mask,
+                    }
+                    for name, value in adaptive_inputs.items():
+                        if accepts_kwargs or name in adaptive_signature.parameters:
+                            adaptive_kwargs[name] = value
+                    adaptive_grid = self.adaptive_grid_builder(grid, **adaptive_kwargs)
+                    if self.adaptive_grid_builder is build_adaptive_grid:
+                        adaptive_cache_key = self.adaptive_grid_cache.save(
+                            prepared_grid_key, self.adaptive_grid_policy, adaptive_grid
+                        )
+                        runtime_diagnostic["adaptive_grid_cache"] = {"hit": False, "key": adaptive_cache_key}
+                        self._append_activity(record, f"Adaptive格子分類 cache saved: {adaptive_cache_key}")
                 final_grid_level_counts = dict(adaptive_grid.cell_count_by_level)
                 runtime_diagnostic["adaptive_grid"] = dict(adaptive_grid.diagnostics)
                 self._append_activity(
