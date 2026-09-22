@@ -429,6 +429,8 @@ class AdaptiveSfincsModelBuilder:
                 # runs; only point the dynamic config at the materialized files.
                 model.config.set("qtrfile", "sfincs.nc")
                 model.config.set("sbgfile", "sfincs_subgrid.nc")
+                phase_timings["static_cache_hit_setup_s"] = time.perf_counter() - phase_started
+                phase_started = time.perf_counter()
             else:
                 quadtree = create_adaptive_quadtree(model, grid, adaptive)
                 phase_timings["quadtree_create_s"] = time.perf_counter() - phase_started
