@@ -64,10 +64,10 @@ class AdaptiveGridCache:
                 plane_fit_metrics={},
                 cell_count_by_level={str(k): int(v) for k, v in metadata["cell_count_by_level"].items()},
                 total_hydraulic_cells=int(metadata["total_hydraulic_cells"]),
-                full_1m_equivalent_cells=int(metadata["full_1m_equivalent_cells"]),
+                full_1m_equivalent_cells=full_cells,
                 reduction_ratio=float(metadata["reduction_ratio"]),
                 threshold_identity=str(metadata["threshold_identity"]),
-                active_levels_m=tuple(int(v) for v in metadata["active_levels_m"]),
+                active_levels_m=active_levels,
                 protection_counts={str(k): int(v) for k, v in metadata["protection_counts"].items()},
                 hard_boundary_preserved=bool(metadata["hard_boundary_preserved"]),
             )
