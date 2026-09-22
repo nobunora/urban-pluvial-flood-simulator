@@ -241,7 +241,7 @@ class SfincsModelBuilder:
         return ModelBuildResult(root, report_path, report)
 
 
-ADAPTIVE_SUBGRID_PIXELS = 20
+ADAPTIVE_SUBGRID_PIXELS = 8
 ADAPTIVE_SUBGRID_LEVELS = 10
 
 
@@ -276,7 +276,7 @@ class AdaptiveSfincsModelBuilder:
         adaptive: AdaptiveGridProduct,
     ) -> str:
         digest = hashlib.sha256()
-        digest.update(b"adaptive-subgrid-v1")
+        digest.update(b"adaptive-subgrid-v2-source-1m")
         digest.update(str(self.subgrid_pixels).encode())
         digest.update(str(self.subgrid_levels).encode())
         digest.update(grid.crs_wkt.encode("utf-8"))
@@ -445,6 +445,7 @@ class AdaptiveSfincsModelBuilder:
                 "source_terrain_resolution_m": 1.0,
                 "source_roughness_resolution_m": 1.0,
                 "pixels_per_hydraulic_cell": self.subgrid_pixels,
+                "effective_coarsest_subpixel_m": max(adaptive.active_levels_m) / self.subgrid_pixels,
                 "hypsometric_levels": self.subgrid_levels,
                 "variables": subgrid_variables,
             },
