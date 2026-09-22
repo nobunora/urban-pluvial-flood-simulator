@@ -306,6 +306,7 @@ export default function ResultMap({
     };
 
     overlayMap.on("move", syncBase);
+    overlayMap.on("zoomend", emitViewport);
     overlayMap.on("moveend", emitViewport);
     overlayMap.on("click", handleClick);
     overlayMap.once("load", () => {
@@ -321,6 +322,7 @@ export default function ResultMap({
       markerRef.current = null;
       onCaptureReady?.(null);
       overlayMap.off("move", syncBase);
+      overlayMap.off("zoomend", emitViewport);
       overlayMap.off("moveend", emitViewport);
       overlayMap.off("click", handleClick);
       overlayMap.remove();
