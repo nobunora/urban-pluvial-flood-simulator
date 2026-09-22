@@ -107,6 +107,7 @@ export default function ResultPanel({
   const [nextFlowVectorData, setNextFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
   const [visualFlowVectorData, setVisualFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
   const [playing, setPlaying] = useState(false);
+  const playingRef = useRef(false);
   const [loop, setLoop] = useState(true);
   const [gifProgress, setGifProgress] = useState<number | null>(null);
   const gifCancelRef = useRef(false);
@@ -370,6 +371,8 @@ export default function ResultPanel({
     return () => controller.abort();
   }, [flowVectorData, flowVisible, flowStride, flowViewport, metadata.available_time_indices, runId, selectedTimeIndex, timePosition]);
 
+  useEffect(() => { playingRef.current = playing; }, [playing]);
+
   useEffect(() => {
     if (!playing || metadata.available_time_indices.length < 2) return;
     let frame = 0;
@@ -387,11 +390,11 @@ export default function ResultPanel({
         });
         started = now;
       }
-      if (playing) frame = requestAnimationFrame(tick);
+      if (playingRef.current) frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [playing, flowVectorData, nextFlowVectorData, loop, metadata.available_time_indices.length]);
+  }, [playing, flowVectorData, nextFlowVectorData, loop, maxTimePosition, metadata.available_time_indices.length]);
 
   const handleViewportChange = useCallback((viewport: FlowViewport, zoom: number) => {
     setFlowViewport(viewport);
