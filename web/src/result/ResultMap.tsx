@@ -202,12 +202,12 @@ export default function ResultMap({
   const overlayMapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
   const flowSvgRef = useRef<SVGSVGElement | null>(null);
-  const inspectRef = useRef(onInspect);\n  const viewportRef = useRef(onViewportChange);
+  const inspectRef = useRef(onInspect);\n  const viewportRef = useRef(onViewportChange);\n  const viewportRef = useRef(onViewportChange);
   const initialImageUrlRef = useRef(imageUrl);
 
   useEffect(() => {
     inspectRef.current = onInspect;
-  }, [onInspect]);
+  }, [onInspect]);\n\n  useEffect(() => {\n    viewportRef.current = onViewportChange;\n  }, [onViewportChange]);
 
   useEffect(() => {
     const baseContainer = baseContainerRef.current;
