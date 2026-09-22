@@ -54,7 +54,7 @@ class AdaptiveGridCache:
             with np.load(arrays_path, allow_pickle=False) as archive:
                 resolution = np.asarray(archive["resolution_m"], dtype=np.int16)
                 level = np.asarray(archive["level"], dtype=np.int8)
-                reason = np.asarray(archive["refinement_reason"], dtype="<U32")
+                reason = np.asarray(archive["refinement_reason"], dtype="<U20")
             if resolution.ndim != 2 or level.shape != resolution.shape or reason.shape != resolution.shape:
                 return None
             full_cells = int(metadata["full_1m_equivalent_cells"])

@@ -303,8 +303,8 @@ def test_recent_rainfall_ranking_is_limited_sorted_and_within_ten_years() -> Non
         ten_years_ago = today.replace(year=today.year - 10, day=28)
     assert payload["period_start"] == ten_years_ago.isoformat()
     assert payload["period_end"] == today.isoformat()
-    totals = [event["total_precipitation_mm"] for event in payload["events"]]
-    assert totals == sorted(totals, reverse=True)
+    intensities = [event["intensity_mm_per_h"] for event in payload["events"]]
+    assert intensities == sorted(intensities, reverse=True)
     period_start = date.fromisoformat(payload["period_start"])
     period_end = date.fromisoformat(payload["period_end"])
     assert all(

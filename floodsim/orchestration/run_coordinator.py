@@ -685,14 +685,26 @@ class RunCoordinator:
                 "準備済み建物・道路データを再利用しています。" if cache_hit else "PLATEAU優先で建物・道路を取得しています。",
             )
             if not cache_hit:
+                area_scale = min(
+                    16.0,
+                    max(1.0, record.config.analysis_area.area_m2 / 250_000.0),
+                )
+                plateau_budget_s = self.plateau_vector_budget_s * area_scale
+                osm_budget_s = self.osm_vector_budget_s * area_scale
+                if area_scale > 1.0:
+                    self._append_activity(
+                        record,
+                        "広域解析の取得上限を調整: "
+                        f"PLATEAU {plateau_budget_s:.0f}秒 / OSM {osm_budget_s:.0f}秒",
+                    )
                 vectors = self._acquire_vectors_with_progress(
                     record,
                     record.config.analysis_area,
                     mode="auto",
                     cache_dir=str(run_root.parent.parent / "cache"),
                     out_dir=str(run_root / "source_refs"),
-                    plateau_budget_s=self.plateau_vector_budget_s,
-                    osm_budget_s=self.osm_vector_budget_s,
+                    plateau_budget_s=plateau_budget_s,
+                    osm_budget_s=osm_budget_s,
                     cancel_event=record.cancel_event,
                 )
                 runtime_diagnostic["grid_input"] = self._grid_input_diagnostic(

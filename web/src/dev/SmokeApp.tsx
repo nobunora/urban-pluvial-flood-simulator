@@ -354,8 +354,8 @@ export default function SmokeApp() {
             <label>雨量強度 (mm/h)<input value={intensity} disabled={setupLocked} onChange={(event) => setIntensity(event.target.value)} /></label>
             <label>継続時間 (min)<input value={duration} disabled={setupLocked} onChange={(event) => setDuration(event.target.value)} /></label>
             {rainfallRanking && rainfallRanking.events.length > 0 && (
-              <section className="rainfall-ranking" aria-label="直近10年の降水量トップ10">
-                <h3>直近10年の降水量トップ10</h3>
+              <section className="rainfall-ranking" aria-label="直近10年の1時間換算雨量トップ10">
+                <h3>直近10年の1時間換算雨量トップ10</h3>
                 <p>{rainfallRanking.period_start}〜{rainfallRanking.period_end}</p>
                 <ol>
                   {rainfallRanking.events.map((event) => (

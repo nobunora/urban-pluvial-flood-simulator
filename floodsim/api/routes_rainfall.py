@@ -100,6 +100,9 @@ def recent_rainfall_ranking() -> RecentRainfallRankingResponse:
             recent.append(event)
     recent.sort(
         key=lambda event: (
+            -historical_uniform_intensity(
+                event.total_precipitation_mm, event.duration_minutes
+            ),
             -event.total_precipitation_mm,
             event.duration_minutes,
             event.station_id,

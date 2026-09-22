@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -305,16 +306,34 @@ def read_quadtree_result(
 
             active = mask_values == 1
             boundary = (mask_values == 2) | (mask_values == 3)
-            active_depth_raw = depth[:, active]
-            if np.any(np.isinf(active_depth_raw)):
-                raise SfincsResultError(
-                    "active SFINCS quadtree depth faces contain infinite values"
-                )
             # SFINCS quadtree h uses the wet-cell writer. Dry active faces are
             # written as NetCDF FILL_VALUE and decoded by xarray as NaN.
             # Preserve the distinction in diagnostics, but normalize those dry
             # samples to zero water depth for the application result contract.
-            dry_fill_depth_values = int(np.count_nonzero(np.isnan(active_depth_raw)))
+            dry_fill_depth_values = 0
+            negative_depth_clipped_values = 0
+            min_raw_active_depth = math.inf
+            for time_index in range(depth.shape[0]):
+                active_depth = depth[time_index, active]
+                if np.any(np.isinf(active_depth)):
+                    raise SfincsResultError(
+                        "active SFINCS quadtree depth faces contain infinite values"
+                    )
+                dry_fill_depth_values += int(np.count_nonzero(np.isnan(active_depth)))
+                finite = np.isfinite(active_depth)
+                if np.any(finite):
+                    finite_depth = active_depth[finite]
+                    min_raw_active_depth = min(
+                        min_raw_active_depth,
+                        float(np.min(finite_depth)),
+                    )
+                    negative_depth_clipped_values += int(
+                        np.count_nonzero(finite_depth < 0.0)
+                    )
+                depth[time_index, active] = np.maximum(
+                    np.nan_to_num(active_depth, nan=0.0),
+                    0.0,
+                )
             if np.any(~np.isfinite(terrain[active])):
                 raise SfincsResultError("active SFINCS quadtree terrain faces contain non-finite values")
 
@@ -327,21 +346,11 @@ def read_quadtree_result(
                     "active SFINCS quadtree hmax contains negative finite values"
                 )
 
-            active_depth_values = np.where(
-                np.isfinite(active_depth_raw),
-                active_depth_raw,
-                0.0,
-            ).astype(np.float32, copy=False)
-            finite_raw_active_depth = active_depth_raw[np.isfinite(active_depth_raw)]
             min_raw_active_depth = (
-                float(np.min(finite_raw_active_depth))
-                if finite_raw_active_depth.size
+                min_raw_active_depth
+                if math.isfinite(min_raw_active_depth)
                 else 0.0
             )
-            negative_depth_clipped_values = int(
-                np.count_nonzero(active_depth_values < 0.0)
-            )
-            depth[:, active] = np.maximum(active_depth_values, 0.0)
 
             finite_hmax = np.isfinite(hmax_values)
             has_hmax = np.any(finite_hmax, axis=0)
@@ -377,24 +386,26 @@ def read_quadtree_result(
                     raise SfincsResultError(
                         "SFINCS quadtree subgrid-volume face/time shape is inconsistent"
                     )
-                if np.any(~np.isfinite(subgrid_volume[:, active])):
-                    raise SfincsResultError(
-                        "active SFINCS quadtree subgrid volume contains non-finite values"
-                    )
-                active_subgrid_volume = subgrid_volume[:, active]
-                min_raw_active_subgrid_volume = (
-                    float(np.min(active_subgrid_volume))
-                    if active_subgrid_volume.size
-                    else 0.0
-                )
-                negative_subgrid_volume_clipped_values = int(
-                    np.count_nonzero(active_subgrid_volume < 0.0)
-                )
                 # SFINCS can emit small negative subgrid storage values from its
                 # numerical update while water depth remains physically valid.
                 # Storage volume is non-negative by definition, so normalize
                 # those finite undershoots to zero and retain diagnostics.
-                subgrid_volume[:, active] = np.maximum(active_subgrid_volume, 0.0)
+                minimum_volume = math.inf
+                for time_index in range(subgrid_volume.shape[0]):
+                    active_volume = subgrid_volume[time_index, active]
+                    if np.any(~np.isfinite(active_volume)):
+                        raise SfincsResultError(
+                            "active SFINCS quadtree subgrid volume contains non-finite values"
+                        )
+                    if active_volume.size:
+                        minimum_volume = min(minimum_volume, float(np.min(active_volume)))
+                    negative_subgrid_volume_clipped_values += int(
+                        np.count_nonzero(active_volume < 0.0)
+                    )
+                    subgrid_volume[time_index, active] = np.maximum(active_volume, 0.0)
+                min_raw_active_subgrid_volume = (
+                    minimum_volume if math.isfinite(minimum_volume) else 0.0
+                )
                 subgrid_volume[:, ~active] = np.nan
 
             has_u = "u" in dataset.data_vars
@@ -412,21 +423,18 @@ def read_quadtree_result(
                     raise SfincsResultError(
                         "SFINCS quadtree velocity face/time shape is inconsistent"
                     )
-                wet = active[None, :] & (depth > 0.0)
-                if np.any(~np.isfinite(velocity_u[wet])) or np.any(
-                    ~np.isfinite(velocity_v[wet])
-                ):
-                    raise SfincsResultError(
-                        "wet SFINCS quadtree velocity faces contain non-finite values"
-                    )
-                velocity_u = np.where(wet, velocity_u, 0.0).astype(
-                    np.float32, copy=False
-                )
-                velocity_v = np.where(wet, velocity_v, 0.0).astype(
-                    np.float32, copy=False
-                )
-                velocity_u[:, ~active] = np.nan
-                velocity_v[:, ~active] = np.nan
+                for time_index in range(depth.shape[0]):
+                    wet = active & (depth[time_index] > 0.0)
+                    if np.any(~np.isfinite(velocity_u[time_index, wet])) or np.any(
+                        ~np.isfinite(velocity_v[time_index, wet])
+                    ):
+                        raise SfincsResultError(
+                            "wet SFINCS quadtree velocity faces contain non-finite values"
+                        )
+                    velocity_u[time_index, ~wet] = 0.0
+                    velocity_v[time_index, ~wet] = 0.0
+                    velocity_u[time_index, ~active] = np.nan
+                    velocity_v[time_index, ~active] = np.nan
 
             depth[:, ~active] = np.nan
             max_depth[~active] = np.nan

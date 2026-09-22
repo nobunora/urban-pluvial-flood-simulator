@@ -10,19 +10,20 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import pairwise
 from typing import Final
 
 import numpy as np
+from numba import get_num_threads, njit, prange
 
 from floodsim.preprocessing.full_grid import FullGridProduct
 
 ADAPTIVE_LEVELS_M: Final[tuple[int, ...]] = (1, 2, 4, 8, 16, 32)
 PRODUCTION_ADAPTIVE_LEVELS_M: Final[tuple[int, ...]] = (1, 2, 4, 8)
 _ADAPTIVE_THRESHOLD_SCHEMA: Final[str] = "adaptive-v2-static-terrain-error"
+_MAX_STORED_PLANE_FIT_METRICS: Final[int] = 10_000
 
 
 @dataclass(frozen=True)
@@ -487,11 +488,10 @@ def _refine_block(
     reason[row : row + size, col : col + size] = label
 
 
-def _balance_two_to_one(resolution: np.ndarray, reason: np.ndarray) -> int:
-    """Refine only the coarse side until every edge adjacency satisfies 2:1."""
-
+@njit(cache=True)
+def _balance_resolution(resolution: np.ndarray) -> np.ndarray:
     changed = True
-    changed_cells = np.zeros(resolution.shape, dtype=bool)
+    changed_cells = np.zeros(resolution.shape, dtype=np.bool_)
     while changed:
         changed = False
         for row in range(resolution.shape[0]):
@@ -512,21 +512,18 @@ def _balance_two_to_one(resolution: np.ndarray, reason: np.ndarray) -> int:
                     continue
                 top = row - row % size
                 left = col - col % size
-                before = resolution[top : top + size, left : left + size].copy()
-                _refine_block(
-                    resolution,
-                    reason,
-                    top,
-                    left,
-                    size,
-                    "balanced_transition",
-                )
-                if not np.array_equal(
-                    before,
-                    resolution[top : top + size, left : left + size],
-                ):
+                if np.all(resolution[top : top + size, left : left + size] == size):
+                    resolution[top : top + size, left : left + size] = size // 2
                     changed = True
                     changed_cells[top : top + size, left : left + size] = True
+    return changed_cells
+
+
+def _balance_two_to_one(resolution: np.ndarray, reason: np.ndarray) -> int:
+    """Refine only the coarse side until every edge adjacency satisfies 2:1."""
+
+    changed_cells = _balance_resolution(resolution)
+    reason[changed_cells] = "balanced_transition"
     return int(np.count_nonzero(changed_cells))
 
 
@@ -574,6 +571,30 @@ def _validate_input_array(
     return value
 
 
+@njit(cache=True)
+def _has_invalid_coarse_block(
+    resolution: np.ndarray,
+    hard_boundary_zone: np.ndarray,
+) -> bool:
+    """Check aligned coarse blocks without allocating one Python set per cell."""
+    for row in range(resolution.shape[0]):
+        for col in range(resolution.shape[1]):
+            size = int(resolution[row, col])
+            if row % size or col % size:
+                continue
+            if row + size > resolution.shape[0] or col + size > resolution.shape[1]:
+                return True
+            zone = hard_boundary_zone[row, col]
+            for row_offset in range(size):
+                for col_offset in range(size):
+                    if (
+                        resolution[row + row_offset, col + col_offset] != size
+                        or hard_boundary_zone[row + row_offset, col + col_offset] != zone
+                    ):
+                        return True
+    return False
+
+
 def _validate_resolution_map(
     resolution: np.ndarray,
     *,
@@ -599,22 +620,135 @@ def _validate_resolution_map(
     ):
         raise ValueError("Adaptive result violates horizontal 2:1 balance")
 
-    visited: set[tuple[int, int, int]] = set()
-    for row in range(resolution.shape[0]):
-        for col in range(resolution.shape[1]):
-            size = int(resolution[row, col])
-            top = row - row % size
-            left = col - col % size
-            key = (top, left, size)
-            if key in visited:
-                continue
-            visited.add(key)
-            block = resolution[top : top + size, left : left + size]
-            if block.shape != (size, size) or not np.all(block == size):
-                raise ValueError("Adaptive result contains a partial/misaligned coarse block")
-            zones = hard_boundary_zone[top : top + size, left : left + size]
-            if np.any(zones != zones.flat[0]):
-                raise ValueError("Adaptive coarse block crosses a registered hard boundary")
+    if _has_invalid_coarse_block(resolution, hard_boundary_zone):
+        raise ValueError(
+            "Adaptive result contains a partial/misaligned coarse block or crosses "
+            "a registered hard boundary"
+        )
+
+
+@njit(cache=True, parallel=True)
+def _classify_level_parallel(
+    elevation: np.ndarray,
+    resolution: np.ndarray,
+    ceiling: np.ndarray,
+    zones: np.ndarray,
+    size: int,
+    limits: tuple[float, float, float, float, float],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Evaluate one aligned level in parallel using the canonical metrics."""
+    block_rows = elevation.shape[0] // size
+    block_cols = elevation.shape[1] // size
+    evaluated = np.zeros((block_rows, block_cols), dtype=np.bool_)
+    safe = np.zeros((block_rows, block_cols), dtype=np.bool_)
+    child_size = size // 2
+    count = size * size
+    # Numba types ``prange`` as a callable without an iterable return even
+    # though it deliberately mirrors ``range`` inside compiled functions.
+    for index in prange(block_rows * block_cols):  # type: ignore[attr-defined]
+        block_row = index // block_cols
+        block_col = index - block_row * block_cols
+        row0, col0 = block_row * size, block_col * size
+        zone = zones[row0, col0]
+        eligible = True
+        for row_offset in range(size):
+            for col_offset in range(size):
+                row, col = row0 + row_offset, col0 + col_offset
+                if (
+                    resolution[row, col] != child_size
+                    or ceiling[row, col] < size
+                    or zones[row, col] != zone
+                ):
+                    eligible = False
+        if not eligible:
+            continue
+        evaluated[block_row, block_col] = True
+
+        mean = 0.0
+        for row_offset in range(size):
+            for col_offset in range(size):
+                mean += float(elevation[row0 + row_offset, col0 + col_offset])
+        mean /= count
+        center = (size - 1) / 2.0
+        sxx = syy = sxy = sxz = syz = 0.0
+        for row_offset in range(size):
+            yc = row_offset - center
+            for col_offset in range(size):
+                xc = col_offset - center
+                zc = float(elevation[row0 + row_offset, col0 + col_offset]) - mean
+                sxx += xc * xc
+                syy += yc * yc
+                sxy += xc * yc
+                sxz += xc * zc
+                syz += yc * zc
+        determinant = sxx * syy - sxy * sxy
+        slope_x = (sxz * syy - syz * sxy) / determinant
+        slope_y = (syz * sxx - sxz * sxy) / determinant
+
+        residual_sum_squares = maximum_abs_residual = 0.0
+        minimum_residual, maximum_residual = math.inf, -math.inf
+        for row_offset in range(size):
+            yc = row_offset - center
+            for col_offset in range(size):
+                xc = col_offset - center
+                zc = float(elevation[row0 + row_offset, col0 + col_offset]) - mean
+                residual = zc - (slope_x * xc + slope_y * yc)
+                residual_sum_squares += residual * residual
+                maximum_abs_residual = max(maximum_abs_residual, abs(residual))
+                minimum_residual = min(minimum_residual, residual)
+                maximum_residual = max(maximum_residual, residual)
+
+        curvature_sum_squares = 0.0
+        curvature_count = 0
+        if size >= 3:
+            for row_offset in range(size - 2):
+                for col_offset in range(size):
+                    value = (
+                        float(elevation[row0 + row_offset + 2, col0 + col_offset])
+                        - 2.0 * float(elevation[row0 + row_offset + 1, col0 + col_offset])
+                        + float(elevation[row0 + row_offset, col0 + col_offset])
+                    )
+                    curvature_sum_squares += value * value
+                    curvature_count += 1
+            for row_offset in range(size):
+                for col_offset in range(size - 2):
+                    value = (
+                        float(elevation[row0 + row_offset, col0 + col_offset + 2])
+                        - 2.0 * float(elevation[row0 + row_offset, col0 + col_offset + 1])
+                        + float(elevation[row0 + row_offset, col0 + col_offset])
+                    )
+                    curvature_sum_squares += value * value
+                    curvature_count += 1
+        curvature = (
+            math.sqrt(curvature_sum_squares / curvature_count)
+            if curvature_count
+            else 0.0
+        )
+
+        connectivity = False
+        for row_offset in range(1, size - 1):
+            for col_offset in range(1, size - 1):
+                value = elevation[row0 + row_offset, col0 + col_offset]
+                low, high = True, True
+                for dy in range(-1, 2):
+                    for dx in range(-1, 2):
+                        if dy == 0 and dx == 0:
+                            continue
+                        neighbour = elevation[row0 + row_offset + dy, col0 + col_offset + dx]
+                        low = low and value < neighbour
+                        high = high and value > neighbour
+                connectivity = connectivity or low or high
+
+        rmse = math.sqrt(residual_sum_squares / count)
+        relief = maximum_residual - minimum_residual
+        safe[block_row, block_col] = (
+            rmse <= limits[0]
+            and maximum_abs_residual <= limits[1]
+            and curvature <= limits[2]
+            and relief <= limits[3]
+            and not (connectivity and relief >= limits[4])
+        )
+    return evaluated, safe
 
 
 def build_adaptive_grid(
@@ -695,7 +829,7 @@ def build_adaptive_grid(
         ceiling = np.minimum(ceiling, external)
 
     resolution = np.ones(shape, dtype=np.int16)
-    reason = np.full(shape, "terrain_pending", dtype="<U32")
+    reason = np.full(shape, "terrain_pending", dtype="<U20")
 
     emit(0.10, "Adaptive分類: 建物・道路の保護領域を作成中")
     direct_structure = building | roads | native
@@ -756,57 +890,55 @@ def build_adaptive_grid(
         for size in policy.active_levels_m[1:]
     )
     candidate_done = 0
-    last_progress_at = time.monotonic()
+    store_metrics = candidate_total <= _MAX_STORED_PLANE_FIT_METRICS
     for size in policy.active_levels_m[1:]:
-        child_size = size // 2
+        level_candidates = (
+            len(range(0, shape[0] - size + 1, size))
+            * len(range(0, shape[1] - size + 1, size))
+        )
         emit(
             0.45 + 0.40 * candidate_done / max(1, candidate_total),
-            f"Adaptive分類: {size} m候補ブロックを評価中",
+            f"Adaptive分類: {size} m候補ブロック {level_candidates:,}件を"
+            f"{get_num_threads()}スレッドで並列評価中",
         )
-        for row in range(0, shape[0] - size + 1, size):
-            for col in range(0, shape[1] - size + 1, size):
-                candidate_done += 1
-                now = time.monotonic()
-                if now - last_progress_at >= 8.0:
-                    emit(
-                        0.45 + 0.40 * candidate_done / max(1, candidate_total),
-                        f"Adaptive分類: {size} m候補 {candidate_done:,}/{candidate_total:,} を評価済み",
-                    )
-                    last_progress_at = now
-                row_slice = slice(row, row + size)
-                col_slice = slice(col, col + size)
-                current = resolution[row_slice, col_slice]
-                if not np.all(current == child_size):
-                    continue
-                if np.any(ceiling[row_slice, col_slice] < size):
-                    continue
-                zone_block = zones[row_slice, col_slice]
-                if np.any(zone_block != zone_block.flat[0]):
-                    continue
-
-                block = elevation[row_slice, col_slice]
-                # D8 flow accumulation is diagnostic-only and is not part of
-                # the coarsening decision. Computing it for tens of thousands
-                # of candidate blocks dominated Adaptive classification time.
-                metric = fit_plane_metrics(block, compute_flow_accumulation=False)
-                metrics[_block_key(size, row, col)] = metric
-                safe = (
-                    metric.rmse_m <= thresholds.rmse_by_level_m[size]
-                    and metric.max_abs_residual_m
-                    <= thresholds.max_abs_residual_by_level_m[size]
-                    and metric.curvature_indicator_m
-                    <= thresholds.curvature_by_level_m[size]
-                    and metric.detrended_relief_m
-                    <= thresholds.detrended_relief_by_level_m[size]
-                    and not (
-                        metric.connectivity_feature_present
-                        and metric.detrended_relief_m
-                        >= policy.connectivity_relief_threshold_m
-                    )
+        evaluated, safe = _classify_level_parallel(
+            elevation,
+            resolution,
+            ceiling,
+            zones,
+            size,
+            (
+                thresholds.rmse_by_level_m[size],
+                thresholds.max_abs_residual_by_level_m[size],
+                thresholds.curvature_by_level_m[size],
+                thresholds.detrended_relief_by_level_m[size],
+                policy.connectivity_relief_threshold_m,
+            ),
+        )
+        if store_metrics:
+            for block_row, block_col in np.argwhere(evaluated):
+                row = int(block_row) * size
+                col = int(block_col) * size
+                metrics[_block_key(size, row, col)] = fit_plane_metrics(
+                    elevation[row : row + size, col : col + size],
+                    compute_flow_accumulation=False,
                 )
-                if safe:
-                    resolution[row_slice, col_slice] = size
-                    reason[row_slice, col_slice] = "terrain_coarsened"
+
+        block_rows, block_cols = safe.shape
+        if block_rows and block_cols:
+            resolution_blocks = resolution[
+                : block_rows * size, : block_cols * size
+            ].reshape(block_rows, size, block_cols, size).transpose(0, 2, 1, 3)
+            reason_blocks = reason[
+                : block_rows * size, : block_cols * size
+            ].reshape(block_rows, size, block_cols, size).transpose(0, 2, 1, 3)
+            resolution_blocks[safe] = size
+            reason_blocks[safe] = "terrain_coarsened"
+        candidate_done += level_candidates
+        emit(
+            0.45 + 0.40 * candidate_done / max(1, candidate_total),
+            f"Adaptive分類: {size} m候補 {candidate_done:,}/{candidate_total:,} を評価済み",
+        )
 
     emit(0.87, "Adaptive分類: 隣接格子の2:1整合を確認中")
     balanced_cells = _balance_two_to_one(resolution, reason)
