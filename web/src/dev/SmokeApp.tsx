@@ -407,12 +407,21 @@ export default function SmokeApp() {
       )}
 
       {runId && resultMetadata && (
-        <ResultPanel
-          runId={runId}
-          metadata={resultMetadata}
-          rainfallSummary={rainfallSummary}
-          onNewAnalysis={handleNewAnalysis}
-        />
+        <>
+          <ResultPanel
+            runId={runId}
+            metadata={resultMetadata}
+            rainfallSummary={rainfallSummary}
+            onNewAnalysis={handleNewAnalysis}
+          />
+          <section className="smoke-card result-run-log" aria-label="完了した解析の処理ログ">
+            <RunProgress
+              status={status}
+              stageObservedAtMs={stageObservedAtMs}
+              lastPollAtMs={lastPollAtMs}
+            />
+          </section>
+        </>
       )}
 
       <footer>
