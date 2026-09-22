@@ -415,20 +415,12 @@ def render_grid_resolution_png(
 
 
 
-def _display_arrow_length_m(
-    *,
-    sample_span_m: float,
-    area: AnalysisArea,
-    max_vectors: int,
-) -> float:
-    """Keep vector geometry visibly scaled across small and large domains."""
+def _display_arrow_length_m(*, sample_span_m: float) -> float:
+    """Preserve the 0.8 arrow-length/vector-spacing ratio after decimation."""
 
-    if max_vectors <= 0:
-        raise ResultViewError("max_vectors must be positive")
-    visual_spacing_m = float(np.sqrt(area.area_m2 / max_vectors))
-    support_span_m = max(float(sample_span_m), visual_spacing_m)
-    domain_cap_m = max(12.0, 0.04 * min(area.width_m, area.height_m))
-    return max(4.0, min(support_span_m * 0.62, domain_cap_m))
+    if sample_span_m <= 0:
+        raise ResultViewError("sample_span_m must be positive")
+    return 0.8 * float(sample_span_m)
 
 
 def _adaptive_flow_vectors_geojson(
@@ -509,11 +501,7 @@ def _adaptive_flow_vectors_geojson(
         center_x = xmin + 0.5 * (col0 + col1)
         center_y = ymin + 0.5 * (row0 + row1)
         face_span_m = float(min(row1 - row0, col1 - col0))
-        arrow_length_m = _display_arrow_length_m(
-            sample_span_m=face_span_m,
-            area=area,
-            max_vectors=max_vectors,
-        )
+        arrow_length_m = _display_arrow_length_m(sample_span_m=face_span_m)
         tail_scale = arrow_length_m * 0.42
         tip_scale = arrow_length_m * 0.58
         tail = (
@@ -524,7 +512,7 @@ def _adaptive_flow_vectors_geojson(
             center_x + direction_x * tip_scale,
             center_y + direction_y * tip_scale,
         )
-        head_length = max(1.2, arrow_length_m * 0.28)
+        head_length = arrow_length_m * 0.28
         head_angle = np.deg2rad(30.0)
         cos_a = float(np.cos(head_angle))
         sin_a = float(np.sin(head_angle))
@@ -663,11 +651,7 @@ def flow_vectors_geojson(
                 max(cell_width_m, 1e-6) * (col1 - col0),
                 max(cell_height_m, 1e-6) * (row1 - row0),
             )
-            arrow_length_m = _display_arrow_length_m(
-                sample_span_m=block_span_m,
-                area=area,
-                max_vectors=max_vectors,
-            )
+            arrow_length_m = _display_arrow_length_m(sample_span_m=block_span_m)
             tail_scale = arrow_length_m * 0.42
             tip_scale = arrow_length_m * 0.58
 
@@ -679,7 +663,7 @@ def flow_vectors_geojson(
                 center_x + direction_x * tip_scale,
                 center_y + direction_y * tip_scale,
             )
-            head_length = max(1.2, arrow_length_m * 0.28)
+            head_length = arrow_length_m * 0.28
             head_angle = np.deg2rad(30.0)
             cos_a = float(np.cos(head_angle))
             sin_a = float(np.sin(head_angle))
