@@ -6,13 +6,11 @@ import {
   resultLayerUrl,
   type FlowVectorFeatureCollection,
   type FlowViewport,
-  type FlowViewport,
   type PointInspectionResponse,
   type ResultMetadataResponse,
 } from "../api/client";
 import ResultMap, { type FlowRenderStats } from "./ResultMap";
 import { encodeGif, type GifFrame } from "./gifEncoder";
-import { encodeGif } from "./gifEncoder";
 import "./result.css";
 
 type Props = {
@@ -104,11 +102,6 @@ export default function ResultPanel({
   const [flowLoading, setFlowLoading] = useState(false);
   const [flowError, setFlowError] = useState<string | null>(null);
   const [flowRenderStats, setFlowRenderStats] = useState<FlowRenderStats | null>(null);
-  const [flowViewport, setFlowViewport] = useState<FlowViewport | null>(null);
-  const [flowZoom, setFlowZoom] = useState(14);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [gifExporting, setGifExporting] = useState(false);
-  const captureRef = useRef<(() => Promise<HTMLCanvasElement>) | null>(null);
   const [flowViewport, setFlowViewport] = useState<FlowViewport>({ west: metadata.bounds.west_deg, south: metadata.bounds.south_deg, east: metadata.bounds.east_deg, north: metadata.bounds.north_deg });
   const [flowStride, setFlowStride] = useState(8);
   const [nextFlowVectorData, setNextFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
@@ -163,54 +156,6 @@ export default function ResultPanel({
     return resultLayerUrl(runId, "max-depth");
   }, [layer, runId, selectedTimeIndex]);
 
-  const vectorStride = useMemo(() => Math.max(1, Math.min(512, Math.round(2 ** Math.max(0, 18 - flowZoom)))), [flowZoom]);
-
-  useEffect(() => {
-    if (!isPlaying || metadata.available_time_indices.length < 2) return;
-    const timer = window.setInterval(() => {
-      setTimePosition((value) => (value + 1) % metadata.available_time_indices.length);
-    }, 500);
-    return () => window.clearInterval(timer);
-  }, [isPlaying, metadata.available_time_indices.length]);
-
-  const exportGif = useCallback(async () => {
-    const capture = captureRef.current;
-    if (!capture || metadata.available_time_indices.length === 0) return;
-    setGifExporting(true);
-    const original = timePosition;
-    const wasPlaying = isPlaying;
-    setIsPlaying(false);
-    try {
-      const step = Math.max(1, Math.ceil(metadata.available_time_indices.length / 120));
-      const frames: { rgba: Uint8ClampedArray; delayCs: number }[] = [];
-      let width = 0;
-      let height = 0;
-      for (let position = 0; position < metadata.available_time_indices.length; position += step) {
-        setTimePosition(position);
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 120));
-        const source = await capture();
-        const scale = Math.min(1, 800 / source.width, 800 / source.height);
-        width = Math.max(1, Math.round(source.width * scale));
-        height = Math.max(1, Math.round(source.height * scale));
-        const canvas = document.createElement("canvas");
-        canvas.width = width; canvas.height = height;
-        const context = canvas.getContext("2d");
-        if (!context) throw new Error("Canvas 2D context is unavailable");
-        context.drawImage(source, 0, 0, width, height);
-        frames.push({ rgba: context.getImageData(0, 0, width, height).data, delayCs: 50 * step });
-      }
-      const blob = encodeGif(width, height, frames);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url; anchor.download = `flood-result-${runId}.gif`; anchor.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } finally {
-      setTimePosition(original);
-      setIsPlaying(wasPlaying);
-      setGifExporting(false);
-    }
-  }, [isPlaying, metadata.available_time_indices.length, runId, timePosition]);
-
   const handleFlowToggle = useCallback(() => {
     if (flowVisible) {
       flowAutoLocateRef.current = false;
@@ -228,8 +173,7 @@ export default function ResultPanel({
     if (
       !flowVisible ||
       !metadata.flow_vectors_available ||
-      selectedTimeIndex === null ||
-      flowViewport === null
+      selectedTimeIndex === null
     ) {
       setFlowVectorData(null);
       setFlowLoading(false);
@@ -271,7 +215,7 @@ export default function ResultPanel({
             runId,
             candidateIndex,
             flowViewport,
-          flowStride,
+            flowStride,
             controller.signal,
           );
           if (disposed) return;
@@ -627,8 +571,6 @@ export default function ResultPanel({
                 ▶
               </button>
               <strong>現在: {elapsedLabel(metadata.time_values, selectedTimeIndex ?? 0)}</strong>
-              <button type="button" onClick={() => setIsPlaying((value) => !value)} aria-label={isPlaying ? "再生を停止" : "再生"}>{isPlaying ? "停止" : "再生"}</button>
-              <button type="button" disabled={gifExporting} onClick={() => void exportGif()} aria-label="GIFを書き出す">{gifExporting ? "GIF作成中…" : "GIF書き出し"}</button>
             </div>
           )}
         </div>

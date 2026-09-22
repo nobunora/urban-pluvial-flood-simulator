@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -322,8 +322,10 @@ describe("ResultPanel", () => {
         speed_unit: "m/s",
         min_speed_mps: 0.001,
         sample_stride_cells: 8,
+        arrow_length_m: 6.4,
         arrow_count: 0,
         sampling_method: "max-speed-wet-cell-per-block",
+        viewport: { west: 139.7, south: 35.6, east: 139.8, north: 35.7 },
       },
     };
     const visibleFlow: FlowVectorFeatureCollection = {
@@ -347,8 +349,10 @@ describe("ResultPanel", () => {
         speed_unit: "m/s",
         min_speed_mps: 0.001,
         sample_stride_cells: 8,
+        arrow_length_m: 6.4,
         arrow_count: 1,
         sampling_method: "max-speed-wet-cell-per-block",
+        viewport: { west: 139.7, south: 35.6, east: 139.8, north: 35.7 },
       },
     };
     vi.mocked(getFlowVectors).mockImplementation(async (_runId, timeIndex) => (
@@ -367,7 +371,9 @@ describe("ResultPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "流れベクトル" }));
 
     expect(await screen.findByText("現在: 00:30")).toBeVisible();
-    expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-arrow-count", "1");
+    await waitFor(() => {
+      expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-arrow-count", "1");
+    });
     expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-time-index", "3");
     expect(screen.getByLabelText("流速の凡例")).toBeVisible();
     expect(screen.getByText("0.001–0.10 m/s")).toBeVisible();
@@ -377,13 +383,15 @@ describe("ResultPanel", () => {
     expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
       "run-1",
       0,
-      12000,
+      expect.any(Object),
+      8,
       expect.any(AbortSignal),
     );
     expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
       "run-1",
       3,
-      12000,
+      expect.any(Object),
+      8,
       expect.any(AbortSignal),
     );
   });

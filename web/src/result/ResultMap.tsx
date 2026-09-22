@@ -198,6 +198,8 @@ export default function ResultMap({
   mapLabel,
   onInspect,
   onFlowRenderStats,
+  onViewportChange,
+  onCaptureReady,
 }: Props) {
   const baseContainerRef = useRef<HTMLDivElement | null>(null);
   const overlayContainerRef = useRef<HTMLDivElement | null>(null);
@@ -250,35 +252,8 @@ export default function ResultMap({
       bounds,
       fitBoundsOptions: { padding: 32, maxZoom: 18 },
       attributionControl: false,
-      preserveDrawingBuffer: true,
     });
     overlayMapRef.current = overlayMap;
-    onCaptureReady?.(async () => {
-      const source = overlayMap.getCanvas();
-      const output = document.createElement("canvas");
-      output.width = source.width;
-      output.height = source.height;
-      const context = output.getContext("2d");
-      if (!context) throw new Error("Canvas 2D context is unavailable");
-      context.drawImage(source, 0, 0);
-      const svg = flowSvgRef.current;
-      if (svg && svg.childElementCount > 0) {
-        const markup = new XMLSerializer().serializeToString(svg);
-        const blobUrl = URL.createObjectURL(new Blob([markup], { type: "image/svg+xml" }));
-        try {
-          const image = new Image();
-          await new Promise<void>((resolve, reject) => {
-            image.onload = () => resolve();
-            image.onerror = () => reject(new Error("SVG capture failed"));
-            image.src = blobUrl;
-          });
-          context.drawImage(image, 0, 0, output.width, output.height);
-        } finally {
-          URL.revokeObjectURL(blobUrl);
-        }
-      }
-      return output;
-    });
     onCaptureReady?.(async () => {
       const source = overlayMap.getCanvas();
       const output = document.createElement("canvas");
@@ -342,7 +317,6 @@ export default function ResultMap({
     });
 
     return () => {
-      onCaptureReady?.(null);
       markerRef.current?.remove();
       markerRef.current = null;
       onCaptureReady?.(null);

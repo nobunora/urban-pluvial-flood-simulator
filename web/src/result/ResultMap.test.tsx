@@ -153,8 +153,10 @@ const flowData: FlowVectorFeatureCollection = {
     speed_unit: "m/s",
     min_speed_mps: 0.001,
     sample_stride_cells: 8,
+    arrow_length_m: 6.4,
     arrow_count: 1,
     sampling_method: "max-speed-wet-cell-per-block",
+    viewport: { west: 139.7, south: 35.6, east: 139.8, north: 35.7 },
   },
 };
 
