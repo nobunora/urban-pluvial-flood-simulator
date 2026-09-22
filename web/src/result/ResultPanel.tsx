@@ -648,7 +648,7 @@ export default function ResultPanel({
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [playing, flowVectorData, nextFlowVectorData, loop, maxTimePosition]);
+  }, [playing, flowVectorData, nextFlowVectorData, loop, metadata.available_time_indices.length]);
 
   const handleViewportChange = useCallback((viewport: FlowViewport, zoom: number) => {
     setFlowViewport(viewport);
