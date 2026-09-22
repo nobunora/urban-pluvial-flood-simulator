@@ -393,15 +393,16 @@ export default function ResultMap({
         dx /= rawLength;
         dy /= rawLength;
 
-        // Geographic vector geometry naturally becomes tiny when zooming out.
-        // Keep a screen-space minimum so fitted/overview maps remain readable,
-        // while allowing the physical geometry to grow normally when zoomed in.
-        const shaftLength = Math.max(16, rawLength);
+        // The backend geometry already encodes the physical sampling rule:
+        // shaft length = 0.8 * vector spacing. Never impose a pixel minimum,
+        // because that would destroy the length/spacing ratio after zoom-time
+        // decimation.
+        const shaftLength = rawLength;
         const tipX = projectedTip.x;
         const tipY = projectedTip.y;
-        const tailX = tipX - dx * shaftLength;
-        const tailY = tipY - dy * shaftLength;
-        const headLength = Math.max(6, Math.min(11, shaftLength * 0.34));
+        const tailX = projectedTail.x;
+        const tailY = projectedTail.y;
+        const headLength = shaftLength * 0.28;
         const headWidth = headLength * 0.58;
         const baseX = tipX - dx * headLength;
         const baseY = tipY - dy * headLength;
