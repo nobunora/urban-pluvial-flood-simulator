@@ -78,7 +78,9 @@ def test_adaptive_builder_writes_quadtree_subgrid_and_distributed_rainfall(
             target_mid_radius_m=0.0,
         ),
     )
-    builder = AdaptiveSfincsModelBuilder(subgrid_pixels=2, subgrid_levels=3)
+    builder = AdaptiveSfincsModelBuilder(
+        subgrid_pixels=2, subgrid_levels=3, subgrid_strategy="uniform"
+    )
 
     result = builder.build(tmp_path / "model", full, adaptive, _rainfall())
 
@@ -222,7 +224,7 @@ def test_adaptive_static_cache_key_changes_with_grid_origin(tmp_path: Path) -> N
 def test_adaptive_subgrid_strategy_changes_cache_key(tmp_path: Path) -> None:
     grid = _grid()
     adaptive = build_adaptive_grid(grid)
-    uniform = AdaptiveSfincsModelBuilder(cache_root=tmp_path)
+    uniform = AdaptiveSfincsModelBuilder(cache_root=tmp_path, subgrid_strategy="uniform")
     variable = AdaptiveSfincsModelBuilder(
         cache_root=tmp_path, subgrid_strategy="2-2-4-8"
     )
@@ -235,6 +237,12 @@ def test_adaptive_subgrid_strategy_changes_cache_key(tmp_path: Path) -> None:
 def test_adaptive_builder_rejects_unknown_subgrid_strategy() -> None:
     with pytest.raises(ValueError, match="unsupported subgrid_strategy"):
         AdaptiveSfincsModelBuilder(subgrid_strategy="unknown")
+
+
+def test_adaptive_builder_defaults_to_optimized_2248() -> None:
+    builder = AdaptiveSfincsModelBuilder()
+
+    assert builder.subgrid_strategy == "2-2-4-8-optimized"
 
 
 def test_adaptive_builder_writes_2248_subgrid_strategy(tmp_path: Path) -> None:

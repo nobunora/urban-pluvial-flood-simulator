@@ -264,7 +264,7 @@ class AdaptiveSfincsModelBuilder:
         *,
         subgrid_pixels: int = ADAPTIVE_SUBGRID_PIXELS,
         subgrid_levels: int = ADAPTIVE_SUBGRID_LEVELS,
-        subgrid_strategy: str = "uniform",
+        subgrid_strategy: str = "2-2-4-8-optimized",
         cache_root: str | Path | None = None,
     ) -> None:
         if subgrid_pixels < 1:
