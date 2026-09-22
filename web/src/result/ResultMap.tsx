@@ -219,9 +219,6 @@ export default function ResultMap({
     viewportRef.current = onViewportChange;
   }, [onViewportChange]);
 
-  useEffect(() => {
-    viewportRef.current = onViewportChange;
-  }, [onViewportChange]);
 
   useEffect(() => {
     const baseContainer = baseContainerRef.current;
