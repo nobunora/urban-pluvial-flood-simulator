@@ -125,7 +125,95 @@ export default function ResultPanel({
       setIsFullscreen(document.fullscreenElement === focusRegionRef.current);
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    useEffect(() => {
+    setVisualFlowVectorData(flowVectorData);
+    setNextFlowVectorData(null);
+    if (!flowVisible || !flowVectorData || selectedTimeIndex === null) return;
+    const nextPosition = timePosition + 1;
+    const nextIndex = metadata.available_time_indices[nextPosition];
+    if (nextIndex == null) return;
+    const controller = new AbortController();
+    void getFlowVectors(runId, nextIndex, flowViewport, flowStride, controller.signal)
+      .then(setNextFlowVectorData)
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [flowVectorData, flowVisible, flowStride, flowViewport, metadata.available_time_indices, runId, selectedTimeIndex, timePosition]);
+
+  useEffect(() => {
+    if (!playing || metadata.available_time_indices.length < 2) return;
+    let frame = 0;
+    let started = performance.now();
+    const durationMs = 1000;
+    const tick = (now: number) => {
+      const fraction = Math.min(1, (now - started) / durationMs);
+      if (flowVectorData && nextFlowVectorData) setVisualFlowVectorData(interpolateFlow(flowVectorData, nextFlowVectorData, fraction));
+      if (fraction >= 1) {
+        setTimePosition((position) => {
+          if (position < maxTimePosition) return position + 1;
+          if (loop) return 0;
+          setPlaying(false);
+          return position;
+        });
+        started = now;
+      }
+      if (playing) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, flowVectorData, nextFlowVectorData, loop, metadata.available_time_indices.length]);
+
+  const handleViewportChange = useCallback((viewport: FlowViewport, zoom: number) => {
+    setFlowViewport(viewport);
+    setFlowStride(strideForZoom(zoom));
+  }, []);
+
+  const exportGif = useCallback(async () => {
+    const capture = captureRef.current;
+    if (!capture || metadata.available_time_indices.length === 0) return;
+    gifCancelRef.current = false;
+    setPlaying(false);
+    setLayer("time_depth");
+    const count = Math.min(80, metadata.available_time_indices.length);
+    const positions = Array.from({ length: count }, (_, i) => Math.round(i * (metadata.available_time_indices.length - 1) / Math.max(1, count - 1)));
+    const frames: GifFrame[] = [];
+    let width = 0;
+    let height = 0;
+    for (let i = 0; i < positions.length; i += 1) {
+      if (gifCancelRef.current) break;
+      const position = positions[i];
+      setTimePosition(position);
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+      const source = await capture();
+      const scale = Math.min(1, 640 / source.width, 480 / source.height);
+      width = Math.max(1, Math.round(source.width * scale));
+      height = Math.max(1, Math.round(source.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height + 28;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas 2D context is unavailable");
+      ctx.drawImage(source, 0, 0, width, height);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, height, width, 28);
+      ctx.fillStyle = "#111827";
+      ctx.font = "14px sans-serif";
+      ctx.fillText(elapsedLabel(metadata.time_values, metadata.available_time_indices[position] ?? 0), 10, height + 19);
+      frames.push({ rgba: ctx.getImageData(0, 0, width, height + 28).data, delayCs: 10 });
+      setGifProgress((i + 1) / positions.length);
+    }
+    if (!gifCancelRef.current && frames.length > 0) {
+      const blob = encodeGif(width, height + 28, frames, loop);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `flood-result-${runId}.gif`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    setGifProgress(null);
+  }, [loop, metadata.available_time_indices, metadata.time_values, runId]);
+
+\n\n  return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
   const toggleFullscreen = useCallback(() => {
@@ -247,7 +335,7 @@ export default function ResultPanel({
     metadata.flow_vectors_available,
     runId,
     selectedTimeIndex,
-    timePosition,
+    timePosition,\n    flowViewport,\n    flowStride,
   ]);
 
   useEffect(() => {
@@ -436,6 +524,21 @@ export default function ResultPanel({
 
           {showTimeline && (
             <div className="result-timeline">
+              <button type="button" onClick={() => setPlaying((value) => !value)} aria-label={playing ? "一時停止" : "再生"}>
+                {playing ? "Pause" : "Play"}
+              </button>
+              <label>
+                <input type="checkbox" checked={loop} onChange={(event) => setLoop(event.target.checked)} />
+                Loop
+              </label>
+              <button type="button" onClick={() => void exportGif()} disabled={gifProgress !== null}>GIF</button>
+              {gifProgress !== null && (
+                <>
+                  <progress max={1} value={gifProgress} />
+                  <button type="button" onClick={() => { gifCancelRef.current = true; }}>Cancel</button>
+                </>
+              )}
+              <span className="result-vector-note">GIFではCORS制約を避けるため背景地図を省略します。</span>
               <button
                 type="button"
                 disabled={timePosition <= 0}
@@ -647,92 +750,4 @@ export default function ResultPanel({
       </div>
     </section>
   );
-  useEffect(() => {
-    setVisualFlowVectorData(flowVectorData);
-    setNextFlowVectorData(null);
-    if (!flowVisible || !flowVectorData || selectedTimeIndex === null) return;
-    const nextPosition = timePosition + 1;
-    const nextIndex = metadata.available_time_indices[nextPosition];
-    if (nextIndex == null) return;
-    const controller = new AbortController();
-    void getFlowVectors(runId, nextIndex, flowViewport, flowStride, controller.signal)
-      .then(setNextFlowVectorData)
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [flowVectorData, flowVisible, flowStride, flowViewport, metadata.available_time_indices, runId, selectedTimeIndex, timePosition]);
-
-  useEffect(() => {
-    if (!playing || metadata.available_time_indices.length < 2) return;
-    let frame = 0;
-    let started = performance.now();
-    const durationMs = 1000;
-    const tick = (now: number) => {
-      const fraction = Math.min(1, (now - started) / durationMs);
-      if (flowVectorData && nextFlowVectorData) setVisualFlowVectorData(interpolateFlow(flowVectorData, nextFlowVectorData, fraction));
-      if (fraction >= 1) {
-        setTimePosition((position) => {
-          if (position < maxTimePosition) return position + 1;
-          if (loop) return 0;
-          setPlaying(false);
-          return position;
-        });
-        started = now;
-      }
-      if (playing) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [playing, flowVectorData, nextFlowVectorData, loop, metadata.available_time_indices.length]);
-
-  const handleViewportChange = useCallback((viewport: FlowViewport, zoom: number) => {
-    setFlowViewport(viewport);
-    setFlowStride(strideForZoom(zoom));
-  }, []);
-
-  const exportGif = useCallback(async () => {
-    const capture = captureRef.current;
-    if (!capture || metadata.available_time_indices.length === 0) return;
-    gifCancelRef.current = false;
-    setPlaying(false);
-    setLayer("time_depth");
-    const count = Math.min(80, metadata.available_time_indices.length);
-    const positions = Array.from({ length: count }, (_, i) => Math.round(i * (metadata.available_time_indices.length - 1) / Math.max(1, count - 1)));
-    const frames: GifFrame[] = [];
-    let width = 0;
-    let height = 0;
-    for (let i = 0; i < positions.length; i += 1) {
-      if (gifCancelRef.current) break;
-      const position = positions[i];
-      setTimePosition(position);
-      await new Promise((resolve) => window.setTimeout(resolve, 100));
-      const source = await capture();
-      const scale = Math.min(1, 640 / source.width, 480 / source.height);
-      width = Math.max(1, Math.round(source.width * scale));
-      height = Math.max(1, Math.round(source.height * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height + 28;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Canvas 2D context is unavailable");
-      ctx.drawImage(source, 0, 0, width, height);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, height, width, 28);
-      ctx.fillStyle = "#111827";
-      ctx.font = "14px sans-serif";
-      ctx.fillText(elapsedLabel(metadata.time_values, metadata.available_time_indices[position] ?? 0), 10, height + 19);
-      frames.push({ rgba: ctx.getImageData(0, 0, width, height + 28).data, delayCs: 10 });
-      setGifProgress((i + 1) / positions.length);
-    }
-    if (!gifCancelRef.current && frames.length > 0) {
-      const blob = encodeGif(width, height + 28, frames, loop);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `flood-result-${runId}.gif`;
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }
-    setGifProgress(null);
-  }, [loop, metadata.available_time_indices, metadata.time_values, runId]);
-
 }
