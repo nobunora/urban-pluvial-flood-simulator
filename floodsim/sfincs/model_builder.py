@@ -246,7 +246,7 @@ class SfincsModelBuilder:
 
 ADAPTIVE_SUBGRID_PIXELS = 8
 ADAPTIVE_SUBGRID_LEVELS = 10
-ADAPTIVE_SUBGRID_STRATEGIES = {"uniform", "2-2-4-8"}
+ADAPTIVE_SUBGRID_STRATEGIES = {"uniform", "2-2-4-8", "2-2-4-8-optimized"}
 
 
 class AdaptiveSfincsModelBuilder:
@@ -449,32 +449,48 @@ class AdaptiveSfincsModelBuilder:
                         "HydroMT-SFINCS quadtree subgrid component is incompatible"
                     )
                 subgrid_cpu_started = time.process_time()
-                base_subgrid_pixels = (
-                    2 if self.subgrid_strategy == "2-2-4-8" else self.subgrid_pixels
-                )
-                component.create(
-                    elevation_list=[{"elevation": elevation}],
-                    roughness_list=[{"manning": roughness}],
-                    nr_levels=self.subgrid_levels,
-                    nr_subgrid_pixels=base_subgrid_pixels,
-                    write_dep_tif=False,
-                    write_man_tif=False,
-                    quiet=True,
-                )
                 variable_patch: dict[str, int] | None = None
-                if self.subgrid_strategy == "2-2-4-8":
+                if self.subgrid_strategy == "2-2-4-8-optimized":
                     with _sfincs_environment():
                         from floodsim.sfincs.variable_subgrid import (
-                            apply_2248_subgrid_patch,
+                            build_optimized_2248_subgrid,
                         )
 
-                        variable_patch = apply_2248_subgrid_patch(
-                            component.data,
+                        component._data, variable_patch = build_optimized_2248_subgrid(
                             model.quadtree_grid.data,
                             grid.elevation_m,
                             grid.manning_n,
                             nr_levels=self.subgrid_levels,
                         )
+                    base_subgrid_pixels = 0
+                else:
+                    base_subgrid_pixels = (
+                        2
+                        if self.subgrid_strategy == "2-2-4-8"
+                        else self.subgrid_pixels
+                    )
+                    component.create(
+                        elevation_list=[{"elevation": elevation}],
+                        roughness_list=[{"manning": roughness}],
+                        nr_levels=self.subgrid_levels,
+                        nr_subgrid_pixels=base_subgrid_pixels,
+                        write_dep_tif=False,
+                        write_man_tif=False,
+                        quiet=True,
+                    )
+                    if self.subgrid_strategy == "2-2-4-8":
+                        with _sfincs_environment():
+                            from floodsim.sfincs.variable_subgrid import (
+                                apply_2248_subgrid_patch,
+                            )
+
+                            variable_patch = apply_2248_subgrid_patch(
+                                component.data,
+                                model.quadtree_grid.data,
+                                grid.elevation_m,
+                                grid.manning_n,
+                                nr_levels=self.subgrid_levels,
+                            )
                 phase_timings["subgrid_create_s"] = time.perf_counter() - phase_started
                 phase_timings["subgrid_create_cpu_s"] = (
                     time.process_time() - subgrid_cpu_started
@@ -488,7 +504,11 @@ class AdaptiveSfincsModelBuilder:
                 subgrid_sample_evaluations = (
                     subgrid_face_count + subgrid_uv_point_count
                 ) * base_subgrid_pixels * base_subgrid_pixels
-                if variable_patch is not None:
+                if self.subgrid_strategy == "2-2-4-8-optimized":
+                    subgrid_sample_evaluations = variable_patch[
+                        "patch_sample_evaluations"
+                    ]
+                elif variable_patch is not None:
                     subgrid_sample_evaluations += variable_patch[
                         "patch_sample_evaluations"
                     ]
@@ -629,13 +649,25 @@ class AdaptiveSfincsModelBuilder:
                 "strategy": self.subgrid_strategy,
                 "pixels_by_cell_size_m": (
                     {"1": 2, "2": 2, "4": 4, "8": 8}
-                    if self.subgrid_strategy == "2-2-4-8"
+                    if self.subgrid_strategy
+                    in {"2-2-4-8", "2-2-4-8-optimized"}
                     else None
                 ),
                 "effective_coarsest_subpixel_m": (
                     1.0
-                    if self.subgrid_strategy == "2-2-4-8"
+                    if self.subgrid_strategy
+                    in {"2-2-4-8", "2-2-4-8-optimized"}
                     else max(adaptive.active_levels_m) / self.subgrid_pixels
+                ),
+                "optimizations": (
+                    [
+                        "elide_repeated_1m_2x2_samples",
+                        "direct_aligned_2m_4m_8m_tables",
+                        "selected_uv_ordered_scan",
+                        "no_global_uv_sort",
+                    ]
+                    if self.subgrid_strategy == "2-2-4-8-optimized"
+                    else []
                 ),
                 "hypsometric_levels": self.subgrid_levels,
                 "variables": list(static_metadata["subgrid_variables"]),

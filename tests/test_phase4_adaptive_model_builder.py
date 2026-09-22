@@ -269,6 +269,25 @@ def test_adaptive_builder_writes_2248_subgrid_strategy(tmp_path: Path) -> None:
         }
 
 
+def test_adaptive_builder_writes_optimized_2248_strategy(tmp_path: Path) -> None:
+    full = _grid()
+    adaptive = build_adaptive_grid(full)
+    result = AdaptiveSfincsModelBuilder(
+        subgrid_levels=3,
+        subgrid_strategy="2-2-4-8-optimized",
+    ).build(tmp_path / "model", full, adaptive, _rainfall())
+
+    subgrid = result.report["subgrid"]
+    assert subgrid["strategy"] == "2-2-4-8-optimized"
+    assert subgrid["pixels_by_cell_size_m"] == {"1": 2, "2": 2, "4": 4, "8": 8}
+    assert subgrid["optimizations"] == [
+        "elide_repeated_1m_2x2_samples",
+        "direct_aligned_2m_4m_8m_tables",
+        "selected_uv_ordered_scan",
+        "no_global_uv_sort",
+    ]
+
+
 def test_adaptive_static_cache_key_changes_with_sfincs_mask(tmp_path: Path) -> None:
     grid = _grid()
     adaptive = build_adaptive_grid(grid)
