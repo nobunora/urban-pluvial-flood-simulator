@@ -187,7 +187,8 @@ export default function ResultPanel({
         const current = await getFlowVectors(
           runId,
           selectedTimeIndex,
-          12000,
+          flowViewport,
+          flowStride,
           controller.signal,
         );
         if (disposed) return;
@@ -209,7 +210,8 @@ export default function ResultPanel({
           const candidate = await getFlowVectors(
             runId,
             candidateIndex,
-            12000,
+            flowViewport,
+          flowStride,
             controller.signal,
           );
           if (disposed) return;
@@ -474,6 +476,8 @@ export default function ResultPanel({
               mapLabel={mapLabel}
               onInspect={handleInspect}
               onFlowRenderStats={setFlowRenderStats}
+              onViewportChange={handleViewportChange}
+              onCaptureReady={(capture) => { captureRef.current = capture; }}
             />
           </div>
 
