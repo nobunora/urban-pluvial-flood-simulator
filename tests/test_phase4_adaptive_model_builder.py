@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -114,7 +115,7 @@ def test_adaptive_builder_writes_quadtree_subgrid_and_distributed_rainfall(
     assert "storehsubgrid" in inp
     assert "storezvolume" in inp
     assert "regular_output_on_mesh" in inp
-    assert "alpha                 = 0.75" in inp
+    assert re.search(r"^alpha\s*=\s*0\.75\s*$", inp, re.MULTILINE)
     assert result.adaptive_layout_path == model_dir / "adaptive_face_layout.npz"
     assert result.report["depth_output"]["storehsubgrid"] == 1
     assert result.report["volume_output"]["storezvolume"] == 1
