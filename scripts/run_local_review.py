@@ -15,6 +15,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEB_DIR = REPO_ROOT / "web"
 STATIC_DIR = REPO_ROOT / "floodsim" / "static"
+LOCAL_SFINCS_RELATIVE_PATH = (
+    Path("SFINCS_2026_01_release")
+    / "SFINCS_v2.4.0_Galibier_release_exe"
+    / "sfincs.exe"
+)
+EXPECTED_SFINCS_SHA256 = "4EF0D62212FE3B23B0DD6BBBB06A0CE01961B38C7B1089CE6EA040145EE1E673"
 
 EXPECTED_PYTHON = (3, 12, 10)
 EXPECTED_PACKAGES = {
@@ -128,6 +134,59 @@ def _validate_static_build() -> None:
         raise SystemExit(f"Frontend build is incomplete; missing: {formatted}")
 
 
+def _git_worktree_roots() -> list[Path]:
+    """Return local worktrees without assuming an absolute checkout path."""
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return [REPO_ROOT]
+    roots = [
+        Path(line.removeprefix("worktree "))
+        for line in result.stdout.splitlines()
+        if line.startswith("worktree ")
+    ]
+    return roots or [REPO_ROOT]
+
+
+def _configure_sfincs(sfincs_bin: Path | None) -> None:
+    """Select an existing permitted Galibier binary; never download one."""
+    if sfincs_bin is not None:
+        executable = sfincs_bin.expanduser().resolve()
+        if not executable.is_file():
+            raise SystemExit(f"SFINCS executable not found: {executable}")
+        os.environ["SFINCS_BIN"] = str(executable)
+        return
+    if os.environ.get("SFINCS_BIN"):
+        return
+
+    from floodsim.sfincs.runner import (
+        SfincsEngineUnavailable,
+        resolve_sfincs_executable,
+        sha256_file,
+    )
+
+    try:
+        resolved = resolve_sfincs_executable()
+    except SfincsEngineUnavailable:
+        resolved = None
+    if resolved is not None:
+        print(f"[review] SFINCS: {resolved.source} / {resolved.executable}")
+        return
+
+    for root in _git_worktree_roots():
+        candidate = root / LOCAL_SFINCS_RELATIVE_PATH
+        if candidate.is_file() and sha256_file(candidate) == EXPECTED_SFINCS_SHA256:
+            os.environ["SFINCS_BIN"] = str(candidate.resolve())
+            print(f"[review] SFINCS: permitted local worktree binary / {candidate}")
+            return
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Build and run the local Full 1 m user-review application."
@@ -161,11 +220,7 @@ def main() -> None:
 
     os.chdir(REPO_ROOT)
 
-    if args.sfincs_bin is not None:
-        sfincs_bin = args.sfincs_bin.expanduser().resolve()
-        if not sfincs_bin.is_file():
-            raise SystemExit(f"SFINCS executable not found: {sfincs_bin}")
-        os.environ["SFINCS_BIN"] = str(sfincs_bin)
+    _configure_sfincs(args.sfincs_bin)
 
     _build_frontend()
     _validate_static_build()

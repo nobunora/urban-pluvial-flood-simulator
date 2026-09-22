@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from floodsim.sfincs.runner import SfincsEngineUnavailable
 from scripts import run_local_review
 
 
@@ -87,3 +89,46 @@ def test_local_review_rejects_removed_skip_build_option(
 
     assert exc_info.value.code == 2
     assert "unrecognized arguments: --skip-build" in capsys.readouterr().err
+
+
+def test_configure_sfincs_finds_permitted_binary_in_another_worktree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = tmp_path / run_local_review.LOCAL_SFINCS_RELATIVE_PATH
+    candidate.parent.mkdir(parents=True)
+    candidate.write_bytes(b"permitted")
+    monkeypatch.delenv("SFINCS_BIN", raising=False)
+    monkeypatch.setattr(run_local_review, "_git_worktree_roots", lambda: [tmp_path])
+    monkeypatch.setattr(
+        "floodsim.sfincs.runner.resolve_sfincs_executable",
+        lambda: (_ for _ in ()).throw(SfincsEngineUnavailable("missing")),
+    )
+    monkeypatch.setattr(
+        "floodsim.sfincs.runner.sha256_file",
+        lambda _path: run_local_review.EXPECTED_SFINCS_SHA256,
+    )
+
+    run_local_review._configure_sfincs(None)
+
+    assert Path(run_local_review.os.environ["SFINCS_BIN"]) == candidate.resolve()
+
+
+def test_configure_sfincs_rejects_unexpected_worktree_binary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = tmp_path / run_local_review.LOCAL_SFINCS_RELATIVE_PATH
+    candidate.parent.mkdir(parents=True)
+    candidate.write_bytes(b"unexpected")
+    monkeypatch.delenv("SFINCS_BIN", raising=False)
+    monkeypatch.setattr(run_local_review, "_git_worktree_roots", lambda: [tmp_path])
+    monkeypatch.setattr(
+        "floodsim.sfincs.runner.resolve_sfincs_executable",
+        lambda: (_ for _ in ()).throw(SfincsEngineUnavailable("missing")),
+    )
+    monkeypatch.setattr("floodsim.sfincs.runner.sha256_file", lambda _path: "WRONG")
+
+    run_local_review._configure_sfincs(None)
+
+    assert "SFINCS_BIN" not in run_local_review.os.environ
