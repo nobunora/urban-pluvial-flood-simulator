@@ -17,12 +17,16 @@ from floodsim.orchestration.run_coordinator import (
     AdaptiveNotAvailable,
     RunCoordinator,
 )
-from floodsim.preprocessing.adaptive_grid import build_adaptive_grid
+from floodsim.preprocessing.adaptive_grid import (
+    DEFAULT_ADAPTIVE_GRID_POLICY,
+    build_adaptive_grid,
+)
 from floodsim.preprocessing.full_grid import FullGridProduct
 from floodsim.preprocessing.roof_rainfall import allocate_roof_rainfall
 from floodsim.results.normalize import NormalizedResult
 from floodsim.sfincs.model_builder import ModelBuildResult
 from floodsim.sfincs.runner import ResolvedEngine, SfincsRunResult
+from floodsim.storage.adaptive_grid_cache import AdaptiveGridCache
 
 
 def _area() -> AnalysisArea:
@@ -84,6 +88,32 @@ def _rainfall(*_args: object, **_kwargs: object) -> RainfallTimeSeries:
         intensity_mm_per_h=[30.0, 0.0],
         source_metadata={"kind": "test"},
     )
+
+
+def test_adaptive_grid_cache_round_trip_and_invalid_resolution_rejection(
+    tmp_path: Path,
+) -> None:
+    cache = AdaptiveGridCache(tmp_path)
+    product = build_adaptive_grid(_grid())
+    key = cache.save("prepared-grid", DEFAULT_ADAPTIVE_GRID_POLICY, product)
+
+    loaded = cache.load("prepared-grid", DEFAULT_ADAPTIVE_GRID_POLICY)
+    assert loaded is not None
+    assert loaded[0] == key
+    np.testing.assert_array_equal(loaded[1].resolution_m, product.resolution_m)
+
+    arrays_path = tmp_path / "adaptive_grid" / key / "adaptive_grid.npz"
+    with np.load(arrays_path, allow_pickle=False) as archive:
+        level = archive["level"]
+        reason = archive["refinement_reason"]
+    np.savez_compressed(
+        arrays_path,
+        resolution_m=np.full(product.resolution_m.shape, 3, dtype=np.int16),
+        level=level,
+        refinement_reason=reason,
+    )
+
+    assert cache.load("prepared-grid", DEFAULT_ADAPTIVE_GRID_POLICY) is None
 
 
 class _AdaptiveBuilder:
