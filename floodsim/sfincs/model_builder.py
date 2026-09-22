@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -246,14 +248,14 @@ ADAPTIVE_SUBGRID_LEVELS = 10
 
 
 class AdaptiveSfincsModelBuilder:
-    """Build the Phase 4 quadtree + subgrid hydraulic model.
+    """Build Adaptive SFINCS runs from a rainfall-independent static bundle."""
 
-    The classifier decides hydraulic face size, while the original Full 1 m
-    terrain and Manning rasters remain the source for HydroMT-SFINCS subgrid
-    generation. Rainfall also remains on the canonical 1 m allocation raster,
-    preserving the roof-runoff redistribution field independently of quadtree
-    face size.
-    """
+    _STATIC_FILES = (
+        "sfincs.nc",
+        "sfincs_subgrid.nc",
+        "adaptive_face_layout.npz",
+        "static_model.json",
+    )
 
     def __init__(
         self,
@@ -276,11 +278,7 @@ class AdaptiveSfincsModelBuilder:
         adaptive: AdaptiveGridProduct,
     ) -> str:
         digest = hashlib.sha256()
-        # This key is the identity of the rainfall-independent Adaptive
-        # hydraulic model. Geometry belongs in the key even when raster values
-        # happen to be byte-identical: quadtree/subgrid coordinates and the
-        # face layout depend on the grid origin and transform.
-        digest.update(b"adaptive-static-model-v3-source-1m")
+        digest.update(b"adaptive-static-model-v4-source-1m")
         digest.update(str(self.subgrid_pixels).encode())
         digest.update(str(self.subgrid_levels).encode())
         digest.update(grid.crs_wkt.encode("utf-8"))
@@ -306,6 +304,84 @@ class AdaptiveSfincsModelBuilder:
             digest.update(memoryview(array).cast("B"))
         return digest.hexdigest()[:32]
 
+    def _cache_dir(self, key: str) -> Path | None:
+        return None if self.cache_root is None else self.cache_root / key
+
+    def _validate_static_bundle(
+        self,
+        bundle: Path,
+        *,
+        key: str,
+        grid: FullGridProduct,
+    ) -> dict[str, Any] | None:
+        if not all((bundle / name).is_file() for name in self._STATIC_FILES):
+            return None
+        try:
+            metadata = json.loads((bundle / "static_model.json").read_text(encoding="utf-8"))
+            if metadata.get("schema") != "adaptive-static-model-v4-source-1m":
+                return None
+            if metadata.get("cache_key") != key:
+                return None
+            with xr.open_dataset(bundle / "sfincs_subgrid.nc") as dataset:
+                if not dataset.data_vars:
+                    return None
+            with xr.open_dataset(bundle / "sfincs.nc") as dataset:
+                if not dataset.variables:
+                    return None
+            with np.load(bundle / "adaptive_face_layout.npz", allow_pickle=False) as layout:
+                required = {
+                    "resolution_m",
+                    "row_index",
+                    "col_index",
+                    "source_overlap_area_m2",
+                    "sfincs_mask",
+                    "source_height_cells",
+                    "source_width_cells",
+                }
+                if not required.issubset(layout.files):
+                    return None
+                if int(layout["source_height_cells"]) != grid.height_cells:
+                    return None
+                if int(layout["source_width_cells"]) != grid.width_cells:
+                    return None
+                face_count = len(layout["resolution_m"])
+                if any(len(layout[name]) != face_count for name in (
+                    "row_index", "col_index", "source_overlap_area_m2", "sfincs_mask"
+                )):
+                    return None
+            return metadata
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return None
+
+    def _materialize_static_bundle(self, bundle: Path, root: Path) -> None:
+        for name in ("sfincs.nc", "sfincs_subgrid.nc", "adaptive_face_layout.npz"):
+            shutil.copy2(bundle / name, root / name)
+
+    def _publish_static_bundle(
+        self,
+        cache_dir: Path,
+        *,
+        root: Path,
+        metadata: dict[str, Any],
+    ) -> None:
+        cache_dir.parent.mkdir(parents=True, exist_ok=True)
+        staging = Path(
+            tempfile.mkdtemp(prefix=f".{cache_dir.name}.", dir=cache_dir.parent)
+        )
+        try:
+            for name in ("sfincs.nc", "sfincs_subgrid.nc", "adaptive_face_layout.npz"):
+                shutil.copy2(root / name, staging / name)
+            atomic_write_json(staging / "static_model.json", metadata)
+            try:
+                staging.rename(cache_dir)
+            except FileExistsError:
+                # Another identical build won the publish race. Its complete
+                # atomically-published entry is authoritative.
+                pass
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging, ignore_errors=True)
+
     def build(
         self,
         model_dir: str | Path,
@@ -315,32 +391,41 @@ class AdaptiveSfincsModelBuilder:
     ) -> ModelBuildResult:
         root = Path(model_dir)
         root.mkdir(parents=True, exist_ok=True)
+        cache_key = self._subgrid_cache_key(grid, adaptive)
+        cache_dir = self._cache_dir(cache_key)
+        static_metadata: dict[str, Any] | None = None
+        static_cache_hit = False
+        layout_path = root / "adaptive_face_layout.npz"
+
         try:
+            if cache_dir is not None:
+                static_metadata = self._validate_static_bundle(
+                    cache_dir, key=cache_key, grid=grid
+                )
+                if static_metadata is not None:
+                    self._materialize_static_bundle(cache_dir, root)
+                    static_cache_hit = True
+
             with _sfincs_environment():
                 SfincsModel = _load_sfincs_model()
                 model = SfincsModel(root=root, mode="w+", write_gis=False)
                 _ = model.config.data
 
-            quadtree = create_adaptive_quadtree(model, grid, adaptive)
-
-            elevation = _raster(grid.elevation_m, grid, "elevtn")
-            roughness = _raster(grid.manning_n, grid, "manning")
-            component = getattr(model, "quadtree_subgrid", None)
-            if component is None or not hasattr(component, "create"):
-                raise ModelBuildError(
-                    "HydroMT-SFINCS quadtree subgrid component is incompatible"
-                )
-            subgrid_cache_hit = False
-            cached_subgrid: Path | None = None
-            if self.cache_root is not None:
-                cache_key = self._subgrid_cache_key(grid, adaptive)
-                cached_subgrid = self.cache_root / cache_key / "sfincs_subgrid.nc"
-            target_subgrid = root / "sfincs_subgrid.nc"
-            if cached_subgrid is not None and cached_subgrid.is_file():
-                shutil.copy2(cached_subgrid, target_subgrid)
-                model.config.set("sbgfile", target_subgrid.name)
-                subgrid_cache_hit = True
+            if static_cache_hit:
+                # Static topology/subgrid files are already complete. Do not
+                # reconstruct HydroMT quadtree/subgrid objects on rainfall-only
+                # runs; only point the dynamic config at the materialized files.
+                model.config.set("qtrfile", "sfincs.nc")
+                model.config.set("sbgfile", "sfincs_subgrid.nc")
             else:
+                quadtree = create_adaptive_quadtree(model, grid, adaptive)
+                elevation = _raster(grid.elevation_m, grid, "elevtn")
+                roughness = _raster(grid.manning_n, grid, "manning")
+                component = getattr(model, "quadtree_subgrid", None)
+                if component is None or not hasattr(component, "create"):
+                    raise ModelBuildError(
+                        "HydroMT-SFINCS quadtree subgrid component is incompatible"
+                    )
                 component.create(
                     elevation_list=[{"elevation": elevation}],
                     roughness_list=[{"manning": roughness}],
@@ -352,6 +437,64 @@ class AdaptiveSfincsModelBuilder:
                 )
                 if not getattr(component.data, "data_vars", None):
                     raise ModelBuildError("Adaptive subgrid generation produced no data")
+
+                write_quadtree_grid_compat(model.quadtree_grid, filename="sfincs.nc")
+                component.write(filename="sfincs_subgrid.nc")
+
+                face_rows = (
+                    np.asarray(model.quadtree_grid.data["n"].values, dtype=np.int32) - 1
+                )
+                face_cols = (
+                    np.asarray(model.quadtree_grid.data["m"].values, dtype=np.int32) - 1
+                )
+                np.savez_compressed(
+                    layout_path,
+                    resolution_m=quadtree.face_fields.resolution_m.astype(
+                        np.int16, copy=False
+                    ),
+                    row_index=face_rows,
+                    col_index=face_cols,
+                    source_overlap_area_m2=quadtree.face_fields.source_overlap_area_m2,
+                    sfincs_mask=quadtree.face_fields.sfincs_mask.astype(
+                        np.uint8, copy=False
+                    ),
+                    source_height_cells=np.int32(grid.height_cells),
+                    source_width_cells=np.int32(grid.width_cells),
+                )
+                with xr.open_dataset(root / "sfincs_subgrid.nc") as dataset:
+                    subgrid_variables = sorted(str(name) for name in dataset.data_vars)
+                level_counts = {
+                    f"{size}m": int(
+                        np.count_nonzero(quadtree.face_fields.resolution_m == size)
+                    )
+                    for size in (1, 2, 4, 8, 16, 32)
+                    if np.any(quadtree.face_fields.resolution_m == size)
+                }
+                static_metadata = {
+                    "schema": "adaptive-static-model-v4-source-1m",
+                    "cache_key": cache_key,
+                    "cell_counts": level_counts,
+                    "total_hydraulic_cells": quadtree.face_count,
+                    "quadtree_padded_width_m": quadtree.padded_width_m,
+                    "quadtree_padded_height_m": quadtree.padded_height_m,
+                    "active_cells": int(
+                        np.count_nonzero(quadtree.face_fields.sfincs_mask)
+                    ),
+                    "outflow_boundary_cells": int(
+                        np.count_nonzero(quadtree.face_fields.sfincs_mask == 3)
+                    ),
+                    "hydraulic_weighted_area_m2": (
+                        quadtree.face_fields.hydraulic_weighted_area_m2
+                    ),
+                    "subgrid_variables": subgrid_variables,
+                }
+                if cache_dir is not None:
+                    self._publish_static_bundle(
+                        cache_dir, root=root, metadata=static_metadata
+                    )
+
+            if static_metadata is None:
+                raise ModelBuildError("Adaptive static model metadata is unavailable")
 
             duration_seconds = float(rainfall.elapsed_seconds[-1])
             output_interval = derive_output_interval_seconds(duration_seconds)
@@ -366,61 +509,15 @@ class AdaptiveSfincsModelBuilder:
             model.config.set("dthisout", output_interval)
             model.config.set("outputformat", "net")
             model.config.set("coriolis", 0)
-            # Match the accepted Full-1 m CFL factor. Leaving Adaptive at the
-            # SFINCS default alpha=0.5 unnecessarily shortens every stable
-            # timestep versus the Full-1 m model (which explicitly uses 0.75).
             model.config.set("alpha", 0.75)
             model.config.set("storecumprcp", 1)
             model.config.set("storevel", 1)
-            # SFINCS suppresses h/hmax on subgrid runs unless this is enabled.
             model.config.set("storehsubgrid", 1)
-            # Needed for the Adaptive Full-vs-Adaptive volume validation gate.
             model.config.set("storezvolume", 1)
-            # SFINCS reverts a one-level quadtree to regular n/m map output by
-            # default. Keep the Adaptive result contract face-native even for
-            # open-area benchmarks that need only one quadtree level.
             model.config.set("regular_output_on_mesh", 1)
-
-            # Keep the already mass-conserving 1 m roof-allocation raster as
-            # SFINCS distributed precipitation forcing. The meteorological field
-            # is uniform; only roof-runoff redistribution varies spatially.
             _configure_precipitation(model, _precipitation(rainfall, grid), rainfall)
-
-            # rc3's normal quadtree writer serializes EPSG=None for the local
-            # authority-less AEQD CRS. Use the narrow compatibility writer for
-            # the grid, then let upstream components write subgrid/meteo files.
-            write_quadtree_grid_compat(model.quadtree_grid, filename="sfincs.nc")
-            if not subgrid_cache_hit:
-                component.write(filename="sfincs_subgrid.nc")
-                if cached_subgrid is not None:
-                    cached_subgrid.parent.mkdir(parents=True, exist_ok=True)
-                    temp_cache = cached_subgrid.with_suffix(".tmp")
-                    shutil.copy2(target_subgrid, temp_cache)
-                    os.replace(temp_cache, cached_subgrid)
             model.precipitation.write(filename="sfincs_netampr.nc")
             model.config.write()
-
-            face_rows = (
-                np.asarray(model.quadtree_grid.data["n"].values, dtype=np.int32) - 1
-            )
-            face_cols = (
-                np.asarray(model.quadtree_grid.data["m"].values, dtype=np.int32) - 1
-            )
-            layout_path = root / "adaptive_face_layout.npz"
-            np.savez_compressed(
-                layout_path,
-                resolution_m=quadtree.face_fields.resolution_m.astype(
-                    np.int16, copy=False
-                ),
-                row_index=face_rows,
-                col_index=face_cols,
-                source_overlap_area_m2=quadtree.face_fields.source_overlap_area_m2,
-                sfincs_mask=quadtree.face_fields.sfincs_mask.astype(
-                    np.uint8, copy=False
-                ),
-                source_height_cells=np.int32(grid.height_cells),
-                source_width_cells=np.int32(grid.width_cells),
-            )
         except ModelBuildError:
             raise
         except Exception as exc:
@@ -428,53 +525,59 @@ class AdaptiveSfincsModelBuilder:
                 "failed to build Adaptive HydroMT-SFINCS quadtree/subgrid model"
             ) from exc
 
-        if subgrid_cache_hit:
-            with xr.open_dataset(root / "sfincs_subgrid.nc") as cached_dataset:
-                subgrid_variables = sorted(str(name) for name in cached_dataset.data_vars)
-        else:
-            subgrid_variables = sorted(str(name) for name in component.data.data_vars)
-
-        level_counts = {
-            f"{size}m": int(np.count_nonzero(quadtree.face_fields.resolution_m == size))
-            for size in (1, 2, 4, 8, 16, 32)
-            if np.any(quadtree.face_fields.resolution_m == size)
-        }
-        active_faces = int(np.count_nonzero(quadtree.face_fields.sfincs_mask))
-        outflow_faces = int(np.count_nonzero(quadtree.face_fields.sfincs_mask == 3))
+        total_hydraulic_cells = int(static_metadata["total_hydraulic_cells"])
         report = {
             "schema_version": "1",
             "grid_type": "quadtree",
-            "cell_counts": level_counts,
-            "total_hydraulic_cells": quadtree.face_count,
+            "cell_counts": dict(static_metadata["cell_counts"]),
+            "total_hydraulic_cells": total_hydraulic_cells,
             "full_1m_equivalent_cells": adaptive.full_1m_equivalent_cells,
-            "reduction_ratio": quadtree.face_count / adaptive.full_1m_equivalent_cells,
+            "reduction_ratio": total_hydraulic_cells / adaptive.full_1m_equivalent_cells,
             "classifier_reduction_ratio": adaptive.reduction_ratio,
             "threshold_identity": adaptive.threshold_identity,
             "classifier_diagnostics": dict(adaptive.diagnostics),
             "model_crs_wkt": grid.crs_wkt,
             "quadtree_base_resolution_m": 32.0,
-            "quadtree_padded_width_m": quadtree.padded_width_m,
-            "quadtree_padded_height_m": quadtree.padded_height_m,
-            "active_cells": active_faces,
-            "outflow_boundary_cells": outflow_faces,
+            "quadtree_padded_width_m": static_metadata["quadtree_padded_width_m"],
+            "quadtree_padded_height_m": static_metadata["quadtree_padded_height_m"],
+            "active_cells": int(static_metadata["active_cells"]),
+            "outflow_boundary_cells": int(static_metadata["outflow_boundary_cells"]),
             "blocked_building_source_cells": int(np.count_nonzero(grid.building_mask)),
             "roughness": {"general": 0.030, "road": 0.020},
+            "static_model_cache": {
+                "cache_hit": static_cache_hit,
+                "cache_key": cache_key,
+                "artifacts": [
+                    "sfincs.nc",
+                    "sfincs_subgrid.nc",
+                    "adaptive_face_layout.npz",
+                ],
+                "rainfall_independent": True,
+            },
             "subgrid": {
-                "cache_hit": subgrid_cache_hit,
+                "cache_hit": static_cache_hit,
                 "source_terrain_resolution_m": 1.0,
                 "source_roughness_resolution_m": 1.0,
                 "pixels_per_hydraulic_cell": self.subgrid_pixels,
-                "effective_coarsest_subpixel_m": max(adaptive.active_levels_m) / self.subgrid_pixels,
+                "effective_coarsest_subpixel_m": (
+                    max(adaptive.active_levels_m) / self.subgrid_pixels
+                ),
                 "hypsometric_levels": self.subgrid_levels,
-                "variables": subgrid_variables,
+                "variables": list(static_metadata["subgrid_variables"]),
             },
             "rainfall_forcing": {
                 "grid_resolution_m": 1.0,
                 "spatial_mode": "uniform_meteorology_with_roof_allocation_weights",
-                "weighted_area_m2": quadtree.face_fields.hydraulic_weighted_area_m2,
+                "weighted_area_m2": float(
+                    static_metadata["hydraulic_weighted_area_m2"]
+                ),
             },
-            "rainfall_volume_before_weight_area_m2": grid.roof_allocation.meteorological_area_m2,
-            "rainfall_volume_after_weight_area_m2": grid.roof_allocation.hydraulic_weighted_area_m2,
+            "rainfall_volume_before_weight_area_m2": (
+                grid.roof_allocation.meteorological_area_m2
+            ),
+            "rainfall_volume_after_weight_area_m2": (
+                grid.roof_allocation.hydraulic_weighted_area_m2
+            ),
             "roof_rain_relative_mass_error": grid.roof_allocation.relative_mass_error,
             "output_interval_seconds": output_interval,
             "depth_output": {"storehsubgrid": 1, "variables": ["h", "hmax"]},
@@ -499,3 +602,4 @@ class AdaptiveSfincsModelBuilder:
         report_path = root / "model_build_report.json"
         atomic_write_json(report_path, report)
         return ModelBuildResult(root, report_path, report, layout_path)
+
