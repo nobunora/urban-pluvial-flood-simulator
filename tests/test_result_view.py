@@ -142,38 +142,10 @@ def test_time_depth_frames_and_grid_layer_are_visibly_distinct() -> None:
     assert _rgba(first).tobytes() != _rgba(second).tobytes()
 
 
-def test_flow_arrow_geometry_scales_with_large_analysis_domains() -> None:
-    small = AnalysisArea(
-        mode="rectangle",
-        bounds=_area().bounds,
-        center=_area().center,
-        width_m=500.0,
-        height_m=500.0,
-        area_m2=250_000.0,
-    )
-    large = AnalysisArea(
-        mode="rectangle",
-        bounds=_area().bounds,
-        center=_area().center,
-        width_m=4000.0,
-        height_m=4000.0,
-        area_m2=16_000_000.0,
-    )
-
-    small_length = _display_arrow_length_m(
-        sample_span_m=4.0,
-        area=small,
-        max_vectors=900,
-    )
-    large_length = _display_arrow_length_m(
-        sample_span_m=4.0,
-        area=large,
-        max_vectors=900,
-    )
-
-    assert small_length > 4.0
-    assert large_length > 14.0
-    assert large_length > small_length
+def test_flow_arrow_geometry_preserves_stride_ratio() -> None:
+    assert _display_arrow_length_m(sample_span_m=1.0) == 0.8
+    assert _display_arrow_length_m(sample_span_m=4.0) == 3.2
+    assert _display_arrow_length_m(sample_span_m=8.0) == 6.4
 
 
 def test_flow_vector_geojson_uses_saved_velocity_and_speed_properties() -> None:

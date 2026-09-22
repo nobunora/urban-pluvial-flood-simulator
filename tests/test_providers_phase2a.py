@@ -416,6 +416,8 @@ def test_vector_auto_fallback_preserves_budgets_and_skips_fallback_on_cancel():
 
 
 def test_plateau_citygml_parsing_honors_total_deadline(monkeypatch):
+    from types import SimpleNamespace
+
     from floodsim.providers import plateau
 
     citygml = b'''<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0"
@@ -425,7 +427,7 @@ def test_plateau_citygml_parsing_honors_total_deadline(monkeypatch):
       </gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface></bldg:lod0FootPrint></bldg:Building></core:cityObjectMember>
       </core:CityModel>'''
     ticks = iter([0.0, 0.0, 2.0])
-    monkeypatch.setattr(plateau.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(plateau, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
 
     with pytest.raises(ProviderTimeoutError, match="CityGML parsing"):
         extract_citygml(
