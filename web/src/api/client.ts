@@ -104,18 +104,29 @@ export function resultLayerUrl(
 }
 
 
+export type FlowViewport = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+};
+
 export function flowVectorsGeoJsonUrl(
   runId: string,
   timeIndex: number,
-  maxVectors = 900,
+  viewport: FlowViewport,
+  stride: number,
 ): string {
   const params = new URLSearchParams({
     time_index: String(timeIndex),
-    max_vectors: String(maxVectors),
+    west: String(viewport.west),
+    south: String(viewport.south),
+    east: String(viewport.east),
+    north: String(viewport.north),
+    stride: String(Math.max(1, Math.trunc(stride))),
   });
   return `/api/v1/runs/${encodeURIComponent(runId)}/layers/flow-vectors.geojson?${params.toString()}`;
 }
-
 
 export type FlowVectorFeatureCollection = {
   type: "FeatureCollection";
@@ -130,8 +141,8 @@ export type FlowVectorFeatureCollection = {
       u_mps: number;
       v_mps: number;
       time_index: number;
-      row?: number;
-      column?: number;
+      row: number;
+      column: number;
       face_index?: number;
       grid_resolution_m?: number;
     };
@@ -139,20 +150,23 @@ export type FlowVectorFeatureCollection = {
   metadata: {
     speed_unit: string;
     min_speed_mps: number;
-    sample_stride_cells?: number;
+    sample_stride_cells: number;
+    arrow_length_m: number;
     arrow_count: number;
-    sampling_method?: string;
+    sampling_method: string;
+    viewport: FlowViewport;
   };
 };
 
 export function getFlowVectors(
   runId: string,
   timeIndex: number,
-  maxVectors = 900,
+  viewport: FlowViewport,
+  stride: number,
   signal?: AbortSignal,
 ): Promise<FlowVectorFeatureCollection> {
   return jsonRequest<FlowVectorFeatureCollection>(
-    flowVectorsGeoJsonUrl(runId, timeIndex, maxVectors),
+    flowVectorsGeoJsonUrl(runId, timeIndex, viewport, stride),
     { signal },
   );
 }
