@@ -11,7 +11,8 @@ import {
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import type {
-  FlowVectorFeatureCollection,\n  FlowViewport,
+  FlowVectorFeatureCollection,
+  FlowViewport,
   ResultMetadataResponse,
 } from "../api/client";
 import { resultBounds, resultImageCoordinates } from "./resultGeometry";
@@ -32,7 +33,9 @@ type Props = {
   backgroundOpacity: number;
   mapLabel: string;
   onInspect: (lon: number, lat: number) => void;
-  onFlowRenderStats?: (stats: FlowRenderStats | null) => void;\n  onViewportChange?: (viewport: FlowViewport, zoom: number) => void;\n  onCaptureReady?: (capture: (() => Promise<HTMLCanvasElement>) | null) => void;
+  onFlowRenderStats?: (stats: FlowRenderStats | null) => void;
+  onViewportChange?: (viewport: FlowViewport, zoom: number) => void;
+  onCaptureReady?: (capture: (() => Promise<HTMLCanvasElement>) | null) => void;
 };
 
 const EMPTY_FLOW = {
@@ -202,12 +205,23 @@ export default function ResultMap({
   const overlayMapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
   const flowSvgRef = useRef<SVGSVGElement | null>(null);
-  const inspectRef = useRef(onInspect);\n  const viewportRef = useRef(onViewportChange);\n  const viewportRef = useRef(onViewportChange);\n  const viewportRef = useRef(onViewportChange);
+  const inspectRef = useRef(onInspect);
+  const viewportRef = useRef(onViewportChange);
+  const viewportRef = useRef(onViewportChange);
+  const viewportRef = useRef(onViewportChange);
   const initialImageUrlRef = useRef(imageUrl);
 
   useEffect(() => {
     inspectRef.current = onInspect;
-  }, [onInspect]);\n\n  useEffect(() => {\n    viewportRef.current = onViewportChange;\n  }, [onViewportChange]);\n\n  useEffect(() => {\n    viewportRef.current = onViewportChange;\n  }, [onViewportChange]);
+  }, [onInspect]);
+
+  useEffect(() => {
+    viewportRef.current = onViewportChange;
+  }, [onViewportChange]);
+
+  useEffect(() => {
+    viewportRef.current = onViewportChange;
+  }, [onViewportChange]);
 
   useEffect(() => {
     const baseContainer = baseContainerRef.current;
@@ -242,7 +256,33 @@ export default function ResultMap({
       fitBoundsOptions: { padding: 32, maxZoom: 18 },
       attributionControl: false,
     });
-    overlayMapRef.current = overlayMap;\n    onCaptureReady?.(async () => {\n      const source = overlayMap.getCanvas();\n      const output = document.createElement("canvas");\n      output.width = source.width;\n      output.height = source.height;\n      const context = output.getContext("2d");\n      if (!context) throw new Error("Canvas 2D context is unavailable");\n      context.drawImage(source, 0, 0);\n      const svg = flowSvgRef.current;\n      if (svg && svg.childElementCount > 0) {\n        const markup = new XMLSerializer().serializeToString(svg);\n        const blobUrl = URL.createObjectURL(new Blob([markup], { type: "image/svg+xml" }));\n        try {\n          const image = new Image();\n          await new Promise<void>((resolve, reject) => {\n            image.onload = () => resolve();\n            image.onerror = () => reject(new Error("SVG capture failed"));\n            image.src = blobUrl;\n          });\n          context.drawImage(image, 0, 0, output.width, output.height);\n        } finally {\n          URL.revokeObjectURL(blobUrl);\n        }\n      }\n      return output;\n    });
+    overlayMapRef.current = overlayMap;
+    onCaptureReady?.(async () => {
+      const source = overlayMap.getCanvas();
+      const output = document.createElement("canvas");
+      output.width = source.width;
+      output.height = source.height;
+      const context = output.getContext("2d");
+      if (!context) throw new Error("Canvas 2D context is unavailable");
+      context.drawImage(source, 0, 0);
+      const svg = flowSvgRef.current;
+      if (svg && svg.childElementCount > 0) {
+        const markup = new XMLSerializer().serializeToString(svg);
+        const blobUrl = URL.createObjectURL(new Blob([markup], { type: "image/svg+xml" }));
+        try {
+          const image = new Image();
+          await new Promise<void>((resolve, reject) => {
+            image.onload = () => resolve();
+            image.onerror = () => reject(new Error("SVG capture failed"));
+            image.src = blobUrl;
+          });
+          context.drawImage(image, 0, 0, output.width, output.height);
+        } finally {
+          URL.revokeObjectURL(blobUrl);
+        }
+      }
+      return output;
+    });
     overlayMap.addControl(new NavigationControl({ showCompass: false }), "top-right");
 
     const syncBase = () => {
@@ -255,7 +295,12 @@ export default function ResultMap({
       });
     };
 
-    const emitViewport = () => {\n      const b = overlayMap.getBounds();\n      viewportRef.current?.({ west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() }, overlayMap.getZoom());\n    };\n\n    const handleClick = (event: MapMouseEvent) => {
+    const emitViewport = () => {
+      const b = overlayMap.getBounds();
+      viewportRef.current?.({ west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() }, overlayMap.getZoom());
+    };
+
+    const handleClick = (event: MapMouseEvent) => {
       markerRef.current?.remove();
       markerRef.current = new Marker({ color: "#1f2937" })
         .setLngLat(event.lngLat)
