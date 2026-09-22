@@ -21,7 +21,6 @@ from floodsim.results.view import (
     ResultArrays,
     ResultTimeIndexInvalid,
     ResultViewError,
-    flow_vectors_geojson,
     inspect_native_point,
     load_normalized_arrays,
     render_grid_resolution_png,
