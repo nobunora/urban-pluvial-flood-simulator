@@ -176,6 +176,7 @@ def _configure_sfincs(sfincs_bin: Path | None) -> None:
     except SfincsEngineUnavailable:
         resolved = None
     if resolved is not None:
+        os.environ["SFINCS_BIN"] = str(resolved.executable)
         print(f"[review] SFINCS: {resolved.source} / {resolved.executable}")
         return
 

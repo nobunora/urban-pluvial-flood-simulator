@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from floodsim.sfincs.runner import SfincsEngineUnavailable
+from floodsim.sfincs.runner import ResolvedEngine, SfincsEngineUnavailable
 from scripts import run_local_review
 
 
@@ -112,6 +112,23 @@ def test_configure_sfincs_finds_permitted_binary_in_another_worktree(
     run_local_review._configure_sfincs(None)
 
     assert Path(run_local_review.os.environ["SFINCS_BIN"]) == candidate.resolve()
+
+
+def test_configure_sfincs_exports_managed_binary_to_server_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable = tmp_path / "sfincs.exe"
+    executable.write_bytes(b"managed")
+    monkeypatch.delenv("SFINCS_BIN", raising=False)
+    monkeypatch.setattr(
+        "floodsim.sfincs.runner.resolve_sfincs_executable",
+        lambda: ResolvedEngine(executable, "managed-local", "HASH"),
+    )
+
+    run_local_review._configure_sfincs(None)
+
+    assert Path(run_local_review.os.environ["SFINCS_BIN"]) == executable
 
 
 def test_configure_sfincs_rejects_unexpected_worktree_binary(
