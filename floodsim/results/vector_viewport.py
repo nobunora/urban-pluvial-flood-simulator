@@ -10,8 +10,8 @@ from pyproj import CRS, Transformer
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.providers.common import local_crs
 from floodsim.results.view import (
-    AdaptiveNormalizedArrays,
     DISPLAY_DRY_THRESHOLD_M,
+    AdaptiveNormalizedArrays,
     NormalizedArrays,
     ResultArrays,
     ResultArtifactMissing,
