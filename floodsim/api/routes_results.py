@@ -62,20 +62,28 @@ def _render_time_depth_cached(
     return render_time_depth_png(arrays, time_index=time_index, max_px=max_px)
 
 
-@lru_cache(maxsize=256)
-def _flow_geojson_cached(
+@lru_cache(maxsize=512)
+def _flow_viewport_cached(
     path_text: str,
     mtime_ns: int,
     area_json: str,
     time_index: int,
-    max_vectors: int,
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+    stride: int,
 ) -> dict[str, Any]:
     arrays = _load_arrays_cached(path_text, mtime_ns)
-    return flow_vectors_geojson(
+    return flow_vectors_viewport_geojson(
         arrays,
         area=AnalysisArea.model_validate_json(area_json),
         time_index=time_index,
-        max_vectors=max_vectors,
+        west=west,
+        south=south,
+        east=east,
+        north=north,
+        stride=stride,
     )
 
 
@@ -156,18 +164,26 @@ def grid_resolution_layer(run_id: UUID, max_px: int = 4096) -> Response:
 )
 def flow_vectors_geojson_layer(
     run_id: UUID,
-    time_index: int,
-    max_vectors: int = Query(default=900, ge=1, le=12000),
+    time_index: int = Query(ge=0),
+    west: float = Query(ge=-180, le=180),
+    south: float = Query(ge=-90, le=90),
+    east: float = Query(ge=-180, le=180),
+    north: float = Query(ge=-90, le=90),
+    stride: int = Query(default=8, ge=1, le=512),
 ) -> JSONResponse:
     try:
         path, mtime_ns = _arrays_path_for_run(run_id)
         record = coordinator.get(run_id)
-        payload = _flow_geojson_cached(
+        payload = _flow_viewport_cached(
             str(path),
             mtime_ns,
             record.config.analysis_area.model_dump_json(),
             time_index,
-            max_vectors,
+            west,
+            south,
+            east,
+            north,
+            stride,
         )
     except (RunNotFound, ResultNotReady, ResultViewError, OSError) as exc:
         raise _map_result_error(exc) from exc
