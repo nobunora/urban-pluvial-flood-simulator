@@ -6,11 +6,13 @@ import {
   estimateResources,
   getHealth,
   getResultMetadata,
+  getRecentRainfallRanking,
   getRun,
   importResult,
   type AnalysisArea,
   type ResourceEstimateResponse,
   type ResultMetadataResponse,
+  type RecentRainfallRankingResponse,
   type RunStatusResponse,
 } from "../api/client";
 import ResultPanel from "../result/ResultPanel";
@@ -53,8 +55,8 @@ export default function SmokeApp() {
   const [lat, setLat] = useState(String(DEFAULT_LAT));
   const [lon, setLon] = useState(String(DEFAULT_LON));
   const [halfSize, setHalfSize] = useState("250");
-  const [intensity, setIntensity] = useState("50");
-  const [duration, setDuration] = useState("60");
+  const [intensity, setIntensity] = useState("150");
+  const [duration, setDuration] = useState("20");
   const [adaptiveEnabled, setAdaptiveEnabled] = useState(false);
   const [backend, setBackend] = useState("確認中…");
   const [estimate, setEstimate] = useState<ResourceEstimateResponse | null>(null);
@@ -67,6 +69,7 @@ export default function SmokeApp() {
   const [resultError, setResultError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [rainfallRanking, setRainfallRanking] = useState<RecentRainfallRankingResponse | null>(null);
 
   const latValue = parseNumber(lat);
   const lonValue = parseNumber(lon);
@@ -103,6 +106,10 @@ export default function SmokeApp() {
     getHealth()
       .then((health) => setBackend(`${health.status} / app ${health.application_version}`))
       .catch((cause: unknown) => setBackend(`NG: ${String(cause)}`));
+  }, []);
+
+  useEffect(() => {
+    getRecentRainfallRanking().then(setRainfallRanking).catch(() => setRainfallRanking(null));
   }, []);
 
   useEffect(() => {
@@ -346,6 +353,31 @@ export default function SmokeApp() {
             </label>
             <label>雨量強度 (mm/h)<input value={intensity} disabled={setupLocked} onChange={(event) => setIntensity(event.target.value)} /></label>
             <label>継続時間 (min)<input value={duration} disabled={setupLocked} onChange={(event) => setDuration(event.target.value)} /></label>
+            {rainfallRanking && rainfallRanking.events.length > 0 && (
+              <section className="rainfall-ranking" aria-label="直近10年の降水量トップ10">
+                <h3>直近10年の降水量トップ10</h3>
+                <p>{rainfallRanking.period_start}〜{rainfallRanking.period_end}</p>
+                <ol>
+                  {rainfallRanking.events.map((event) => (
+                    <li key={event.event_id}>
+                      <button
+                        type="button"
+                        disabled={setupLocked}
+                        onClick={() => {
+                          setIntensity(String(Number(event.intensity_mm_per_h.toFixed(1))));
+                          setDuration(String(event.duration_minutes));
+                        }}
+                      >
+                        <strong>{event.station_name}</strong>
+                        <span>{event.total_precipitation_mm} mm / {event.duration_minutes}分</span>
+                        <span>{event.intensity_mm_per_h.toFixed(1)} mm/h相当 / {event.event_date_or_datetime_metadata ?? "日付不明"}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+                <small>{rainfallRanking.coverage_note}</small>
+              </section>
+            )}
             <fieldset className="adaptive-mode-control" disabled={setupLocked}>
               <legend>Adaptive Grid</legend>
               <div className="adaptive-mode-buttons" role="group" aria-label="Adaptive Grid切替">

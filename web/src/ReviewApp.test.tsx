@@ -6,6 +6,7 @@ import {
   createRun,
   estimateResources,
   getHealth,
+  getRecentRainfallRanking,
   getResultMetadata,
   getRun,
   importResult,
@@ -18,6 +19,7 @@ vi.mock("./api/client", async (importOriginal) => {
   return {
     ...actual,
     getHealth: vi.fn(),
+    getRecentRainfallRanking: vi.fn(),
     estimateResources: vi.fn(),
     createRun: vi.fn(),
     getRun: vi.fn(),
@@ -137,6 +139,28 @@ describe("local review UI", () => {
       run_id: "00000000-0000-0000-0000-000000000002",
       status: "COMPLETE",
     });
+    vi.mocked(getRecentRainfallRanking).mockResolvedValue({
+      period_start: "2016-09-23",
+      period_end: "2026-09-23",
+      coverage_note: "同梱された気象庁公式極値記録を対象に集計",
+      events: [
+        {
+          event_id: "tokyo-60m-1",
+          station_id: "44132",
+          station_name: "東京",
+          duration_minutes: 60,
+          total_precipitation_mm: 120,
+          intensity_mm_per_h: 120,
+          event_date_or_datetime_metadata: "2024/08/21",
+          source_url: "https://example.test/jma",
+          catalog_generated_at_utc: "2026-09-03T00:00:00+00:00",
+          data_quality_flags: [],
+          station_lon_deg: 139.75,
+          station_lat_deg: 35.69,
+          profile_available: false,
+        },
+      ],
+    });
     vi.mocked(searchLocation).mockResolvedValue({
       candidates: [],
       attribution: {
@@ -150,6 +174,8 @@ describe("local review UI", () => {
     render(<App />);
 
     expect(screen.getByText("ローカルレビュー版 — Full 1 m")).toBeVisible();
+    expect(screen.getByLabelText("雨量強度 (mm/h)")).toHaveValue("150");
+    expect(screen.getByLabelText("継続時間 (min)")).toHaveValue("20");
     expect(screen.getByRole("button", { name: "Adaptive OFF" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -167,6 +193,15 @@ describe("local review UI", () => {
 
     fireEvent.change(screen.getByLabelText("範囲"), { target: { value: "500" } });
     expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "1000");
+  });
+
+  it("fills rainfall inputs from the recent rainfall ranking", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /東京/ }));
+
+    expect(screen.getByLabelText("雨量強度 (mm/h)")).toHaveValue("120");
+    expect(screen.getByLabelText("継続時間 (min)")).toHaveValue("60");
   });
 
   it("imports a saved result for review and offers compressed export", async () => {

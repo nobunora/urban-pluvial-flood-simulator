@@ -11,6 +11,7 @@ export type RunStatusResponse = components["schemas"]["RunStatusResponse"];
 export type ResultMetadataResponse = components["schemas"]["ResultMetadataResponse"];
 export type PointInspectionResponse = components["schemas"]["PointInspectionResponse"];
 export type ResultImportResponse = components["schemas"]["ResultImportResponse"];
+export type RecentRainfallRankingResponse = components["schemas"]["RecentRainfallRankingResponse"];
 
 async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await window.fetch(path, init);
@@ -69,6 +70,10 @@ export function getResultMetadata(runId: string): Promise<ResultMetadataResponse
   return jsonRequest<ResultMetadataResponse>(
     `/api/v1/runs/${encodeURIComponent(runId)}/result-metadata`,
   );
+}
+
+export function getRecentRainfallRanking(): Promise<RecentRainfallRankingResponse> {
+  return jsonRequest<RecentRainfallRankingResponse>("/api/v1/rainfall/recent-ranking");
 }
 
 export function resultExportUrl(runId: string): string {

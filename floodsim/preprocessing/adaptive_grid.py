@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import pairwise
 from typing import Final
@@ -623,6 +625,7 @@ def build_adaptive_grid(
     hard_boundary_zone: np.ndarray | None = None,
     existing_resolution_ceiling_m: np.ndarray | None = None,
     native_structure_mask: np.ndarray | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> AdaptiveGridProduct:
     """Coarsen Full 1 m to successive power-of-two levels only when safe.
 
@@ -634,6 +637,12 @@ def build_adaptive_grid(
 
     policy.validate()
     _validate_thresholds(thresholds, policy.active_levels_m)
+
+    def emit(fraction: float, detail: str) -> None:
+        if progress_callback is not None:
+            progress_callback(fraction, detail)
+
+    emit(0.02, "Adaptive分類: 入力格子と保護条件を検証中")
 
     elevation = np.asarray(full_grid.elevation_m, dtype=np.float32)
     building = np.asarray(full_grid.building_mask, dtype=bool)
@@ -688,6 +697,7 @@ def build_adaptive_grid(
     resolution = np.ones(shape, dtype=np.int16)
     reason = np.full(shape, "terrain_pending", dtype="<U32")
 
+    emit(0.10, "Adaptive分類: 建物・道路の保護領域を作成中")
     direct_structure = building | roads | native
     structure_buffer = _metric_feature_buffer(
         direct_structure,
@@ -700,6 +710,7 @@ def build_adaptive_grid(
     _apply_ceiling(ceiling, reason, roads, 1, "road")
     _apply_ceiling(ceiling, reason, building, 1, "building")
 
+    emit(0.25, "Adaptive分類: 地形の段差・尾根・窪地を抽出中")
     terrain_structure = _terrain_structure_mask(
         elevation,
         curvature_threshold_m=policy.terrain_structure_curvature_threshold_m,
@@ -721,6 +732,7 @@ def build_adaptive_grid(
     _apply_ceiling(ceiling, reason, terrain_inner, min(2, max_resolution), "terrain_near")
     _apply_ceiling(ceiling, reason, terrain_structure, 1, "terrain_structure")
 
+    emit(0.40, "Adaptive分類: 地形・対象地点の解像度上限を統合中")
     target_limits, target_protected = _target_ceiling(shape, policy)
     target_core = target_limits == 1
     target_mid = target_protected & ~target_core
@@ -738,10 +750,29 @@ def build_adaptive_grid(
 
     # Required direction: begin everywhere at 1 m, then merge complete blocks
     # successively into 2 m, 4 m and 8 m or later configured extension levels.
+    candidate_total = sum(
+        len(range(0, shape[0] - size + 1, size))
+        * len(range(0, shape[1] - size + 1, size))
+        for size in policy.active_levels_m[1:]
+    )
+    candidate_done = 0
+    last_progress_at = time.monotonic()
     for size in policy.active_levels_m[1:]:
         child_size = size // 2
+        emit(
+            0.45 + 0.40 * candidate_done / max(1, candidate_total),
+            f"Adaptive分類: {size} m候補ブロックを評価中",
+        )
         for row in range(0, shape[0] - size + 1, size):
             for col in range(0, shape[1] - size + 1, size):
+                candidate_done += 1
+                now = time.monotonic()
+                if now - last_progress_at >= 8.0:
+                    emit(
+                        0.45 + 0.40 * candidate_done / max(1, candidate_total),
+                        f"Adaptive分類: {size} m候補 {candidate_done:,}/{candidate_total:,} を評価済み",
+                    )
+                    last_progress_at = now
                 row_slice = slice(row, row + size)
                 col_slice = slice(col, col + size)
                 current = resolution[row_slice, col_slice]
@@ -777,7 +808,9 @@ def build_adaptive_grid(
                     resolution[row_slice, col_slice] = size
                     reason[row_slice, col_slice] = "terrain_coarsened"
 
+    emit(0.87, "Adaptive分類: 隣接格子の2:1整合を確認中")
     balanced_cells = _balance_two_to_one(resolution, reason)
+    emit(0.94, "Adaptive分類: 解像度マップと境界保持を検証中")
     _validate_resolution_map(
         resolution,
         active_levels_m=policy.active_levels_m,
@@ -788,6 +821,7 @@ def build_adaptive_grid(
     counts = _count_cells(resolution, policy.active_levels_m)
     total = int(sum(counts.values()))
     full_cells = int(elevation.size)
+    emit(1.0, "Adaptive分類: 完了")
     return AdaptiveGridProduct(
         resolution_m=resolution,
         level=np.rint(np.log2(resolution)).astype(np.int8),

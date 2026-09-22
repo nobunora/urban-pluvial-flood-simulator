@@ -102,6 +102,24 @@ def test_flat_open_area_safely_coarsens_to_production_8m_level() -> None:
     assert ADAPTIVE_LEVELS_M == (1, 2, 4, 8, 16, 32)
 
 
+def test_adaptive_classifier_reports_granular_progress() -> None:
+    updates: list[tuple[float, str]] = []
+
+    build_adaptive_grid(
+        _full_grid(),
+        policy=_classifier_policy(),
+        progress_callback=lambda fraction, detail: updates.append((fraction, detail)),
+    )
+
+    assert updates[0][0] == pytest.approx(0.02)
+    assert updates[-1] == (1.0, "Adaptive分類: 完了")
+    assert any("建物・道路" in detail for _, detail in updates)
+    assert any("地形の段差" in detail for _, detail in updates)
+    assert any("候補ブロック" in detail for _, detail in updates)
+    assert any("2:1整合" in detail for _, detail in updates)
+    assert [fraction for fraction, _ in updates] == sorted(fraction for fraction, _ in updates)
+
+
 def test_smooth_uniform_steep_slope_is_not_kept_at_one_metre() -> None:
     full = _full_grid()
     yy, xx = np.indices(full.elevation_m.shape, dtype=np.float32)

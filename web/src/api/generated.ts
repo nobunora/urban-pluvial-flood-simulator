@@ -75,6 +75,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rainfall/recent-ranking": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recent Rainfall Ranking
+         * @description Return recent events represented in the packaged official JMA catalog.
+         */
+        get: operations["recent_rainfall_ranking_api_v1_rainfall_recent_ranking_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rainfall/stations": {
         parameters: {
             query?: never;
@@ -540,6 +560,17 @@ export interface components {
             /** Stations */
             stations: components["schemas"]["RainfallStationResponse"][];
         };
+        /** RecentRainfallRankingResponse */
+        RecentRainfallRankingResponse: {
+            /** Coverage Note */
+            coverage_note: string;
+            /** Events */
+            events: components["schemas"]["RainfallEventResponse"][];
+            /** Period End */
+            period_end: string;
+            /** Period Start */
+            period_start: string;
+        };
         /** ResourceEstimateRequest */
         ResourceEstimateRequest: {
             /**
@@ -872,6 +903,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recent_rainfall_ranking_api_v1_rainfall_recent_ranking_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentRainfallRankingResponse"];
                 };
             };
         };

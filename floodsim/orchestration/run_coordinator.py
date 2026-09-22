@@ -148,6 +148,7 @@ class RunRecord:
     client_lease_enabled: bool = False
     last_client_heartbeat_monotonic: float | None = None
     client_lease_expiry_observations: int = 0
+    last_activity_monotonic: float = field(default_factory=time.monotonic)
 
 
 class RunCoordinator:
@@ -292,6 +293,22 @@ class RunCoordinator:
             line = f"[APP] {line}"
         with record.lock:
             record.activity_lines.append(line)
+            record.last_activity_monotonic = time.monotonic()
+
+    def _heartbeat_activity(self, record: RunRecord, stop_event: threading.Event) -> None:
+        """Keep long opaque library calls visibly alive without changing their work."""
+        while not stop_event.wait(1.0):
+            with record.lock:
+                state = record.machine.state
+                silent_seconds = time.monotonic() - record.last_activity_monotonic
+            if state in {RunState.COMPLETE, RunState.FAILED, RunState.CANCELLED}:
+                return
+            if silent_seconds < 10.0:
+                continue
+            detail = f"{STAGE_LABELS[state]}: 処理継続中（直近更新から約{int(silent_seconds)}秒）"
+            with record.lock:
+                record.progress_detail = detail
+            self._append_activity(record, detail)
 
     def _append_stage_timing(self, record: RunRecord, *, now: float | None = None) -> None:
         measured_at = time.monotonic() if now is None else now
@@ -611,6 +628,14 @@ class RunCoordinator:
     def _execute(self, record: RunRecord) -> None:
         run_root = self.store.ensure_run(record.run_id)
         runtime_diagnostic: dict[str, Any] = {}
+        heartbeat_stop = threading.Event()
+        heartbeat = threading.Thread(
+            target=self._heartbeat_activity,
+            args=(record, heartbeat_stop),
+            name=f"floodsim-progress-{record.run_id}",
+            daemon=True,
+        )
+        heartbeat.start()
         try:
             mode_label = (
                 "Adaptive"
@@ -784,6 +809,9 @@ class RunCoordinator:
                         "hard_boundary_zone": grid.adaptive_hard_boundary_zone,
                         "existing_resolution_ceiling_m": grid.adaptive_resolution_ceiling_m,
                         "native_structure_mask": grid.native_structure_mask,
+                        "progress_callback": lambda fraction, detail: self._update_work_progress(
+                            record, fraction, detail
+                        ),
                     }
                     for name, value in adaptive_inputs.items():
                         if accepts_kwargs or name in adaptive_signature.parameters:
@@ -1016,6 +1044,7 @@ class RunCoordinator:
                     self._append_event(record, RunState.FAILED, "計算に失敗しました。")
                 self._persist_manifest(record)
         finally:
+            heartbeat_stop.set()
             record.runner = None
             with self._lock:
                 if self._active_run_id == record.run_id:

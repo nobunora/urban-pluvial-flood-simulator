@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query
 
@@ -12,6 +14,7 @@ from floodsim.api.schemas import (
     RainfallExtremesResponse,
     RainfallStationResponse,
     RainfallStationSearchResponse,
+    RecentRainfallRankingResponse,
 )
 from floodsim.domain.rainfall import historical_uniform_intensity
 from floodsim.providers.common import ProviderError
@@ -69,6 +72,45 @@ def rainfall_station_extremes(station_id: str) -> RainfallExtremesResponse:
     return RainfallExtremesResponse(
         station=_station_response(station),
         events=[_event_response(event) for event in catalog.extremes(station_id)],
+    )
+
+
+@router.get("/rainfall/recent-ranking", response_model=RecentRainfallRankingResponse)
+def recent_rainfall_ranking() -> RecentRainfallRankingResponse:
+    """Return recent events represented in the packaged official JMA catalog."""
+    catalog = _catalog_or_error()
+    today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
+    try:
+        period_start = today.replace(year=today.year - 10)
+    except ValueError:
+        period_start = today.replace(year=today.year - 10, day=28)
+
+    recent: list[JmaRainfallEvent] = []
+    for event in catalog.events:
+        metadata = event.event_date_or_datetime_metadata
+        if not metadata:
+            continue
+        try:
+            event_date = datetime.strptime(
+                metadata.split()[0], "%Y/%m/%d"
+            ).replace(tzinfo=ZoneInfo("Asia/Tokyo")).date()
+        except ValueError:
+            continue
+        if period_start <= event_date <= today:
+            recent.append(event)
+    recent.sort(
+        key=lambda event: (
+            -event.total_precipitation_mm,
+            event.duration_minutes,
+            event.station_id,
+            event.event_id,
+        )
+    )
+    return RecentRainfallRankingResponse(
+        period_start=period_start.isoformat(),
+        period_end=today.isoformat(),
+        coverage_note="同梱された気象庁公式極値記録に収録されている地域・事例を対象に集計",
+        events=[_event_response(event) for event in recent[:10]],
     )
 
 

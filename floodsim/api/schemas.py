@@ -109,6 +109,15 @@ class RainfallExtremesResponse(BaseModel):
     events: list[RainfallEventResponse]
 
 
+class RecentRainfallRankingResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    period_start: str
+    period_end: str
+    coverage_note: str
+    events: list[RainfallEventResponse] = Field(max_length=10)
+
+
 class RunCreateResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

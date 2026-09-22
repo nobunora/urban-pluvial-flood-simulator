@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 import requests
@@ -286,6 +288,37 @@ def test_rainfall_api_returns_nearest_packaged_stations_and_event_coordinates() 
     no_events = client.get("/api/v1/rainfall/stations/44136/extremes")
     assert no_events.status_code == 200
     assert no_events.json()["events"] == []
+
+
+def test_recent_rainfall_ranking_is_limited_sorted_and_within_ten_years() -> None:
+    response = TestClient(app).get("/api/v1/rainfall/recent-ranking")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert 1 <= len(payload["events"]) <= 10
+    today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
+    try:
+        ten_years_ago = today.replace(year=today.year - 10)
+    except ValueError:
+        ten_years_ago = today.replace(year=today.year - 10, day=28)
+    assert payload["period_start"] == ten_years_ago.isoformat()
+    assert payload["period_end"] == today.isoformat()
+    totals = [event["total_precipitation_mm"] for event in payload["events"]]
+    assert totals == sorted(totals, reverse=True)
+    period_start = date.fromisoformat(payload["period_start"])
+    period_end = date.fromisoformat(payload["period_end"])
+    assert all(
+        period_start
+        <= date(
+            *map(
+                int,
+                event["event_date_or_datetime_metadata"].split()[0].split("/"),
+            )
+        )
+        <= period_end
+        for event in payload["events"]
+    )
+    assert "同梱" in payload["coverage_note"]
 
 
 def test_rainfall_api_uses_stable_not_found_errors() -> None:

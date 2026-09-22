@@ -198,7 +198,7 @@ export default function RunProgress({ status, stageObservedAtMs, lastPollAtMs }:
       )}
 
       {activityLines.length > 0 && (
-        <details className="run-progress-console">
+        <details className="run-progress-console" open>
           <summary className="run-progress-console-heading">
             <strong>処理ログ</strong>
             <span>全 {activityLines.length} 行</span>

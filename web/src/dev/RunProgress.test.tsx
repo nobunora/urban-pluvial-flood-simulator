@@ -102,6 +102,7 @@ describe("RunProgress", () => {
     );
 
     expect(screen.getByText("処理ログ")).toBeVisible();
+    expect(screen.getByLabelText("処理ログ").closest("details")).toHaveAttribute("open");
     expect(screen.getByLabelText("処理ログ")).toHaveTextContent("Using 8 of 8 available threads");
     expect(screen.getByLabelText("処理ログ")).toHaveTextContent("40% complete");
   });

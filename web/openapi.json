@@ -713,6 +713,39 @@
         "title": "RainfallStationSearchResponse",
         "type": "object"
       },
+      "RecentRainfallRankingResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "coverage_note": {
+            "title": "Coverage Note",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RainfallEventResponse"
+            },
+            "maxItems": 10,
+            "title": "Events",
+            "type": "array"
+          },
+          "period_end": {
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "title": "Period Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period_start",
+          "period_end",
+          "coverage_note",
+          "events"
+        ],
+        "title": "RecentRainfallRankingResponse",
+        "type": "object"
+      },
       "ResourceEstimateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1473,6 +1506,28 @@
           }
         },
         "summary": "Rainfall Event",
+        "tags": [
+          "rainfall"
+        ]
+      }
+    },
+    "/api/v1/rainfall/recent-ranking": {
+      "get": {
+        "description": "Return recent events represented in the packaged official JMA catalog.",
+        "operationId": "recent_rainfall_ranking_api_v1_rainfall_recent_ranking_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentRainfallRankingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Recent Rainfall Ranking",
         "tags": [
           "rainfall"
         ]
