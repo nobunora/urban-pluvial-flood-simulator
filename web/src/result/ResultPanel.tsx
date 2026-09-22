@@ -42,9 +42,12 @@ const GRID_LEGEND = [
   ["32 m", "#D0C8AD"],
 ] as const;
 
-function strideForZoom(zoom: number): number {
-  const exponent = Math.max(0, Math.min(9, Math.round(18 - zoom)));
-  return 2 ** exponent;
+export function strideForZoom(zoom: number): number {
+  // Full detail is the canonical 1 m grid. Each zoom band then decimates the
+  // same global lattice: stride 2 = every other vector, stride 3 = keep one
+  // and skip two, etc. This is intentionally integer rather than powers of 2.
+  if (zoom >= 18) return 1;
+  return Math.max(1, Math.min(512, 1 + Math.floor(18 - zoom)));
 }
 
 function interpolateFlow(a: FlowVectorFeatureCollection, b: FlowVectorFeatureCollection, t: number): FlowVectorFeatureCollection {
@@ -103,7 +106,7 @@ export default function ResultPanel({
   const [flowError, setFlowError] = useState<string | null>(null);
   const [flowRenderStats, setFlowRenderStats] = useState<FlowRenderStats | null>(null);
   const [flowViewport, setFlowViewport] = useState<FlowViewport>({ west: metadata.bounds.west_deg, south: metadata.bounds.south_deg, east: metadata.bounds.east_deg, north: metadata.bounds.north_deg });
-  const [flowStride, setFlowStride] = useState(8);
+  const [flowStride, setFlowStride] = useState(1);
   const [nextFlowVectorData, setNextFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
   const [visualFlowVectorData, setVisualFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
   const [playing, setPlaying] = useState(false);
