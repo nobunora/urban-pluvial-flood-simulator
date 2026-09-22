@@ -11,7 +11,7 @@ import {
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import type {
-  FlowVectorFeatureCollection,
+  FlowVectorFeatureCollection,\n  FlowViewport,
   ResultMetadataResponse,
 } from "../api/client";
 import { resultBounds, resultImageCoordinates } from "./resultGeometry";
@@ -32,7 +32,7 @@ type Props = {
   backgroundOpacity: number;
   mapLabel: string;
   onInspect: (lon: number, lat: number) => void;
-  onFlowRenderStats?: (stats: FlowRenderStats | null) => void;
+  onFlowRenderStats?: (stats: FlowRenderStats | null) => void;\n  onViewportChange?: (viewport: FlowViewport, zoom: number) => void;\n  onCaptureReady?: (capture: (() => Promise<HTMLCanvasElement>) | null) => void;
 };
 
 const EMPTY_FLOW = {
@@ -202,12 +202,12 @@ export default function ResultMap({
   const overlayMapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
   const flowSvgRef = useRef<SVGSVGElement | null>(null);
-  const inspectRef = useRef(onInspect);\n  const viewportRef = useRef(onViewportChange);\n  const viewportRef = useRef(onViewportChange);
+  const inspectRef = useRef(onInspect);\n  const viewportRef = useRef(onViewportChange);\n  const viewportRef = useRef(onViewportChange);\n  const viewportRef = useRef(onViewportChange);
   const initialImageUrlRef = useRef(imageUrl);
 
   useEffect(() => {
     inspectRef.current = onInspect;
-  }, [onInspect]);\n\n  useEffect(() => {\n    viewportRef.current = onViewportChange;\n  }, [onViewportChange]);
+  }, [onInspect]);\n\n  useEffect(() => {\n    viewportRef.current = onViewportChange;\n  }, [onViewportChange]);\n\n  useEffect(() => {\n    viewportRef.current = onViewportChange;\n  }, [onViewportChange]);
 
   useEffect(() => {
     const baseContainer = baseContainerRef.current;
