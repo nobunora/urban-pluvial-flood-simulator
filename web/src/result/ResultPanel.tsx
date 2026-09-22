@@ -4,12 +4,14 @@ import {
   getFlowVectors,
   inspectResult,
   resultLayerUrl,
-  type FlowVectorFeatureCollection,\n  type FlowViewport,
+  type FlowVectorFeatureCollection,
+  type FlowViewport,
   type PointInspectionResponse,
   type ResultMetadataResponse,
 } from "../api/client";
 import ResultMap, { type FlowRenderStats } from "./ResultMap";
-import { encodeGif, type GifFrame } from "./gifEncoder";\nimport "./result.css";
+import { encodeGif, type GifFrame } from "./gifEncoder";
+import "./result.css";
 
 type Props = {
   runId: string;
@@ -40,7 +42,26 @@ const GRID_LEGEND = [
   ["32 m", "#D0C8AD"],
 ] as const;
 
-function strideForZoom(zoom: number): number {\n  const exponent = Math.max(0, Math.min(9, Math.round(18 - zoom)));\n  return 2 ** exponent;\n}\n\nfunction interpolateFlow(a: FlowVectorFeatureCollection, b: FlowVectorFeatureCollection, t: number): FlowVectorFeatureCollection {\n  const byId = new Map(b.features.map((feature) => [`${feature.properties.row}:${feature.properties.column}`, feature]));\n  const features = a.features.map((left) => {\n    const right = byId.get(`${left.properties.row}:${left.properties.column}`);\n    if (!right) return left;\n    const coordinates = left.geometry.coordinates.map((line, lineIndex) => line.map((point, pointIndex) => {\n      const target = right.geometry.coordinates[lineIndex]?.[pointIndex] ?? point;\n      return [point[0] + (target[0] - point[0]) * t, point[1] + (target[1] - point[1]) * t];\n    }));\n    return { ...left, geometry: { ...left.geometry, coordinates }, properties: { ...left.properties, u_mps: left.properties.u_mps + (right.properties.u_mps - left.properties.u_mps) * t, v_mps: left.properties.v_mps + (right.properties.v_mps - left.properties.v_mps) * t, speed_mps: left.properties.speed_mps + (right.properties.speed_mps - left.properties.speed_mps) * t } };\n  });\n  return { ...a, features, metadata: { ...a.metadata, arrow_count: features.length, sampling_method: "canonical-1m-viewport-stride-interpolated" } };\n}\n\nconst FLOW_SPEED_LEGEND = [
+function strideForZoom(zoom: number): number {
+  const exponent = Math.max(0, Math.min(9, Math.round(18 - zoom)));
+  return 2 ** exponent;
+}
+
+function interpolateFlow(a: FlowVectorFeatureCollection, b: FlowVectorFeatureCollection, t: number): FlowVectorFeatureCollection {
+  const byId = new Map(b.features.map((feature) => [`${feature.properties.row}:${feature.properties.column}`, feature]));
+  const features = a.features.map((left) => {
+    const right = byId.get(`${left.properties.row}:${left.properties.column}`);
+    if (!right) return left;
+    const coordinates = left.geometry.coordinates.map((line, lineIndex) => line.map((point, pointIndex) => {
+      const target = right.geometry.coordinates[lineIndex]?.[pointIndex] ?? point;
+      return [point[0] + (target[0] - point[0]) * t, point[1] + (target[1] - point[1]) * t];
+    }));
+    return { ...left, geometry: { ...left.geometry, coordinates }, properties: { ...left.properties, u_mps: left.properties.u_mps + (right.properties.u_mps - left.properties.u_mps) * t, v_mps: left.properties.v_mps + (right.properties.v_mps - left.properties.v_mps) * t, speed_mps: left.properties.speed_mps + (right.properties.speed_mps - left.properties.speed_mps) * t } };
+  });
+  return { ...a, features, metadata: { ...a.metadata, arrow_count: features.length, sampling_method: "canonical-1m-viewport-stride-interpolated" } };
+}
+
+const FLOW_SPEED_LEGEND = [
   ["0.001–0.10 m/s", "#2DC4B2"],
   ["0.10–0.30 m/s", "#3BB2D0"],
   ["0.30–0.50 m/s", "#3F51B5"],
@@ -80,7 +101,16 @@ export default function ResultPanel({
   const [flowVectorData, setFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
   const [flowLoading, setFlowLoading] = useState(false);
   const [flowError, setFlowError] = useState<string | null>(null);
-  const [flowRenderStats, setFlowRenderStats] = useState<FlowRenderStats | null>(null);\n  const [flowViewport, setFlowViewport] = useState<FlowViewport>({ west: metadata.bounds.west_deg, south: metadata.bounds.south_deg, east: metadata.bounds.east_deg, north: metadata.bounds.north_deg });\n  const [flowStride, setFlowStride] = useState(8);\n  const [nextFlowVectorData, setNextFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);\n  const [visualFlowVectorData, setVisualFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);\n  const [playing, setPlaying] = useState(false);\n  const [loop, setLoop] = useState(true);\n  const [gifProgress, setGifProgress] = useState<number | null>(null);\n  const gifCancelRef = useRef(false);\n  const captureRef = useRef<(() => Promise<HTMLCanvasElement>) | null>(null);
+  const [flowRenderStats, setFlowRenderStats] = useState<FlowRenderStats | null>(null);
+  const [flowViewport, setFlowViewport] = useState<FlowViewport>({ west: metadata.bounds.west_deg, south: metadata.bounds.south_deg, east: metadata.bounds.east_deg, north: metadata.bounds.north_deg });
+  const [flowStride, setFlowStride] = useState(8);
+  const [nextFlowVectorData, setNextFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
+  const [visualFlowVectorData, setVisualFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [loop, setLoop] = useState(true);
+  const [gifProgress, setGifProgress] = useState<number | null>(null);
+  const gifCancelRef = useRef(false);
+  const captureRef = useRef<(() => Promise<HTMLCanvasElement>) | null>(null);
   const flowAutoLocateRef = useRef(false);
   const [inspection, setInspection] = useState<PointInspectionResponse | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
