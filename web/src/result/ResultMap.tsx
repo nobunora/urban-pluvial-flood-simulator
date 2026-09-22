@@ -202,7 +202,7 @@ export default function ResultMap({
   const overlayMapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
   const flowSvgRef = useRef<SVGSVGElement | null>(null);
-  const inspectRef = useRef(onInspect);
+  const inspectRef = useRef(onInspect);\n  const viewportRef = useRef(onViewportChange);
   const initialImageUrlRef = useRef(imageUrl);
 
   useEffect(() => {
@@ -255,7 +255,7 @@ export default function ResultMap({
       });
     };
 
-    const handleClick = (event: MapMouseEvent) => {
+    const emitViewport = () => {\n      const b = overlayMap.getBounds();\n      viewportRef.current?.({ west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() }, overlayMap.getZoom());\n    };\n\n    const handleClick = (event: MapMouseEvent) => {
       markerRef.current?.remove();
       markerRef.current = new Marker({ color: "#1f2937" })
         .setLngLat(event.lngLat)
@@ -313,42 +313,6 @@ export default function ResultMap({
     if (!map || !svg) return;
 
     let idleReporter: (() => void) | null = null;
-
-    const selectFlowData = (): FlowVectorFeatureCollection | null => {
-      if (!flowVectorData || flowVectorData.features.length === 0) return flowVectorData;
-
-      // Keep roughly one arrow per screen-space cell. Because projection is
-      // recalculated after every map move/zoom, zooming out reduces clutter
-      // while zooming in reveals progressively more of the retained vectors.
-      const cellPx = 52;
-      const width = Math.max(1, map.getCanvas().clientWidth);
-      const height = Math.max(1, map.getCanvas().clientHeight);
-      const bins = new Map<string, (typeof flowVectorData.features)[number]>();
-
-      for (const feature of flowVectorData.features) {
-        const firstLine = feature.geometry.coordinates[0];
-        if (!firstLine || firstLine.length === 0) continue;
-        const anchorPoint = firstLine[Math.floor(firstLine.length / 2)];
-        if (!anchorPoint) continue;
-        const point = map.project([anchorPoint[0], anchorPoint[1]]);
-        if (point.x < 0 || point.y < 0 || point.x > width || point.y > height) continue;
-        const key = `${Math.floor(point.x / cellPx)}:${Math.floor(point.y / cellPx)}`;
-        const previous = bins.get(key);
-        if (!previous || feature.properties.speed_mps > previous.properties.speed_mps) {
-          bins.set(key, feature);
-        }
-      }
-
-      return {
-        ...flowVectorData,
-        features: Array.from(bins.values()),
-        metadata: {
-          ...flowVectorData.metadata,
-          arrow_count: bins.size,
-          sampling_method: "screen-space-fastest-per-52px-cell",
-        },
-      };
-    };
 
     const featureBounds = (): [number, number, number, number] | null => {
       if (!flowVectorData || flowVectorData.features.length === 0) return null;
@@ -459,7 +423,7 @@ export default function ResultMap({
     };
 
     const update = () => {
-      const displayFlow = selectFlowData();
+      const displayFlow = flowVectorData;
       const source = map.getSource(FLOW_SOURCE_ID) as GeoJSONSource | undefined;
       source?.setData(displayFlow ?? EMPTY_FLOW);
       const visibility = displayFlow && displayFlow.features.length > 0
