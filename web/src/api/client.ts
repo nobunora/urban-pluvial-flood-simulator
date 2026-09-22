@@ -10,6 +10,7 @@ export type RunCreateResponse = components["schemas"]["RunCreateResponse"];
 export type RunStatusResponse = components["schemas"]["RunStatusResponse"];
 export type ResultMetadataResponse = components["schemas"]["ResultMetadataResponse"];
 export type PointInspectionResponse = components["schemas"]["PointInspectionResponse"];
+export type ResultImportResponse = components["schemas"]["ResultImportResponse"];
 
 async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await window.fetch(path, init);
@@ -68,6 +69,18 @@ export function getResultMetadata(runId: string): Promise<ResultMetadataResponse
   return jsonRequest<ResultMetadataResponse>(
     `/api/v1/runs/${encodeURIComponent(runId)}/result-metadata`,
   );
+}
+
+export function resultExportUrl(runId: string): string {
+  return `/api/v1/runs/${encodeURIComponent(runId)}/export`;
+}
+
+export function importResult(file: File): Promise<ResultImportResponse> {
+  return jsonRequest<ResultImportResponse>("/api/v1/results/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/zip" },
+    body: file,
+  });
 }
 
 export function inspectResult(

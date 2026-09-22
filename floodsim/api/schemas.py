@@ -116,6 +116,13 @@ class RunCreateResponse(BaseModel):
     status: Literal["QUEUED"] = "QUEUED"
 
 
+class ResultImportResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: UUID
+    status: Literal["COMPLETE"] = "COMPLETE"
+
+
 class RunStatusResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

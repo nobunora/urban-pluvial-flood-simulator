@@ -2,19 +2,27 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query
-from fastapi.responses import JSONResponse, Response
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
+from starlette.background import BackgroundTask
 
 from floodsim.api.errors import ApiContractError
 from floodsim.api.routes_runs import coordinator
-from floodsim.api.schemas import PointInspectionResponse, ResultMetadataResponse
+from floodsim.api.schemas import (
+    PointInspectionResponse,
+    ResultImportResponse,
+    ResultMetadataResponse,
+)
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.orchestration.run_coordinator import ResultNotReady, RunNotFound
+from floodsim.results.archive import ResultArchiveError, create_result_archive
 from floodsim.results.vector_viewport import flow_vectors_viewport_geojson
 from floodsim.results.view import (
     PointOutsideResult,
@@ -29,6 +37,7 @@ from floodsim.results.view import (
 )
 
 router = APIRouter()
+MAX_ARCHIVE_UPLOAD_BYTES = 8 * 1024**3
 
 
 def _map_result_error(exc: Exception) -> ApiContractError:
@@ -112,6 +121,59 @@ def result_metadata(run_id: UUID) -> ResultMetadataResponse:
     except (RunNotFound, ResultNotReady) as exc:
         raise _map_result_error(exc) from exc
     return ResultMetadataResponse.model_validate(metadata)
+
+
+@router.get("/runs/{run_id}/export")
+def export_result(run_id: UUID) -> FileResponse:
+    archive_path: Path | None = None
+    try:
+        arrays_path = coordinator.result_arrays_path(run_id)
+        run_dir = coordinator.store.run_dir(run_id)
+        fd, temporary_name = tempfile.mkstemp(prefix=f"flood-result-{run_id}-", suffix=".zip")
+        os.close(fd)
+        archive_path = Path(temporary_name)
+        create_result_archive(
+            archive_path,
+            config_path=run_dir / "run_config.json",
+            manifest_path=run_dir / "manifest.json",
+            metadata_path=run_dir / "results" / "result_metadata.json",
+            arrays_path=arrays_path,
+        )
+    except (RunNotFound, ResultNotReady, OSError) as exc:
+        if archive_path is not None:
+            archive_path.unlink(missing_ok=True)
+        raise _map_result_error(exc) from exc
+    assert archive_path is not None
+    return FileResponse(
+        archive_path,
+        media_type="application/zip",
+        filename=f"flood-result-{run_id}.zip",
+        background=BackgroundTask(archive_path.unlink, missing_ok=True),
+    )
+
+
+@router.post("/results/import", response_model=ResultImportResponse)
+async def import_result(request: Request) -> ResultImportResponse:
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    if media_type not in {"application/zip", "application/octet-stream"}:
+        raise ApiContractError(415, "RESULT_ARCHIVE_CONTENT_TYPE", "ZIP形式の解析結果を指定してください。")
+    fd, temporary_name = tempfile.mkstemp(prefix="flood-result-import-", suffix=".zip")
+    size = 0
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > MAX_ARCHIVE_UPLOAD_BYTES:
+                    raise ApiContractError(413, "RESULT_ARCHIVE_TOO_LARGE", "解析結果ファイルが大きすぎます。")
+                handle.write(chunk)
+        if size == 0:
+            raise ApiContractError(400, "RESULT_ARCHIVE_EMPTY", "解析結果ファイルが空です。")
+        record = coordinator.import_result(Path(temporary_name))
+        return ResultImportResponse(run_id=record.run_id)
+    except ResultArchiveError as exc:
+        raise ApiContractError(400, "RESULT_ARCHIVE_INVALID", "解析結果ファイルを読み込めません。") from exc
+    finally:
+        Path(temporary_name).unlink(missing_ok=True)
 
 
 @router.get("/runs/{run_id}/layers/max-depth.png")

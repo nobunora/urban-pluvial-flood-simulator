@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import shutil
 import threading
 import time
 import traceback
@@ -31,6 +32,7 @@ from floodsim.preprocessing.full_grid import build_full_1m_grid
 from floodsim.providers.gsi_elevation import GsiElevationProvider
 from floodsim.providers.jma import JmaCatalogProvider
 from floodsim.providers.vectors import acquire_vectors
+from floodsim.results.archive import NORMALIZED_ARRAYS, import_result_archive
 from floodsim.results.normalize import (
     normalize_quadtree_result,
     normalize_regular_result,
@@ -458,6 +460,42 @@ class RunCoordinator:
         if record is None:
             raise RunNotFound(str(run_id))
         return record
+
+    def import_result(self, archive_path: Path) -> RunRecord:
+        """Register a portable archive as a completed, review-only run."""
+        run_id = uuid4()
+        run_dir = self.store.run_dir(run_id)
+        try:
+            config, imported_manifest, metadata = import_result_archive(archive_path, run_dir)
+            manifest = imported_manifest.model_copy(
+                update={
+                    "run_id": run_id,
+                    "run_status": RunState.COMPLETE,
+                    "output_files": {
+                        **imported_manifest.output_files,
+                        "normalized_arrays": NORMALIZED_ARRAYS,
+                        "result_metadata": "result_metadata.json",
+                    },
+                }
+            )
+            record = RunRecord(
+                run_id=run_id,
+                config=config,
+                manifest=manifest,
+                machine=RunStateMachine(RunState.COMPLETE),
+                result_metadata=metadata,
+                progress_fraction=1.0,
+                progress_detail="保存済みの解析結果をレビュー用に読み込みました。",
+            )
+            self._append_event(record, RunState.COMPLETE, "保存済みの解析結果を読み込みました。")
+            self._append_activity(record, "保存済みの解析結果を読み込みました。")
+            self._persist_manifest(record)
+            with self._lock:
+                self._records[run_id] = record
+            return record
+        except Exception:
+            shutil.rmtree(run_dir, ignore_errors=True)
+            raise
 
     def cancel(self, run_id: UUID) -> RunRecord:
         record = self.get(run_id)

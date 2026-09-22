@@ -7,6 +7,7 @@ import {
   getHealth,
   getResultMetadata,
   getRun,
+  importResult,
   type AnalysisArea,
   type ResourceEstimateResponse,
   type ResultMetadataResponse,
@@ -65,6 +66,7 @@ export default function SmokeApp() {
   const [resultMetadata, setResultMetadata] = useState<ResultMetadataResponse | null>(null);
   const [resultError, setResultError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const latValue = parseNumber(lat);
   const lonValue = parseNumber(lon);
@@ -245,6 +247,27 @@ export default function SmokeApp() {
     setError(null);
   };
 
+  const handleImport = async (file: File | undefined) => {
+    if (!file) return;
+    setImporting(true);
+    setError(null);
+    setResultError(null);
+    try {
+      const imported = await importResult(file);
+      const [nextStatus, metadata] = await Promise.all([
+        getRun(imported.run_id),
+        getResultMetadata(imported.run_id),
+      ]);
+      setRunId(imported.run_id);
+      setStatus(nextStatus);
+      setResultMetadata(metadata);
+    } catch (cause: unknown) {
+      setError(String(cause));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const rainfallSummary = `${intensity} mm/h × ${duration}分`;
 
   return (
@@ -266,6 +289,18 @@ export default function SmokeApp() {
       {!resultMetadata && (
         <section className="smoke-grid">
           <div className="smoke-card">
+            <h2>保存済み結果</h2>
+            <label className="result-import-control">
+              解析結果を読み込んでレビュー
+              <input
+                type="file"
+                accept=".zip,application/zip"
+                disabled={setupLocked || importing}
+                onChange={(event) => void handleImport(event.target.files?.[0])}
+              />
+            </label>
+            {importing && <p>解析結果を読み込んでいます…</p>}
+            <hr />
             <h2>1. 条件</h2>
             <LocationSearch disabled={setupLocked} onSelect={updateLocation} />
             <div className="location-manual-divider">

@@ -47,7 +47,9 @@ def normalize_regular_result(
     if result.flow_vectors_available:
         arrays_payload["velocity_u_mps"] = result.velocity_u_mps
         arrays_payload["velocity_v_mps"] = result.velocity_v_mps
-    np.savez_compressed(arrays_path, **arrays_payload)
+    # Keep the normal run path fast. Portable compression is applied only when
+    # the user explicitly exports a result archive.
+    np.savez(arrays_path, **arrays_payload)
     metadata = {
         "schema_version": "1",
         "bounds": area.bounds.model_dump(),
@@ -129,7 +131,9 @@ def normalize_quadtree_result(
         arrays_payload["velocity_v_mps"] = result.velocity_v_mps
     if result.subgrid_volume_m3 is not None:
         arrays_payload["subgrid_volume_m3"] = result.subgrid_volume_m3
-    np.savez_compressed(arrays_path, **arrays_payload)
+    # Keep the normal run path fast. Portable compression is applied only when
+    # the user explicitly exports a result archive.
+    np.savez(arrays_path, **arrays_payload)
 
     level_summary = {
         f"{level}m": int(

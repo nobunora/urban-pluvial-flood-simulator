@@ -8,6 +8,7 @@ import {
   getHealth,
   getResultMetadata,
   getRun,
+  importResult,
   searchLocation,
   type ResultMetadataResponse,
 } from "./api/client";
@@ -22,6 +23,7 @@ vi.mock("./api/client", async (importOriginal) => {
     getRun: vi.fn(),
     cancelRun: vi.fn(),
     getResultMetadata: vi.fn(),
+    importResult: vi.fn(),
     inspectResult: vi.fn(),
     searchLocation: vi.fn(),
   };
@@ -131,6 +133,10 @@ describe("local review UI", () => {
       failure_message: null,
     });
     vi.mocked(getResultMetadata).mockResolvedValue(metadata);
+    vi.mocked(importResult).mockResolvedValue({
+      run_id: "00000000-0000-0000-0000-000000000002",
+      status: "COMPLETE",
+    });
     vi.mocked(searchLocation).mockResolvedValue({
       candidates: [],
       attribution: {
@@ -161,6 +167,21 @@ describe("local review UI", () => {
 
     fireEvent.change(screen.getByLabelText("範囲"), { target: { value: "500" } });
     expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "1000");
+  });
+
+  it("imports a saved result for review and offers compressed export", async () => {
+    render(<App />);
+    const file = new File(["archive"], "saved-result.zip", { type: "application/zip" });
+    fireEvent.change(screen.getByLabelText("解析結果を読み込んでレビュー"), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => expect(importResult).toHaveBeenCalledWith(file));
+    expect(await screen.findByRole("heading", { name: "解析結果" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "結果をエクスポート" })).toHaveAttribute(
+      "href",
+      "/api/v1/runs/00000000-0000-0000-0000-000000000002/export",
+    );
   });
 
 

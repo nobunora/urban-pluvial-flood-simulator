@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getFlowVectors,
   inspectResult,
+  resultExportUrl,
   resultLayerUrl,
   type FlowVectorFeatureCollection,
   type FlowViewport,
@@ -456,7 +457,10 @@ export default function ResultPanel({
           <h2 id="result-title">解析結果</h2>
           <p>{rainfallSummary} / 高精度 — 全域1 m</p>
         </div>
-        <button type="button" onClick={onNewAnalysis}>新しい解析</button>
+        <div className="result-heading-actions">
+          <a className="result-export-link" href={resultExportUrl(runId)} download>結果をエクスポート</a>
+          <button type="button" onClick={onNewAnalysis}>新しい解析</button>
+        </div>
       </div>
 
       <div className="result-limitation-bar">

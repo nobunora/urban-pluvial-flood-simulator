@@ -109,6 +109,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/results/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Result */
+        post: operations["import_result_api_v1_results_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs": {
         parameters: {
             query?: never;
@@ -169,6 +186,23 @@ export interface paths {
         };
         /** Run Events */
         get: operations["run_events_api_v1_runs__run_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Result */
+        get: operations["export_result_api_v1_runs__run_id__export_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -561,6 +595,20 @@ export interface components {
             /** Sfincs Version */
             sfincs_version?: string | null;
         };
+        /** ResultImportResponse */
+        ResultImportResponse: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Status
+             * @default COMPLETE
+             * @constant
+             */
+            status: "COMPLETE";
+        };
         /** ResultMetadataResponse */
         ResultMetadataResponse: {
             /** Available Time Indices */
@@ -892,6 +940,26 @@ export interface operations {
             };
         };
     };
+    import_result_api_v1_results_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultImportResponse"];
+                };
+            };
+        };
+    };
     create_run_api_v1_runs_post: {
         parameters: {
             query?: never;
@@ -992,6 +1060,37 @@ export interface operations {
             query?: {
                 after?: number;
             };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_result_api_v1_runs__run_id__export_get: {
+        parameters: {
+            query?: never;
             header?: never;
             path: {
                 run_id: string;
