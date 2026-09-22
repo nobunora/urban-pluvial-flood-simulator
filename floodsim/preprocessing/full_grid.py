@@ -223,7 +223,9 @@ def build_full_1m_grid(
         remaining = max(0, total - done)
         progress_callback(
             0.60 + 0.35 * fraction,
-            f"屋根雨水配分 {done}/{total}建物群 / 残り{remaining}建物群",
+            f"屋根雨水配分 {done}/{total}連結建物群"
+            f"（取得ポリゴン{len(vectors.buildings)}件を1 mマスク化）"
+            f" / 残り{remaining}群",
         )
 
     allocation = allocate_roof_rainfall(

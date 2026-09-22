@@ -642,8 +642,8 @@ class RunCoordinator:
                     record,
                     "建物・道路取得完了: "
                     f"provider={vector_provenance.provider_id}, "
-                    f"buildings={len(vectors.buildings)}, "
-                    f"roads={len(vectors.road_lines) + len(vectors.road_polygons)}",
+                    f"building_polygons={len(vectors.buildings)}, "
+                    f"road_geometries={len(vectors.road_lines) + len(vectors.road_polygons)}",
                 )
             self._check_cancel(record)
 
@@ -705,7 +705,7 @@ class RunCoordinator:
                 self._append_activity(
                     record,
                     f"Full 1 m格子構築完了: {grid.width_cells} × {grid.height_cells} cells / "
-                    f"buildings={int(np.count_nonzero(grid.building_mask))} cells",
+                    f"building_cells={int(np.count_nonzero(grid.building_mask))}",
                 )
                 self._append_activity(record, f"prepared grid cache saved: {saved_entry.key}")
 

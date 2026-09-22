@@ -164,7 +164,13 @@ def test_full_grid_reports_remaining_preprocessing_and_roof_work() -> None:
     assert grid.cell_count == 16
     assert any("残り3処理" in message for _, message in updates)
     assert any("残り0処理" in message for _, message in updates)
-    assert any("屋根雨水配分" in message and "残り" in message for _, message in updates)
+    assert any(
+        "屋根雨水配分" in message
+        and "連結建物群" in message
+        and "取得ポリゴン1件" in message
+        and "残り" in message
+        for _, message in updates
+    )
     assert updates[-1][0] == pytest.approx(1.0)
     assert updates[-1][1] == "Full 1 m格子・建物マスク・粗度の構築完了"
 
