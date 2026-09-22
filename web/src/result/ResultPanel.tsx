@@ -43,10 +43,11 @@ const GRID_LEGEND = [
 ] as const;
 
 export function strideForZoom(zoom: number): number {
-  // One zoom level doubles/halves ground metres per screen pixel. Scale the
-  // canonical lattice by the same factor so arrows per screen area stay stable.
-  const stride = Math.round(8 * 2 ** (18 - zoom));
-  return Math.max(1, Math.min(512, stride));
+  // The source lattice is always the canonical Full 1 m grid. Zoom controls
+  // only integer decimation of that same lattice: 1 = all vectors, 2 = every
+  // other vector, 3 = keep one/skip two, etc.
+  if (zoom >= 18) return 1;
+  return Math.max(1, Math.min(512, 1 + Math.floor(18 - zoom)));
 }
 
 function interpolateFlow(a: FlowVectorFeatureCollection, b: FlowVectorFeatureCollection, t: number): FlowVectorFeatureCollection {
