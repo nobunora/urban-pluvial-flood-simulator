@@ -7,7 +7,7 @@ import {
   type FlowVectorFeatureCollection,
   type ResultMetadataResponse,
 } from "../api/client";
-import ResultPanel from "./ResultPanel";
+import ResultPanel, { strideForZoom } from "./ResultPanel";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
@@ -109,6 +109,13 @@ const metadata: ResultMetadataResponse = {
 };
 
 describe("ResultPanel", () => {
+  it("keeps vector screen density stable across integer zoom levels", () => {
+    expect(strideForZoom(19)).toBe(4);
+    expect(strideForZoom(18)).toBe(8);
+    expect(strideForZoom(17)).toBe(16);
+    expect(strideForZoom(16)).toBe(32);
+  });
+
   beforeEach(() => {
     vi.mocked(inspectResult).mockReset();
     vi.mocked(getFlowVectors).mockReset();
@@ -384,14 +391,14 @@ describe("ResultPanel", () => {
       "run-1",
       0,
       expect.any(Object),
-      1,
+      8,
       expect.any(AbortSignal),
     );
     expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
       "run-1",
       3,
       expect.any(Object),
-      1,
+      8,
       expect.any(AbortSignal),
     );
   });

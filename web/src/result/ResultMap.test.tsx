@@ -276,6 +276,11 @@ describe("ResultMap", () => {
     const svg = view.container.querySelector(".result-flow-svg");
     expect(svg).toHaveAttribute("data-flow-svg-arrows", "1");
     expect(svg?.querySelectorAll("path")).toHaveLength(2);
+    const shaftPath = svg?.querySelectorAll("path")[1]?.getAttribute("d") ?? "";
+    const shaftMatch = shaftPath.match(/^M ([\d.-]+) ([\d.-]+) L ([\d.-]+) ([\d.-]+)/);
+    expect(shaftMatch).not.toBeNull();
+    const [, x1, y1, x2, y2] = shaftMatch ?? [];
+    expect(Math.hypot(Number(x2) - Number(x1), Number(y2) - Number(y1))).toBeCloseTo(18, 1);
 
     const overlay = options(1);
     const vectorPaint = overlay.style.layers.find(

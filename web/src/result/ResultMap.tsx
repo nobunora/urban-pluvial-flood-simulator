@@ -46,6 +46,7 @@ const EMPTY_FLOW = {
 const FLOW_SOURCE_ID = "flow-vector-source";
 const FLOW_HALO_LAYER_ID = "flow-vector-halo";
 const FLOW_LINE_LAYER_ID = "flow-vector-lines";
+const FLOW_ARROW_LENGTH_PX = 18;
 
 function flowColor(speedMps: number): string {
   if (speedMps >= 2.0) return "#7F0000";
@@ -405,15 +406,13 @@ export default function ResultMap({
         dx /= rawLength;
         dy /= rawLength;
 
-        // The backend geometry already encodes the physical sampling rule:
-        // shaft length = 0.8 * vector spacing. Never impose a pixel minimum,
-        // because that would destroy the length/spacing ratio after zoom-time
-        // decimation.
-        const shaftLength = rawLength;
-        const tipX = projectedTip.x;
-        const tipY = projectedTip.y;
+        // Geometry supplies direction; screen-space length is deliberately
+        // fixed so zooming never makes the arrows grow or shrink visually.
+        const shaftLength = FLOW_ARROW_LENGTH_PX;
         const tailX = projectedTail.x;
         const tailY = projectedTail.y;
+        const tipX = tailX + dx * shaftLength;
+        const tipY = tailY + dy * shaftLength;
         const headLength = shaftLength * 0.28;
         const headWidth = headLength * 0.58;
         const baseX = tipX - dx * headLength;
