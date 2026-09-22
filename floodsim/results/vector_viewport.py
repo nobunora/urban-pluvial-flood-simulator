@@ -187,7 +187,10 @@ def flow_vectors_viewport_geojson(
             "sample_stride_cells": stride,
             "arrow_length_m": arrow_length_m,
             "arrow_count": len(features),
-            "sampling_method": "canonical-full-1m-grid-global-stride",\n            "canonical_grid_spacing_m": min(cell_width_m, cell_height_m),\n            "stride_anchor_row": 0,\n            "stride_anchor_column": 0,
+            "sampling_method": "canonical-full-1m-grid-global-stride",
+            "canonical_grid_spacing_m": min(cell_width_m, cell_height_m),
+            "stride_anchor_row": 0,
+            "stride_anchor_column": 0,
             "viewport": {"west": west, "south": south, "east": east, "north": north},
         },
     }

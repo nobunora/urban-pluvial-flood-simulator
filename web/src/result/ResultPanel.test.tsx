@@ -384,14 +384,14 @@ describe("ResultPanel", () => {
       "run-1",
       0,
       expect.any(Object),
-      8,
+      1,
       expect.any(AbortSignal),
     );
     expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
       "run-1",
       3,
       expect.any(Object),
-      8,
+      1,
       expect.any(AbortSignal),
     );
   });

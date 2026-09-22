@@ -57,6 +57,17 @@ class AdaptiveGridCache:
                 reason = np.asarray(archive["refinement_reason"], dtype="<U32")
             if resolution.ndim != 2 or level.shape != resolution.shape or reason.shape != resolution.shape:
                 return None
+            full_cells = int(metadata["full_1m_equivalent_cells"])
+            active_levels = tuple(int(value) for value in metadata["active_levels_m"])
+            if full_cells != resolution.size or active_levels != policy.active_levels_m:
+                return None
+            if not np.isin(resolution, active_levels).all():
+                return None
+            expected_level = np.rint(np.log2(resolution)).astype(np.int8)
+            if not np.array_equal(level, expected_level):
+                return None
+            if str(metadata["threshold_identity"]) != ADAPTIVE_THRESHOLD_IDENTITY:
+                return None
             product = AdaptiveGridProduct(
                 resolution_m=resolution,
                 level=level,
