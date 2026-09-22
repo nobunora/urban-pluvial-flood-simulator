@@ -4,12 +4,12 @@ import {
   getFlowVectors,
   inspectResult,
   resultLayerUrl,
-  type FlowVectorFeatureCollection,
+  type FlowVectorFeatureCollection,\n  type FlowViewport,
   type PointInspectionResponse,
   type ResultMetadataResponse,
 } from "../api/client";
 import ResultMap, { type FlowRenderStats } from "./ResultMap";
-import "./result.css";
+import { encodeGif, type GifFrame } from "./gifEncoder";\nimport "./result.css";
 
 type Props = {
   runId: string;
@@ -40,7 +40,7 @@ const GRID_LEGEND = [
   ["32 m", "#D0C8AD"],
 ] as const;
 
-const FLOW_SPEED_LEGEND = [
+function strideForZoom(zoom: number): number {\n  const exponent = Math.max(0, Math.min(9, Math.round(18 - zoom)));\n  return 2 ** exponent;\n}\n\nfunction interpolateFlow(a: FlowVectorFeatureCollection, b: FlowVectorFeatureCollection, t: number): FlowVectorFeatureCollection {\n  const byId = new Map(b.features.map((feature) => [`${feature.properties.row}:${feature.properties.column}`, feature]));\n  const features = a.features.map((left) => {\n    const right = byId.get(`${left.properties.row}:${left.properties.column}`);\n    if (!right) return left;\n    const coordinates = left.geometry.coordinates.map((line, lineIndex) => line.map((point, pointIndex) => {\n      const target = right.geometry.coordinates[lineIndex]?.[pointIndex] ?? point;\n      return [point[0] + (target[0] - point[0]) * t, point[1] + (target[1] - point[1]) * t];\n    }));\n    return { ...left, geometry: { ...left.geometry, coordinates }, properties: { ...left.properties, u_mps: left.properties.u_mps + (right.properties.u_mps - left.properties.u_mps) * t, v_mps: left.properties.v_mps + (right.properties.v_mps - left.properties.v_mps) * t, speed_mps: left.properties.speed_mps + (right.properties.speed_mps - left.properties.speed_mps) * t } };\n  });\n  return { ...a, features, metadata: { ...a.metadata, arrow_count: features.length, sampling_method: "canonical-1m-viewport-stride-interpolated" } };\n}\n\nconst FLOW_SPEED_LEGEND = [
   ["0.001–0.10 m/s", "#2DC4B2"],
   ["0.10–0.30 m/s", "#3BB2D0"],
   ["0.30–0.50 m/s", "#3F51B5"],
@@ -80,7 +80,7 @@ export default function ResultPanel({
   const [flowVectorData, setFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
   const [flowLoading, setFlowLoading] = useState(false);
   const [flowError, setFlowError] = useState<string | null>(null);
-  const [flowRenderStats, setFlowRenderStats] = useState<FlowRenderStats | null>(null);
+  const [flowRenderStats, setFlowRenderStats] = useState<FlowRenderStats | null>(null);\n  const [flowViewport, setFlowViewport] = useState<FlowViewport>({ west: metadata.bounds.west_deg, south: metadata.bounds.south_deg, east: metadata.bounds.east_deg, north: metadata.bounds.north_deg });\n  const [flowStride, setFlowStride] = useState(8);\n  const [nextFlowVectorData, setNextFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);\n  const [visualFlowVectorData, setVisualFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);\n  const [playing, setPlaying] = useState(false);\n  const [loop, setLoop] = useState(true);\n  const [gifProgress, setGifProgress] = useState<number | null>(null);\n  const gifCancelRef = useRef(false);\n  const captureRef = useRef<(() => Promise<HTMLCanvasElement>) | null>(null);
   const flowAutoLocateRef = useRef(false);
   const [inspection, setInspection] = useState<PointInspectionResponse | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
@@ -439,7 +439,7 @@ export default function ResultPanel({
             <ResultMap
               metadata={metadata}
               imageUrl={imageUrl}
-              flowVectorData={flowVectorData}
+              flowVectorData={visualFlowVectorData}
               backgroundOpacity={(100 - backgroundTransparency) / 100}
               mapLabel={mapLabel}
               onInspect={handleInspect}
@@ -613,4 +613,92 @@ export default function ResultPanel({
       </div>
     </section>
   );
+  useEffect(() => {
+    setVisualFlowVectorData(flowVectorData);
+    setNextFlowVectorData(null);
+    if (!flowVisible || !flowVectorData || selectedTimeIndex === null) return;
+    const nextPosition = timePosition + 1;
+    const nextIndex = metadata.available_time_indices[nextPosition];
+    if (nextIndex == null) return;
+    const controller = new AbortController();
+    void getFlowVectors(runId, nextIndex, flowViewport, flowStride, controller.signal)
+      .then(setNextFlowVectorData)
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [flowVectorData, flowVisible, flowStride, flowViewport, metadata.available_time_indices, runId, selectedTimeIndex, timePosition]);
+
+  useEffect(() => {
+    if (!playing || metadata.available_time_indices.length < 2) return;
+    let frame = 0;
+    let started = performance.now();
+    const durationMs = 1000;
+    const tick = (now: number) => {
+      const fraction = Math.min(1, (now - started) / durationMs);
+      if (flowVectorData && nextFlowVectorData) setVisualFlowVectorData(interpolateFlow(flowVectorData, nextFlowVectorData, fraction));
+      if (fraction >= 1) {
+        setTimePosition((position) => {
+          if (position < maxTimePosition) return position + 1;
+          if (loop) return 0;
+          setPlaying(false);
+          return position;
+        });
+        started = now;
+      }
+      if (playing) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, flowVectorData, nextFlowVectorData, loop, maxTimePosition]);
+
+  const handleViewportChange = useCallback((viewport: FlowViewport, zoom: number) => {
+    setFlowViewport(viewport);
+    setFlowStride(strideForZoom(zoom));
+  }, []);
+
+  const exportGif = useCallback(async () => {
+    const capture = captureRef.current;
+    if (!capture || metadata.available_time_indices.length === 0) return;
+    gifCancelRef.current = false;
+    setPlaying(false);
+    setLayer("time_depth");
+    const count = Math.min(80, metadata.available_time_indices.length);
+    const positions = Array.from({ length: count }, (_, i) => Math.round(i * (metadata.available_time_indices.length - 1) / Math.max(1, count - 1)));
+    const frames: GifFrame[] = [];
+    let width = 0;
+    let height = 0;
+    for (let i = 0; i < positions.length; i += 1) {
+      if (gifCancelRef.current) break;
+      const position = positions[i];
+      setTimePosition(position);
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+      const source = await capture();
+      const scale = Math.min(1, 640 / source.width, 480 / source.height);
+      width = Math.max(1, Math.round(source.width * scale));
+      height = Math.max(1, Math.round(source.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height + 28;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas 2D context is unavailable");
+      ctx.drawImage(source, 0, 0, width, height);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, height, width, 28);
+      ctx.fillStyle = "#111827";
+      ctx.font = "14px sans-serif";
+      ctx.fillText(elapsedLabel(metadata.time_values, metadata.available_time_indices[position] ?? 0), 10, height + 19);
+      frames.push({ rgba: ctx.getImageData(0, 0, width, height + 28).data, delayCs: 10 });
+      setGifProgress((i + 1) / positions.length);
+    }
+    if (!gifCancelRef.current && frames.length > 0) {
+      const blob = encodeGif(width, height + 28, frames, loop);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `flood-result-${runId}.gif`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    setGifProgress(null);
+  }, [loop, metadata.available_time_indices, metadata.time_values, runId]);
+
 }
