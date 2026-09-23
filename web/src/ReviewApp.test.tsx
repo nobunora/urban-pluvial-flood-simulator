@@ -140,7 +140,7 @@ describe("local review UI", () => {
     vi.mocked(getRecentRainfallRanking).mockResolvedValue({
       period_start: "2016-09-23",
       period_end: "2026-09-23",
-      coverage_note: "同梱された気象庁公式極値記録を対象に集計",
+      coverage_note: "代表被災地点であり、市内の絶対最大浸水地点を示すものではありません。",
       events: [
         {
           event_id: "tokyo-60m-1",
@@ -156,6 +156,8 @@ describe("local review UI", () => {
           station_lon_deg: 139.75,
           station_lat_deg: 35.69,
           profile_available: false,
+          damage_location_name: "くすの木パーキング",
+          damage_location_source_url: "https://example.test/damage",
         },
       ],
     });
@@ -197,10 +199,13 @@ describe("local review UI", () => {
 
     const rainfallEvent = screen.getByRole("button", { name: /四日市市中心部/ });
     expect(rainfallEvent).toHaveTextContent("2025年四日市市中心部");
-    expect(rainfallEvent).toHaveTextContent("1h降水量 123.5 mm");
+    expect(rainfallEvent).toHaveTextContent("1h降水量 123.5 mm ・ くすの木パーキング");
 
     expect(screen.getByLabelText("雨量強度 (mm/h)")).toHaveValue("123.5");
     expect(screen.getByLabelText("継続時間 (min)")).toHaveValue("60");
+    expect(screen.getByLabelText("緯度")).toHaveValue("35.690000");
+    expect(screen.getByLabelText("経度")).toHaveValue("139.750000");
+    expect(screen.getByText(/絶対最大浸水地点を示すものではありません/)).toBeVisible();
   });
 
   it("imports a saved result for review and offers compressed export", async () => {

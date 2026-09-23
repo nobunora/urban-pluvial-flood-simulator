@@ -315,6 +315,28 @@ def test_recent_rainfall_ranking_returns_configured_60_minute_scenarios() -> Non
         "2000",
     ]
     assert all(event["duration_minutes"] == 60 for event in payload["events"])
+    assert [event["damage_location_name"] for event in payload["events"]] == [
+        "くすの木パーキング",
+        "千葉駅前地下道",
+        "JR佐賀駅前",
+        "昭和区・鶴舞周辺（代表点）",
+        "天白区野並地区",
+    ]
+    assert [
+        (event["station_lon_deg"], event["station_lat_deg"])
+        for event in payload["events"]
+    ] == [
+        pytest.approx((136.6208, 34.9665)),
+        pytest.approx((140.1141, 35.6129)),
+        pytest.approx((130.2975, 33.2642)),
+        pytest.approx((136.9196, 35.1569)),
+        pytest.approx((136.9555, 35.1028)),
+    ]
+    assert all(
+        event["damage_location_source_url"].startswith("https://")
+        for event in payload["events"]
+    )
+    assert "絶対最大浸水地点を示すものではありません" in payload["coverage_note"]
 
 
 def test_rainfall_api_uses_stable_not_found_errors() -> None:
