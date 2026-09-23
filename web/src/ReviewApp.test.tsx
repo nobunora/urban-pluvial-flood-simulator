@@ -147,11 +147,11 @@ describe("local review UI", () => {
         {
           event_id: "tokyo-60m-1",
           station_id: "44132",
-          station_name: "東京",
+          station_name: "四日市市中心部",
           duration_minutes: 60,
-          total_precipitation_mm: 120,
-          intensity_mm_per_h: 120,
-          event_date_or_datetime_metadata: "2024/08/21",
+          total_precipitation_mm: 123.5,
+          intensity_mm_per_h: 123.5,
+          event_date_or_datetime_metadata: "2025",
           source_url: "https://example.test/jma",
           catalog_generated_at_utc: "2026-09-03T00:00:00+00:00",
           data_quality_flags: [],
@@ -198,9 +198,9 @@ describe("local review UI", () => {
   it("fills rainfall inputs from the recent rainfall ranking", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /東京/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /四日市市中心部/ }));
 
-    expect(screen.getByLabelText("雨量強度 (mm/h)")).toHaveValue("120");
+    expect(screen.getByLabelText("雨量強度 (mm/h)")).toHaveValue("123.5");
     expect(screen.getByLabelText("継続時間 (min)")).toHaveValue("60");
   });
 

@@ -354,9 +354,8 @@ export default function SmokeApp() {
             <label>雨量強度 (mm/h)<input value={intensity} disabled={setupLocked} onChange={(event) => setIntensity(event.target.value)} /></label>
             <label>継続時間 (min)<input value={duration} disabled={setupLocked} onChange={(event) => setDuration(event.target.value)} /></label>
             {rainfallRanking && rainfallRanking.events.length > 0 && (
-              <section className="rainfall-ranking" aria-label="直近10年の1時間換算雨量トップ10">
-                <h3>直近10年の1時間換算雨量トップ10</h3>
-                <p>{rainfallRanking.period_start}〜{rainfallRanking.period_end}</p>
+              <section className="rainfall-ranking" aria-label="都市型豪雨の降雨リスト">
+                <h3>都市型豪雨の降雨リスト</h3>
                 <ol>
                   {rainfallRanking.events.map((event) => (
                     <li key={event.event_id}>
@@ -368,14 +367,13 @@ export default function SmokeApp() {
                           setDuration(String(event.duration_minutes));
                         }}
                       >
-                        <strong>{event.station_name}</strong>
-                        <span>{event.total_precipitation_mm} mm / {event.duration_minutes}分</span>
-                        <span>{event.intensity_mm_per_h.toFixed(1)} mm/h相当 / {event.event_date_or_datetime_metadata ?? "日付不明"}</span>
+                        <strong>{event.event_date_or_datetime_metadata ?? "年不明"}年</strong>
+                        <span>{event.station_name}</span>
+                        <span>{event.intensity_mm_per_h.toFixed(1)} mm/h</span>
                       </button>
                     </li>
                   ))}
                 </ol>
-                <small>{rainfallRanking.coverage_note}</small>
               </section>
             )}
             <fieldset className="adaptive-mode-control" disabled={setupLocked}>

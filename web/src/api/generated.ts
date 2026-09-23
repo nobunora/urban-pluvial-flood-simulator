@@ -84,7 +84,7 @@ export interface paths {
         };
         /**
          * Recent Rainfall Ranking
-         * @description Return recent events represented in the packaged official JMA catalog.
+         * @description Return the configured urban-flood rainfall scenarios in rank order.
          */
         get: operations["recent_rainfall_ranking_api_v1_rainfall_recent_ranking_get"];
         put?: never;

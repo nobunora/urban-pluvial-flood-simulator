@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import pytest
 import requests
@@ -290,35 +288,33 @@ def test_rainfall_api_returns_nearest_packaged_stations_and_event_coordinates() 
     assert no_events.json()["events"] == []
 
 
-def test_recent_rainfall_ranking_is_limited_sorted_and_within_ten_years() -> None:
+def test_recent_rainfall_ranking_returns_configured_60_minute_scenarios() -> None:
     response = TestClient(app).get("/api/v1/rainfall/recent-ranking")
 
     assert response.status_code == 200
     payload = response.json()
-    assert 1 <= len(payload["events"]) <= 10
-    today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
-    try:
-        ten_years_ago = today.replace(year=today.year - 10)
-    except ValueError:
-        ten_years_ago = today.replace(year=today.year - 10, day=28)
-    assert payload["period_start"] == ten_years_ago.isoformat()
-    assert payload["period_end"] == today.isoformat()
-    intensities = [event["intensity_mm_per_h"] for event in payload["events"]]
-    assert intensities == sorted(intensities, reverse=True)
-    period_start = date.fromisoformat(payload["period_start"])
-    period_end = date.fromisoformat(payload["period_end"])
-    assert all(
-        period_start
-        <= date(
-            *map(
-                int,
-                event["event_date_or_datetime_metadata"].split()[0].split("/"),
-            )
-        )
-        <= period_end
-        for event in payload["events"]
-    )
-    assert "同梱" in payload["coverage_note"]
+    assert [event["station_name"] for event in payload["events"]] == [
+        "四日市市中心部",
+        "千葉市周辺",
+        "佐賀県佐賀市",
+        "愛知県名古屋市",
+        "愛知県名古屋市周辺",
+    ]
+    assert [event["intensity_mm_per_h"] for event in payload["events"]] == [
+        123.5,
+        115.0,
+        110.0,
+        104.5,
+        97.0,
+    ]
+    assert [event["event_date_or_datetime_metadata"] for event in payload["events"]] == [
+        "2025",
+        "2026",
+        "2019",
+        "2026",
+        "2000",
+    ]
+    assert all(event["duration_minutes"] == 60 for event in payload["events"])
 
 
 def test_rainfall_api_uses_stable_not_found_errors() -> None:

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query
 
@@ -22,6 +20,14 @@ from floodsim.providers.jma import JmaCatalogProvider, JmaRainfallEvent, JmaStat
 
 router = APIRouter()
 catalog_provider = JmaCatalogProvider()
+
+_URBAN_FLOOD_RANKING = (
+    ("2025-yokkaichi", "2025", "四日市市中心部", 123.5, 136.6245, 34.9650),
+    ("2026-chiba", "2026", "千葉市周辺", 115.0, 140.1063, 35.6074),
+    ("2019-saga", "2019", "佐賀県佐賀市", 110.0, 130.3009, 33.2635),
+    ("2026-nagoya", "2026", "愛知県名古屋市", 104.5, 136.9066, 35.1815),
+    ("2000-nagoya", "2000", "愛知県名古屋市周辺", 97.0, 136.9066, 35.1815),
+)
 
 
 def _catalog_or_error():
@@ -77,43 +83,33 @@ def rainfall_station_extremes(station_id: str) -> RainfallExtremesResponse:
 
 @router.get("/rainfall/recent-ranking", response_model=RecentRainfallRankingResponse)
 def recent_rainfall_ranking() -> RecentRainfallRankingResponse:
-    """Return recent events represented in the packaged official JMA catalog."""
-    catalog = _catalog_or_error()
-    today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
-    try:
-        period_start = today.replace(year=today.year - 10)
-    except ValueError:
-        period_start = today.replace(year=today.year - 10, day=28)
-
-    recent: list[JmaRainfallEvent] = []
-    for event in catalog.events:
-        metadata = event.event_date_or_datetime_metadata
-        if not metadata:
-            continue
-        try:
-            event_date = datetime.strptime(
-                metadata.split()[0], "%Y/%m/%d"
-            ).replace(tzinfo=ZoneInfo("Asia/Tokyo")).date()
-        except ValueError:
-            continue
-        if period_start <= event_date <= today:
-            recent.append(event)
-    recent.sort(
-        key=lambda event: (
-            -historical_uniform_intensity(
-                event.total_precipitation_mm, event.duration_minutes
-            ),
-            -event.total_precipitation_mm,
-            event.duration_minutes,
-            event.station_id,
-            event.event_id,
+    """Return the configured urban-flood rainfall scenarios in rank order."""
+    events = [
+        RainfallEventResponse(
+            event_id=event_id,
+            station_id=event_id,
+            station_name=region,
+            station_lon_deg=lon,
+            station_lat_deg=lat,
+            duration_minutes=60,
+            total_precipitation_mm=precipitation,
+            rank=rank,
+            event_date_or_datetime_metadata=year,
+            source_url="user-provided://urban-flood-ranking",
+            catalog_generated_at_utc="2026-09-23T00:00:00+09:00",
+            data_quality_flags=["user_provided_scenario"],
+            profile_available=False,
+            intensity_mm_per_h=precipitation,
         )
-    )
+        for rank, (event_id, year, region, precipitation, lon, lat) in enumerate(
+            _URBAN_FLOOD_RANKING, start=1
+        )
+    ]
     return RecentRainfallRankingResponse(
-        period_start=period_start.isoformat(),
-        period_end=today.isoformat(),
-        coverage_note="同梱された気象庁公式極値記録に収録されている地域・事例を対象に集計",
-        events=[_event_response(event) for event in recent[:10]],
+        period_start="2000-01-01",
+        period_end="2026-12-31",
+        coverage_note="指定された都市型豪雨シナリオ",
+        events=events,
     )
 
 

@@ -1513,7 +1513,7 @@
     },
     "/api/v1/rainfall/recent-ranking": {
       "get": {
-        "description": "Return recent events represented in the packaged official JMA catalog.",
+        "description": "Return the configured urban-flood rainfall scenarios in rank order.",
         "operationId": "recent_rainfall_ranking_api_v1_rainfall_recent_ranking_get",
         "responses": {
           "200": {
