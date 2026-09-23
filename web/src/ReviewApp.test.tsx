@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
   createRun,
+  getAppConfig,
   getHealth,
   getRecentRainfallRanking,
   getResultMetadata,
   getRun,
   importResult,
+  openDemoResult,
   searchLocation,
   type ResultMetadataResponse,
 } from "./api/client";
@@ -18,12 +20,14 @@ vi.mock("./api/client", async (importOriginal) => {
   return {
     ...actual,
     getHealth: vi.fn(),
+    getAppConfig: vi.fn(),
     getRecentRainfallRanking: vi.fn(),
     createRun: vi.fn(),
     getRun: vi.fn(),
     cancelRun: vi.fn(),
     getResultMetadata: vi.fn(),
     importResult: vi.fn(),
+    openDemoResult: vi.fn(),
     inspectResult: vi.fn(),
     searchLocation: vi.fn(),
   };
@@ -114,6 +118,13 @@ const metadata: ResultMetadataResponse = {
 
 describe("local review UI", () => {
   beforeEach(() => {
+    vi.mocked(getAppConfig).mockResolvedValue({
+      mode: "local",
+      allow_run: true,
+      allow_result_import: true,
+      download_url: "https://github.com/example/releases/latest",
+      demo_result_event_ids: [],
+    });
     vi.mocked(getHealth).mockResolvedValue({
       status: "ok",
       api_version: "v1",
@@ -205,7 +216,56 @@ describe("local review UI", () => {
     expect(screen.getByLabelText("継続時間 (min)")).toHaveValue("60");
     expect(screen.getByLabelText("緯度")).toHaveValue("35.690000");
     expect(screen.getByLabelText("経度")).toHaveValue("139.750000");
+    expect(screen.getByLabelText("範囲")).toHaveValue("2000");
     expect(screen.getByText(/絶対最大浸水地点を示すものではありません/)).toBeVisible();
+  });
+
+  it("offers a prepared result in local mode and opens it on request", async () => {
+    vi.mocked(getAppConfig).mockResolvedValue({
+      mode: "local",
+      allow_run: true,
+      allow_result_import: true,
+      download_url: "https://github.com/example/releases/latest",
+      demo_result_event_ids: ["tokyo-60m-1"],
+    });
+    vi.mocked(openDemoResult).mockResolvedValue({
+      run_id: "00000000-0000-0000-0000-000000000002",
+      status: "COMPLETE",
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /四日市市中心部/ }));
+    expect(screen.getByRole("dialog", { name: "解析済み結果があります" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "解析済み結果を表示" }));
+
+    await waitFor(() => expect(openDemoResult).toHaveBeenCalledWith("tokyo-60m-1"));
+    expect(await screen.findByRole("heading", { name: "解析結果" })).toBeVisible();
+  });
+
+  it("opens prepared results directly and replaces analysis with download in demo mode", async () => {
+    vi.mocked(getAppConfig).mockResolvedValue({
+      mode: "demo",
+      allow_run: false,
+      allow_result_import: false,
+      download_url: "https://github.com/example/releases/latest",
+      demo_result_event_ids: ["tokyo-60m-1"],
+    });
+    vi.mocked(openDemoResult).mockResolvedValue({
+      run_id: "00000000-0000-0000-0000-000000000002",
+      status: "COMPLETE",
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("link", { name: "Windows版をダウンロード" })).toHaveAttribute(
+      "href",
+      "https://github.com/example/releases/latest",
+    );
+    expect(screen.queryByRole("button", { name: "解析開始" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("解析結果を読み込んでレビュー")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /四日市市中心部/ }));
+    await waitFor(() => expect(openDemoResult).toHaveBeenCalledWith("tokyo-60m-1"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("imports a saved result for review and offers compressed export", async () => {

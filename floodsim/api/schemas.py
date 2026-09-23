@@ -24,6 +24,16 @@ class HealthResponse(BaseModel):
     engine: EngineSummary
 
 
+class AppConfigResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["local", "demo"]
+    allow_run: bool
+    allow_result_import: bool
+    download_url: str
+    demo_result_event_ids: list[str]
+
+
 class ApiError(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

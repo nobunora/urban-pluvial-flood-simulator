@@ -610,3 +610,37 @@
   font-size: 0.72rem;
   line-height: 1.35;
 }
+
+.download-app-link {
+  display: block;
+  box-sizing: border-box;
+  text-align: center;
+  text-decoration: none;
+}
+
+.scenario-result-dialog {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.scenario-result-dialog-card {
+  width: min(30rem, 100%);
+  padding: 1.25rem;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.3);
+}
+
+.scenario-result-dialog-card h3 {
+  margin-top: 0;
+}
+
+.scenario-result-dialog-actions {
+  display: grid;
+  gap: 0.5rem;
+}

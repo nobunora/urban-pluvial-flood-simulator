@@ -6,6 +6,7 @@ import os
 import tempfile
 from functools import lru_cache
 from pathlib import Path
+from threading import Lock
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from starlette.background import BackgroundTask
 
 from floodsim.api.errors import ApiContractError
 from floodsim.api.routes_runs import coordinator
+from floodsim.api.runtime_config import demo_archive_path, runtime_config
 from floodsim.api.schemas import (
     PointInspectionResponse,
     ResultImportResponse,
@@ -38,6 +40,8 @@ from floodsim.results.view import (
 
 router = APIRouter()
 MAX_ARCHIVE_UPLOAD_BYTES = 8 * 1024**3
+_demo_result_runs: dict[str, UUID] = {}
+_demo_result_lock = Lock()
 
 
 def _map_result_error(exc: Exception) -> ApiContractError:
@@ -154,6 +158,12 @@ def export_result(run_id: UUID) -> FileResponse:
 
 @router.post("/results/import", response_model=ResultImportResponse)
 async def import_result(request: Request) -> ResultImportResponse:
+    if not runtime_config().allow_result_import:
+        raise ApiContractError(
+            403,
+            "RESULT_IMPORT_DISABLED_IN_DEMO",
+            "Webデモ版では任意の解析結果を読み込めません。",
+        )
     media_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
     if media_type not in {"application/zip", "application/octet-stream"}:
         raise ApiContractError(415, "RESULT_ARCHIVE_CONTENT_TYPE", "ZIP形式の解析結果を指定してください。")
@@ -174,6 +184,35 @@ async def import_result(request: Request) -> ResultImportResponse:
         raise ApiContractError(400, "RESULT_ARCHIVE_INVALID", "解析結果ファイルを読み込めません。") from exc
     finally:
         Path(temporary_name).unlink(missing_ok=True)
+
+
+@router.post("/demo-results/{event_id}/open", response_model=ResultImportResponse)
+def open_demo_result(event_id: str) -> ResultImportResponse:
+    archive_path = demo_archive_path(event_id)
+    if archive_path is None:
+        raise ApiContractError(
+            404,
+            "DEMO_RESULT_NOT_FOUND",
+            "この豪雨条件の解析済みデモ結果はまだ用意されていません。",
+        )
+    with _demo_result_lock:
+        existing = _demo_result_runs.get(event_id)
+        if existing is not None:
+            try:
+                coordinator.get(existing)
+                return ResultImportResponse(run_id=existing)
+            except RunNotFound:
+                _demo_result_runs.pop(event_id, None)
+        try:
+            record = coordinator.import_result(archive_path)
+        except ResultArchiveError as exc:
+            raise ApiContractError(
+                500,
+                "DEMO_RESULT_INVALID",
+                "解析済みデモ結果を読み込めません。",
+            ) from exc
+        _demo_result_runs[event_id] = record.run_id
+        return ResultImportResponse(run_id=record.run_id)
 
 
 @router.get("/runs/{run_id}/layers/max-depth.png")

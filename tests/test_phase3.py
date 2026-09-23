@@ -271,6 +271,38 @@ def test_full_builder_uses_explicit_performance_settings(
     assert result.report["numerics"]["alpha"] == pytest.approx(0.75)
 
 
+def test_full_builder_can_reduce_saved_frame_frequency_without_changing_solver(
+    tmp_path: Path,
+) -> None:
+    area = _area()
+    grid = build_full_1m_grid(area, _elevation(area), _vectors(area))
+    config = _config().model_copy(
+        update={
+            "rainfall": ConstantRainfall(
+                intensity_mm_per_h=60,
+                duration_minutes=60,
+            )
+        }
+    )
+
+    result = SfincsModelBuilder(minimum_output_interval_seconds=900).build(
+        tmp_path / "sparse-output-model",
+        grid,
+        resolve_rainfall(config),
+    )
+
+    settings = {
+        key.strip().lower(): value.strip()
+        for line in (result.model_dir / "sfincs.inp").read_text(encoding="utf-8").splitlines()
+        if "=" in line
+        for key, value in [line.split("=", 1)]
+    }
+    assert float(settings["dtmapout"]) == pytest.approx(900.0)
+    assert float(settings["dthisout"]) == pytest.approx(900.0)
+    assert float(settings["dtmaxout"]) == pytest.approx(3600.0)
+    assert result.report["output_interval_seconds"] == 900
+
+
 def _write_synthetic_result(
     path: Path,
     *,
