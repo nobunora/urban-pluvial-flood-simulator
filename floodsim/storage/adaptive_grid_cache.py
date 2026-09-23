@@ -18,7 +18,7 @@ from floodsim.preprocessing.adaptive_grid import (
 )
 from floodsim.storage.run_store import atomic_write_json
 
-_SCHEMA = "adaptive-grid-classification-v1"
+_SCHEMA = "adaptive-grid-classification-v2-inactive-building-interior"
 
 
 class AdaptiveGridCache:

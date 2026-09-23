@@ -228,6 +228,29 @@ def test_building_narrow_passage_is_not_erased_by_coarsening() -> None:
     _assert_two_to_one(result.resolution_m)
 
 
+def test_inactive_building_interior_coarsens_but_boundary_stays_one_metre() -> None:
+    full = _full_grid()
+    buildings = full.building_mask.copy()
+    buildings[16:48, 16:48] = True
+    sfincs = full.sfincs_mask.copy()
+    sfincs[buildings] = 0
+    full = replace(full, building_mask=buildings, sfincs_mask=sfincs)
+
+    result = build_adaptive_grid(
+        full,
+        policy=_classifier_policy(),
+        hard_boundary_zone=sfincs,
+    )
+
+    assert np.all(result.resolution_m[16, 16:48] == 1)
+    assert np.all(result.resolution_m[47, 16:48] == 1)
+    assert np.all(result.resolution_m[16:48, 16] == 1)
+    assert np.all(result.resolution_m[16:48, 47] == 1)
+    assert np.max(result.resolution_m[20:44, 20:44]) == 8
+    assert np.count_nonzero(result.resolution_m[buildings] == 1) < np.count_nonzero(buildings)
+    _assert_two_to_one(result.resolution_m)
+
+
 def test_same_inputs_produce_identical_topology_counts_and_assignment() -> None:
     full = _full_grid(building=True, road=True)
     first = build_adaptive_grid(full, policy=_classifier_policy())

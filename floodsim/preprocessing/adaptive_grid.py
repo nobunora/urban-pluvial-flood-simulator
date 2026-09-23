@@ -633,6 +633,7 @@ def _classify_level_parallel(
     resolution: np.ndarray,
     ceiling: np.ndarray,
     zones: np.ndarray,
+    inactive_building: np.ndarray,
     size: int,
     limits: tuple[float, float, float, float, float],
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -663,6 +664,20 @@ def _classify_level_parallel(
         if not eligible:
             continue
         evaluated[block_row, block_col] = True
+
+        # Fully inactive building interiors have no SFINCS state and therefore
+        # no terrain-error constraint. Boundary cells are excluded through the
+        # 1 m ceiling before reaching this fast path.
+        fully_inactive_building = True
+        for row_offset in range(size):
+            for col_offset in range(size):
+                fully_inactive_building = (
+                    fully_inactive_building
+                    and inactive_building[row0 + row_offset, col0 + col_offset]
+                )
+        if fully_inactive_building:
+            safe[block_row, block_col] = True
+            continue
 
         mean = 0.0
         for row_offset in range(size):
@@ -842,7 +857,10 @@ def build_adaptive_grid(
     _apply_ceiling(ceiling, reason, structure_buffer, 2, "near_hard_structure")
     _apply_ceiling(ceiling, reason, native, 1, "native_structure")
     _apply_ceiling(ceiling, reason, roads, 1, "road")
-    _apply_ceiling(ceiling, reason, building, 1, "building")
+    building_boundary = _hard_boundary_cells(building.astype(np.uint8)) & building
+    _apply_ceiling(ceiling, reason, building_boundary, 1, "building_boundary")
+    inactive_building = building & (np.asarray(full_grid.sfincs_mask) == 0)
+    inactive_building_interior = inactive_building & ~building_boundary
 
     emit(0.25, "Adaptive分類: 地形の段差・尾根・窪地を抽出中")
     terrain_structure = _terrain_structure_mask(
@@ -850,18 +868,19 @@ def build_adaptive_grid(
         curvature_threshold_m=policy.terrain_structure_curvature_threshold_m,
         min_relief_m=policy.terrain_structure_min_relief_m,
     )
+    terrain_structure &= ~inactive_building_interior
     terrain_inner = _metric_feature_buffer(
         terrain_structure,
         dx_m=full_grid.dx_m,
         dy_m=full_grid.dy_m,
         distance_m=policy.terrain_structure_inner_buffer_m,
-    )
+    ) & ~inactive_building_interior
     terrain_outer = _metric_feature_buffer(
         terrain_structure,
         dx_m=full_grid.dx_m,
         dy_m=full_grid.dy_m,
         distance_m=policy.terrain_structure_outer_buffer_m,
-    )
+    ) & ~inactive_building_interior
     _apply_ceiling(ceiling, reason, terrain_outer, min(4, max_resolution), "terrain_buffer")
     _apply_ceiling(ceiling, reason, terrain_inner, min(2, max_resolution), "terrain_near")
     _apply_ceiling(ceiling, reason, terrain_structure, 1, "terrain_structure")
@@ -906,6 +925,7 @@ def build_adaptive_grid(
             resolution,
             ceiling,
             zones,
+            inactive_building_interior,
             size,
             (
                 thresholds.rmse_by_level_m[size],
