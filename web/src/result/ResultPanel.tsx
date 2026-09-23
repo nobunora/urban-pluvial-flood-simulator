@@ -169,8 +169,19 @@ export default function ResultPanel({
       return;
     }
     flowAutoLocateRef.current = true;
+    setLayer("time_depth");
+    setTimePosition(Math.max(0, metadata.available_time_indices.length - 1));
     setFlowVisible(true);
-  }, [flowVisible]);
+  }, [flowVisible, metadata.available_time_indices.length]);
+
+  const showMaximumDepth = useCallback(() => {
+    setLayer("max_depth");
+    flowAutoLocateRef.current = false;
+    setFlowVisible(false);
+    setFlowVectorData(null);
+    setFlowError(null);
+    setFlowRenderStats(null);
+  }, []);
 
   useEffect(() => {
     if (
@@ -475,7 +486,7 @@ export default function ResultPanel({
                 type="button"
                 className={layer === "max_depth" ? "is-active" : ""}
                 aria-pressed={layer === "max_depth"}
-                onClick={() => setLayer("max_depth")}
+                onClick={showMaximumDepth}
               >
                 最大浸水深
               </button>
@@ -490,20 +501,20 @@ export default function ResultPanel({
               </button>
               <button
                 type="button"
-                className={layer === "grid_resolution" ? "is-active" : ""}
-                aria-pressed={layer === "grid_resolution"}
-                onClick={() => setLayer("grid_resolution")}
-              >
-                計算格子
-              </button>
-              <button
-                type="button"
                 className={flowVisible ? "is-active" : ""}
                 aria-pressed={flowVisible}
                 disabled={!metadata.flow_vectors_available}
                 onClick={handleFlowToggle}
               >
                 流れベクトル
+              </button>
+              <button
+                type="button"
+                className={layer === "grid_resolution" ? "is-active" : ""}
+                aria-pressed={layer === "grid_resolution"}
+                onClick={() => setLayer("grid_resolution")}
+              >
+                計算格子
               </button>
             </div>
 

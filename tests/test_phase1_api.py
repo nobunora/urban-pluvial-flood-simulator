@@ -17,6 +17,41 @@ def test_health_returns_typed_phase1_response() -> None:
     }
 
 
+def test_app_config_defaults_to_local_mode(monkeypatch) -> None:
+    monkeypatch.delenv("FLOODSIM_APP_MODE", raising=False)
+    monkeypatch.delenv("FLOODSIM_DEMO_RESULTS_DIR", raising=False)
+    response = TestClient(app).get("/api/v1/app-config")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "mode": "local",
+        "allow_run": True,
+        "allow_result_import": True,
+        "download_url": (
+            "https://github.com/nobunora/urban-pluvial-flood-simulator/releases/latest"
+        ),
+        "demo_result_event_ids": [],
+    }
+
+
+def test_app_config_demo_mode_exposes_only_existing_allowlisted_results(
+    tmp_path, monkeypatch
+) -> None:
+    (tmp_path / "2025-yokkaichi.zip").write_bytes(b"placeholder")
+    (tmp_path / "not-allowlisted.zip").write_bytes(b"placeholder")
+    monkeypatch.setenv("FLOODSIM_APP_MODE", "demo")
+    monkeypatch.setenv("FLOODSIM_DEMO_RESULTS_DIR", str(tmp_path))
+
+    response = TestClient(app).get("/api/v1/app-config")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "demo"
+    assert payload["allow_run"] is False
+    assert payload["allow_result_import"] is False
+    assert payload["demo_result_event_ids"] == ["2025-yokkaichi"]
+
+
 def test_built_placeholder_spa_is_served() -> None:
     response = TestClient(app).get("/")
 

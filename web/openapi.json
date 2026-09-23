@@ -53,6 +53,47 @@
         "title": "AnalysisArea",
         "type": "object"
       },
+      "AppConfigResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_result_import": {
+            "title": "Allow Result Import",
+            "type": "boolean"
+          },
+          "allow_run": {
+            "title": "Allow Run",
+            "type": "boolean"
+          },
+          "demo_result_event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Demo Result Event Ids",
+            "type": "array"
+          },
+          "download_url": {
+            "title": "Download Url",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "local",
+              "demo"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "allow_run",
+          "allow_result_import",
+          "download_url",
+          "demo_result_event_ids"
+        ],
+        "title": "AppConfigResponse",
+        "type": "object"
+      },
       "CancelRunResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1386,6 +1427,69 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/app-config": {
+      "get": {
+        "operationId": "app_config_api_v1_app_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "App Config",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/demo-results/{event_id}/open": {
+      "post": {
+        "operationId": "open_demo_result_api_v1_demo_results__event_id__open_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Demo Result",
+        "tags": [
+          "results"
+        ]
+      }
+    },
     "/api/v1/estimate": {
       "post": {
         "operationId": "estimate_resources_api_v1_estimate_post",

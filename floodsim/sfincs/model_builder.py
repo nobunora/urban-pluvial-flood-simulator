@@ -138,6 +138,22 @@ def derive_output_interval_seconds(duration_seconds: float) -> int:
 class SfincsModelBuilder:
     """Build only the regular Full 1 m v0.1 hydraulic model."""
 
+    def __init__(self, *, minimum_output_interval_seconds: int | None = None) -> None:
+        if minimum_output_interval_seconds is not None and (
+            minimum_output_interval_seconds < 60
+            or minimum_output_interval_seconds % 60
+        ):
+            raise ValueError(
+                "minimum_output_interval_seconds must be a positive whole minute"
+            )
+        self.minimum_output_interval_seconds = minimum_output_interval_seconds
+
+    def _output_interval_seconds(self, duration_seconds: float) -> int:
+        interval = derive_output_interval_seconds(duration_seconds)
+        if self.minimum_output_interval_seconds is not None:
+            interval = max(interval, self.minimum_output_interval_seconds)
+        return min(int(duration_seconds), interval)
+
     def build(
         self,
         model_dir: str | Path,
@@ -188,7 +204,7 @@ class SfincsModelBuilder:
             model.roughness.create([{"manning": roughness}])
 
             duration_seconds = float(rainfall.elapsed_seconds[-1])
-            output_interval = derive_output_interval_seconds(duration_seconds)
+            output_interval = self._output_interval_seconds(duration_seconds)
             start = _sfincs_datetime(rainfall.start_time)
             stop = start + timedelta(seconds=duration_seconds)
             stamp = "%Y%m%d %H%M%S"

@@ -1,6 +1,7 @@
 import type { components } from "./generated";
 
 export type HealthResponse = components["schemas"]["HealthResponse"];
+export type AppConfigResponse = components["schemas"]["AppConfigResponse"];
 export type GeocodeResponse = components["schemas"]["GeocodeResponse"];
 export type GeocodeCandidateResponse = components["schemas"]["GeocodeCandidateResponse"];
 export type AnalysisArea = components["schemas"]["AnalysisArea"];
@@ -27,6 +28,10 @@ async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getHealth(): Promise<HealthResponse> {
   return jsonRequest<HealthResponse>("/api/v1/health");
+}
+
+export function getAppConfig(): Promise<AppConfigResponse> {
+  return jsonRequest<AppConfigResponse>("/api/v1/app-config");
 }
 
 export function searchLocation(query: string, signal?: AbortSignal): Promise<GeocodeResponse> {
@@ -86,6 +91,13 @@ export function importResult(file: File): Promise<ResultImportResponse> {
     headers: { "Content-Type": "application/zip" },
     body: file,
   });
+}
+
+export function openDemoResult(eventId: string): Promise<ResultImportResponse> {
+  return jsonRequest<ResultImportResponse>(
+    `/api/v1/demo-results/${encodeURIComponent(eventId)}/open`,
+    { method: "POST" },
+  );
 }
 
 export function inspectResult(

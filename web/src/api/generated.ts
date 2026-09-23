@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/api/v1/app-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** App Config */
+        get: operations["app_config_api_v1_app_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/demo-results/{event_id}/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Demo Result */
+        post: operations["open_demo_result_api_v1_demo_results__event_id__open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/estimate": {
         parameters: {
             query?: never;
@@ -340,6 +374,22 @@ export interface components {
             mode: "preset_square" | "rectangle";
             /** Width M */
             width_m: number;
+        };
+        /** AppConfigResponse */
+        AppConfigResponse: {
+            /** Allow Result Import */
+            allow_result_import: boolean;
+            /** Allow Run */
+            allow_run: boolean;
+            /** Demo Result Event Ids */
+            demo_result_event_ids: string[];
+            /** Download Url */
+            download_url: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "local" | "demo";
         };
         /** CancelRunResponse */
         CancelRunResponse: {
@@ -796,6 +846,57 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    app_config_api_v1_app_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppConfigResponse"];
+                };
+            };
+        };
+    };
+    open_demo_result_api_v1_demo_results__event_id__open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultImportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     estimate_resources_api_v1_estimate_post: {
         parameters: {
             query?: never;

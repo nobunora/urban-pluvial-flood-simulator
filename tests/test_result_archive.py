@@ -128,3 +128,46 @@ def test_result_archive_http_import_and_export(
     exported_path.write_bytes(exported.content)
     with zipfile.ZipFile(exported_path) as round_trip:
         assert set(round_trip.namelist()) == EXPECTED_MEMBERS
+
+
+def test_demo_result_endpoint_opens_only_allowlisted_archives(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path, manifest_path, metadata_path, arrays_path = _contract_files(tmp_path)
+    demo_dir = tmp_path / "demo-results"
+    demo_dir.mkdir()
+    archive_path = demo_dir / "2025-yokkaichi.zip"
+    create_result_archive(
+        archive_path,
+        config_path=config_path,
+        manifest_path=manifest_path,
+        metadata_path=metadata_path,
+        arrays_path=arrays_path,
+    )
+    coordinator = RunCoordinator(runs_root=tmp_path / "runs")
+    monkeypatch.setattr(routes_results, "coordinator", coordinator)
+    monkeypatch.setattr(routes_runs, "coordinator", coordinator)
+    monkeypatch.setenv("FLOODSIM_DEMO_RESULTS_DIR", str(demo_dir))
+    routes_results._demo_result_runs.clear()
+    client = TestClient(app)
+
+    opened = client.post("/api/v1/demo-results/2025-yokkaichi/open")
+    assert opened.status_code == 200
+    assert client.get(f"/api/v1/runs/{opened.json()['run_id']}").status_code == 200
+    missing = client.post("/api/v1/demo-results/not-allowlisted/open")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "DEMO_RESULT_NOT_FOUND"
+
+
+def test_demo_mode_rejects_arbitrary_archive_upload(monkeypatch) -> None:
+    monkeypatch.setenv("FLOODSIM_APP_MODE", "demo")
+
+    response = TestClient(app).post(
+        "/api/v1/results/import",
+        content=b"not-used",
+        headers={"Content-Type": "application/zip"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "RESULT_IMPORT_DISABLED_IN_DEMO"

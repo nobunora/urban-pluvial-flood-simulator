@@ -378,6 +378,11 @@ describe("ResultPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "流れベクトル" }));
 
     expect(await screen.findByText("現在: 00:30")).toBeVisible();
+    expect(screen.getByRole("button", { name: "時刻別の浸水深" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("result-map")).toHaveAttribute(
+      "data-image-url",
+      "/api/v1/runs/run-1/layers/depth.png?time_index=3",
+    );
     await waitFor(() => {
       expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-arrow-count", "1");
     });
@@ -389,18 +394,15 @@ describe("ResultPanel", () => {
     expect(screen.getByText("GeoJSON矢印: 1本")).toBeVisible();
     expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
       "run-1",
-      0,
-      expect.any(Object),
-      8,
-      expect.any(AbortSignal),
-    );
-    expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
-      "run-1",
       3,
       expect.any(Object),
       8,
       expect.any(AbortSignal),
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "最大浸水深" }));
+    expect(screen.getByRole("button", { name: "流れベクトル" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("result-map")).toHaveTextContent("最大浸水深の地図");
   });
 
   it("keeps layer controls and the timeline inside the fullscreen region", async () => {
@@ -421,6 +423,11 @@ describe("ResultPanel", () => {
       expect(region.querySelector(`button[aria-pressed]`)).not.toBeNull();
       expect(screen.getByRole("button", { name: label })).toBeVisible();
     }
+    const layerButtons = Array.from(
+      region.querySelectorAll('[aria-label="結果レイヤー"] button'),
+      (button) => button.textContent?.trim(),
+    );
+    expect(layerButtons).toEqual(["最大浸水深", "時刻別の浸水深", "流れベクトル", "計算格子"]);
 
     fireEvent.click(screen.getByRole("button", { name: "地図を全画面表示" }));
     expect(requestFullscreen).toHaveBeenCalledTimes(1);

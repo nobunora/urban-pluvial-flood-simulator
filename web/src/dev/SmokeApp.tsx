@@ -3,11 +3,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   cancelRun,
   createRun,
+  getAppConfig,
   getHealth,
   getResultMetadata,
   getRecentRainfallRanking,
   getRun,
   importResult,
+  openDemoResult,
+  type AppConfigResponse,
   type AnalysisArea,
   type ResultMetadataResponse,
   type RecentRainfallRankingResponse,
@@ -66,6 +69,14 @@ export default function SmokeApp() {
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
   const [rainfallRanking, setRainfallRanking] = useState<RecentRainfallRankingResponse | null>(null);
+  const [appConfig, setAppConfig] = useState<AppConfigResponse>({
+    mode: "local",
+    allow_run: true,
+    allow_result_import: true,
+    download_url: "https://github.com/nobunora/urban-pluvial-flood-simulator/releases/latest",
+    demo_result_event_ids: [],
+  });
+  const [pendingDemoEventId, setPendingDemoEventId] = useState<string | null>(null);
 
   const latValue = parseNumber(lat);
   const lonValue = parseNumber(lon);
@@ -102,6 +113,12 @@ export default function SmokeApp() {
     getHealth()
       .then((health) => setBackend(`${health.status} / app ${health.application_version}`))
       .catch((cause: unknown) => setBackend(`NG: ${String(cause)}`));
+  }, []);
+
+  useEffect(() => {
+    getAppConfig().then(setAppConfig).catch((cause: unknown) => {
+      setError(`アプリ設定を取得できません: ${String(cause)}`);
+    });
   }, []);
 
   useEffect(() => {
@@ -255,6 +272,27 @@ export default function SmokeApp() {
     }
   };
 
+  const handleOpenDemoResult = async (eventId: string) => {
+    setImporting(true);
+    setPendingDemoEventId(null);
+    setError(null);
+    setResultError(null);
+    try {
+      const imported = await openDemoResult(eventId);
+      const [nextStatus, metadata] = await Promise.all([
+        getRun(imported.run_id),
+        getResultMetadata(imported.run_id),
+      ]);
+      setRunId(imported.run_id);
+      setStatus(nextStatus);
+      setResultMetadata(metadata);
+    } catch (cause: unknown) {
+      setError(String(cause));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const rainfallSummary = `${intensity} mm/h × ${duration}分`;
 
   return (
@@ -270,18 +308,22 @@ export default function SmokeApp() {
       {!resultMetadata && (
         <section className="smoke-grid">
           <div className="smoke-card">
-            <h2>保存済み結果</h2>
-            <label className="result-import-control">
-              解析結果を読み込んでレビュー
-              <input
-                type="file"
-                accept=".zip,application/zip"
-                disabled={setupLocked || importing}
-                onChange={(event) => void handleImport(event.target.files?.[0])}
-              />
-            </label>
-            {importing && <p>解析結果を読み込んでいます…</p>}
-            <hr />
+            {appConfig.allow_result_import && (
+              <>
+                <h2>保存済み結果</h2>
+                <label className="result-import-control">
+                  解析結果を読み込んでレビュー
+                  <input
+                    type="file"
+                    accept=".zip,application/zip"
+                    disabled={setupLocked || importing}
+                    onChange={(event) => void handleImport(event.target.files?.[0])}
+                  />
+                </label>
+                <hr />
+              </>
+            )}
+            {importing && <p>解析済み結果を読み込んでいます…</p>}
             <h2>1. 条件</h2>
             <LocationSearch disabled={setupLocked} onSelect={updateLocation} />
             <div className="location-manual-divider">
@@ -338,6 +380,14 @@ export default function SmokeApp() {
                           setDuration(String(event.duration_minutes));
                           setLon(event.station_lon_deg.toFixed(6));
                           setLat(event.station_lat_deg.toFixed(6));
+                          setHalfSize("2000");
+                          if (appConfig.demo_result_event_ids.includes(event.event_id)) {
+                            if (appConfig.mode === "demo") {
+                              void handleOpenDemoResult(event.event_id);
+                            } else {
+                              setPendingDemoEventId(event.event_id);
+                            }
+                          }
                         }}
                       >
                         <span className="rainfall-event-place">
@@ -358,10 +408,35 @@ export default function SmokeApp() {
               <p className="rainfall-ranking-note">{rainfallRanking.coverage_note}</p>
             )}
             <div className="smoke-actions">
-              <button className="analysis-start-button" disabled={!area || setupLocked} onClick={() => void handleRun()}>
-                解析開始
-              </button>
+              {appConfig.allow_run ? (
+                <button className="analysis-start-button" disabled={!area || setupLocked} onClick={() => void handleRun()}>
+                  解析開始
+                </button>
+              ) : (
+                <a className="analysis-start-button download-app-link" href={appConfig.download_url}>
+                  Windows版をダウンロード
+                </a>
+              )}
             </div>
+            {pendingDemoEventId && (
+              <div className="scenario-result-dialog" role="dialog" aria-modal="true" aria-labelledby="scenario-result-title">
+                <div className="scenario-result-dialog-card">
+                  <h3 id="scenario-result-title">解析済み結果があります</h3>
+                  <p>この豪雨条件の±2000 m解析済み結果を表示しますか？</p>
+                  <div className="scenario-result-dialog-actions">
+                    <button type="button" onClick={() => void handleOpenDemoResult(pendingDemoEventId)}>
+                      解析済み結果を表示
+                    </button>
+                    <button type="button" onClick={() => setPendingDemoEventId(null)}>
+                      この条件で新しく解析
+                    </button>
+                    <button type="button" onClick={() => setPendingDemoEventId(null)}>
+                      キャンセル
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="smoke-main-column">

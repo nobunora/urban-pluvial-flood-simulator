@@ -14,6 +14,7 @@ from fastapi.responses import Response, StreamingResponse
 from fastapi.routing import APIRoute
 
 from floodsim.api.errors import ApiContractError
+from floodsim.api.runtime_config import runtime_config
 from floodsim.api.schemas import (
     CancelRunResponse,
     ResourceEstimateRequest,
@@ -105,6 +106,12 @@ def estimate_resources(request: Request, payload: ResourceEstimateRequest) -> Re
 
 @router.post("/runs", response_model=RunCreateResponse, status_code=202)
 def create_run(request: Request, config: RunConfig) -> RunCreateResponse:
+    if not runtime_config().allow_run:
+        raise ApiContractError(
+            403,
+            "RUN_DISABLED_IN_DEMO",
+            "Webデモ版では新しい解析を実行できません。ダウンロード版を利用してください。",
+        )
     try:
         record = coordinator.create_run(config)
         coordinator.enable_client_lease(record.run_id)

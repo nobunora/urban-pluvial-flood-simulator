@@ -248,6 +248,36 @@ q^{n+1}
 }
 ```
 
+## Web demo mode
+
+The same API and frontend can run as a review-only web demo. The server, not
+the browser, enforces the mode: new simulations and arbitrary ZIP uploads are
+disabled, while allowlisted prepared results can be opened from a local data
+directory.
+
+```powershell
+$env:FLOODSIM_APP_MODE = "demo"
+$env:FLOODSIM_DEMO_RESULTS_DIR = "C:\path\to\demo-results"
+$env:FLOODSIM_DOWNLOAD_URL = "https://github.com/owner/repository/releases/latest"
+python -m uvicorn floodsim.api.app:app
+```
+
+Generate the five 4 km x 4 km (`±2000 m`) Full 1 m archives sequentially with
+an already permitted local SFINCS executable:
+
+```powershell
+$env:SFINCS_BIN = "C:\path\to\sfincs.exe"
+python -m scripts.generate_demo_results `
+  --output-dir C:\path\to\demo-results `
+  --work-dir C:\path\to\demo-work
+```
+
+The generator preserves the hydraulic solver configuration. It saves map and
+history frames every 15 minutes to keep portable review archives bounded;
+SFINCS maximum-depth output remains independent. Coastal demo generation uses
+the production nearest-neighbour elevation fill with a documented 5% coverage
+ceiling, without changing the normal application's 2% default.
+
 ## Tests
 
 ```bash
