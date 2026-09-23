@@ -1,0 +1,11 @@
+{
+    "schema_version": 2,
+    "commit": "6f1ec48e299c249595fa5c751a84b3bb61512875",
+    "indexed_at": "2026-09-23T07:42:39Z",
+    "project": "urban-rainfall-hotspots",
+    "nodes": 1533,
+    "edges": 6468,
+    "original_size": 7602176,
+    "compressed_size": 435697,
+    "compression_level": 9
+}
