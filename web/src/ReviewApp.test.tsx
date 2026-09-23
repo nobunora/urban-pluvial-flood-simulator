@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
   createRun,
-  estimateResources,
   getHealth,
   getRecentRainfallRanking,
   getResultMetadata,
@@ -20,7 +19,6 @@ vi.mock("./api/client", async (importOriginal) => {
     ...actual,
     getHealth: vi.fn(),
     getRecentRainfallRanking: vi.fn(),
-    estimateResources: vi.fn(),
     createRun: vi.fn(),
     getRun: vi.fn(),
     cancelRun: vi.fn(),
@@ -173,11 +171,14 @@ describe("local review UI", () => {
   it("renders the Full 1 m controls and lets the setup map change location/range", () => {
     render(<App />);
 
-    expect(screen.getByText("ローカルレビュー版 — Full 1 m")).toBeVisible();
+    expect(screen.getByText("ローカルレビュー版")).toBeVisible();
+    expect(screen.queryByText(/Full 1 m/)).not.toBeInTheDocument();
     expect(screen.getByLabelText("雨量強度 (mm/h)")).toHaveValue("150");
     expect(screen.getByLabelText("継続時間 (min)")).toHaveValue("20");
     expect(screen.queryByRole("button", { name: "Adaptive OFF" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Adaptive ON" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "負荷を見積る" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/精度:/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "解析開始" })).toBeVisible();
     expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "500");
 
@@ -193,6 +194,10 @@ describe("local review UI", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: /四日市市中心部/ }));
+
+    const rainfallEvent = screen.getByRole("button", { name: /四日市市中心部/ });
+    expect(rainfallEvent).toHaveTextContent("2025年四日市市中心部");
+    expect(rainfallEvent).toHaveTextContent("1h降水量 123.5 mm");
 
     expect(screen.getByLabelText("雨量強度 (mm/h)")).toHaveValue("123.5");
     expect(screen.getByLabelText("継続時間 (min)")).toHaveValue("60");
@@ -219,15 +224,7 @@ describe("local review UI", () => {
 
     expect(screen.queryByRole("button", { name: "Adaptive OFF" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Adaptive ON" })).not.toBeInTheDocument();
-    expect(screen.getByText(/精度:/)).toHaveTextContent("Full 1 m");
-
-    fireEvent.click(screen.getByRole("button", { name: "負荷を見積る" }));
-    await waitFor(() => {
-      expect(estimateResources).toHaveBeenCalledWith(
-        expect.any(Object),
-        "full_1m",
-      );
-    });
+    expect(screen.queryByText(/精度:/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "解析開始" }));
     await waitFor(() => {
@@ -330,6 +327,6 @@ describe("local review UI", () => {
     expect(screen.getByLabelText("範囲")).toHaveValue("250");
     expect(screen.getByLabelText("雨量強度 (mm/h)")).toHaveValue("10");
     expect(screen.getByLabelText("継続時間 (min)")).toHaveValue("1");
-    expect(screen.getByText(/精度:/)).toHaveTextContent("Full 1 m");
+    expect(screen.queryByText(/精度:/)).not.toBeInTheDocument();
   });
 });

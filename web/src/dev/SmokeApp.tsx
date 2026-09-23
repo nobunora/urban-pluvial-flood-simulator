@@ -3,14 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import {
   cancelRun,
   createRun,
-  estimateResources,
   getHealth,
   getResultMetadata,
   getRecentRainfallRanking,
   getRun,
   importResult,
   type AnalysisArea,
-  type ResourceEstimateResponse,
   type ResultMetadataResponse,
   type RecentRainfallRankingResponse,
   type RunStatusResponse,
@@ -58,7 +56,6 @@ export default function SmokeApp() {
   const [intensity, setIntensity] = useState("150");
   const [duration, setDuration] = useState("20");
   const [backend, setBackend] = useState("確認中…");
-  const [estimate, setEstimate] = useState<ResourceEstimateResponse | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<RunStatusResponse | null>(null);
   const [stageObservedAtMs, setStageObservedAtMs] = useState<number | null>(null);
@@ -161,20 +158,6 @@ export default function SmokeApp() {
     if (setupLocked) return;
     setLat(nextLat.toFixed(6));
     setLon(nextLon.toFixed(6));
-    setEstimate(null);
-  };
-
-  const handleEstimate = async () => {
-    if (!area) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setEstimate(await estimateResources(area, "full_1m"));
-    } catch (cause: unknown) {
-      setError(String(cause));
-    } finally {
-      setBusy(false);
-    }
   };
 
   const handleRun = async () => {
@@ -279,8 +262,7 @@ export default function SmokeApp() {
       <header>
         <div>
           <h1>Urban Pluvial Flood Simulator</h1>
-          <p className="smoke-kicker">ローカルレビュー版 — Full 1 m</p>
-          <p>解析にはFull 1 m regular gridを使用します。</p>
+          <p className="smoke-kicker">ローカルレビュー版</p>
         </div>
         <div className="smoke-health">Backend: {backend}</div>
       </header>
@@ -312,7 +294,6 @@ export default function SmokeApp() {
                 disabled={setupLocked}
                 onChange={(event) => {
                   setLat(event.target.value);
-                  setEstimate(null);
                 }}
               />
             </label>
@@ -323,7 +304,6 @@ export default function SmokeApp() {
                 disabled={setupLocked}
                 onChange={(event) => {
                   setLon(event.target.value);
-                  setEstimate(null);
                 }}
               />
             </label>
@@ -334,7 +314,6 @@ export default function SmokeApp() {
                 disabled={setupLocked}
                 onChange={(event) => {
                   setHalfSize(event.target.value);
-                  setEstimate(null);
                 }}
               >
                 <option value="250">±250 m</option>
@@ -359,21 +338,21 @@ export default function SmokeApp() {
                           setDuration(String(event.duration_minutes));
                         }}
                       >
-                        <strong>{event.event_date_or_datetime_metadata ?? "年不明"}年</strong>
-                        <span>{event.station_name}</span>
-                        <span>{event.intensity_mm_per_h.toFixed(1)} mm/h</span>
+                        <span className="rainfall-event-place">
+                          <strong>{event.event_date_or_datetime_metadata ?? "年不明"}年</strong>
+                          {event.station_name}
+                        </span>
+                        <span className="rainfall-event-amount">
+                          1h降水量 {event.intensity_mm_per_h.toFixed(1)} mm
+                        </span>
                       </button>
                     </li>
                   ))}
                 </ol>
               </section>
             )}
-            <p>
-              精度: <strong>Full 1 m</strong>（regular grid）
-            </p>
             <div className="smoke-actions">
-              <button disabled={!area || setupLocked} onClick={() => void handleEstimate()}>負荷を見積る</button>
-              <button disabled={!area || setupLocked} onClick={() => void handleRun()}>
+              <button className="analysis-start-button" disabled={!area || setupLocked} onClick={() => void handleRun()}>
                 解析開始
               </button>
             </div>
@@ -396,17 +375,9 @@ export default function SmokeApp() {
               {area ? (
                 <dl>
                   <dt>範囲</dt><dd>{area.width_m} × {area.height_m} m</dd>
-                  <dt>セル数</dt><dd>{area.area_m2.toLocaleString()} (Full 1 m相当)</dd>
+                  <dt>セル数</dt><dd>{area.area_m2.toLocaleString()}</dd>
                 </dl>
               ) : <p className="smoke-error">入力値を確認してください。</p>}
-
-              {estimate && (
-                <div className="smoke-result">
-                  <h3>見積り</h3>
-                  <p>{estimate.full_1m_equivalent_cells.toLocaleString()} cells / 負荷 {estimate.runtime_class}</p>
-                  {estimate.warnings.map((warning) => <p key={warning} className="smoke-warning">{warning}</p>)}
-                </div>
-              )}
 
               {runId && <p><strong>Run ID:</strong> <code>{runId}</code></p>}
               <RunProgress
@@ -449,7 +420,7 @@ export default function SmokeApp() {
       )}
 
       <footer>
-        レビュー対象: 地図による場所・範囲指定 / Full 1 m・Adaptive切替 / 工程・取得データ表示 / SFINCS稼働表示 / 最大浸水深地図・地点確認 / 下水・浸透は未考慮 / 雨は解析範囲内で一様 / 公的な洪水予報・避難情報ではありません
+        レビュー対象: 地図による場所・範囲指定 / 工程・取得データ表示 / SFINCS稼働表示 / 最大浸水深地図・地点確認 / 下水・浸透は未考慮 / 雨は解析範囲内で一様 / 公的な洪水予報・避難情報ではありません
       </footer>
     </main>
   );
