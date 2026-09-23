@@ -57,7 +57,6 @@ export default function SmokeApp() {
   const [halfSize, setHalfSize] = useState("250");
   const [intensity, setIntensity] = useState("150");
   const [duration, setDuration] = useState("20");
-  const [adaptiveEnabled, setAdaptiveEnabled] = useState(false);
   const [backend, setBackend] = useState("確認中…");
   const [estimate, setEstimate] = useState<ResourceEstimateResponse | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
@@ -170,9 +169,7 @@ export default function SmokeApp() {
     setBusy(true);
     setError(null);
     try {
-      setEstimate(
-        await estimateResources(area, adaptiveEnabled ? "adaptive" : "full_1m"),
-      );
+      setEstimate(await estimateResources(area, "full_1m"));
     } catch (cause: unknown) {
       setError(String(cause));
     } finally {
@@ -207,7 +204,7 @@ export default function SmokeApp() {
     try {
       const created = await createRun({
         analysis_area: area,
-        requested_accuracy_mode: adaptiveEnabled ? "adaptive" : "full_1m",
+        requested_accuracy_mode: "full_1m",
         rainfall: {
           kind: "constant",
           intensity_mm_per_h: intensityValue,
@@ -282,13 +279,8 @@ export default function SmokeApp() {
       <header>
         <div>
           <h1>Urban Pluvial Flood Simulator</h1>
-          <p className="smoke-kicker">
-            ローカルレビュー版 — {adaptiveEnabled ? "Adaptive" : "Full 1 m"}
-          </p>
-          <p>
-            Adaptiveは条件画面で切替できます。OFFでは従来のFull 1 m解析経路をそのまま使用し、
-            ONではAdaptive quadtree/subgrid経路を使用します。
-          </p>
+          <p className="smoke-kicker">ローカルレビュー版 — Full 1 m</p>
+          <p>解析にはFull 1 m regular gridを使用します。</p>
         </div>
         <div className="smoke-health">Backend: {backend}</div>
       </header>
@@ -376,41 +368,8 @@ export default function SmokeApp() {
                 </ol>
               </section>
             )}
-            <fieldset className="adaptive-mode-control" disabled={setupLocked}>
-              <legend>Adaptive Grid</legend>
-              <div className="adaptive-mode-buttons" role="group" aria-label="Adaptive Grid切替">
-                <button
-                  type="button"
-                  className={!adaptiveEnabled ? "is-active" : ""}
-                  aria-pressed={!adaptiveEnabled}
-                  onClick={() => {
-                    setAdaptiveEnabled(false);
-                    setEstimate(null);
-                  }}
-                >
-                  Adaptive OFF
-                </button>
-                <button
-                  type="button"
-                  className={adaptiveEnabled ? "is-active" : ""}
-                  aria-pressed={adaptiveEnabled}
-                  onClick={() => {
-                    setAdaptiveEnabled(true);
-                    setEstimate(null);
-                  }}
-                >
-                  Adaptive ON
-                </button>
-              </div>
-              <p className="adaptive-mode-note">
-                {adaptiveEnabled
-                  ? "Full 1 mから地形・構造を保護しながら2 m → 4 m → 8 mへ静的粗格子化します。"
-                  : "従来のFull 1 m regular gridで解析します。"}
-              </p>
-            </fieldset>
             <p>
-              精度: <strong>{adaptiveEnabled ? "Adaptive" : "Full 1 m"}</strong>
-              {adaptiveEnabled ? "（静的Adaptive Grid）" : "（従来のFull 1 m経路）"}
+              精度: <strong>Full 1 m</strong>（regular grid）
             </p>
             <div className="smoke-actions">
               <button disabled={!area || setupLocked} onClick={() => void handleEstimate()}>負荷を見積る</button>

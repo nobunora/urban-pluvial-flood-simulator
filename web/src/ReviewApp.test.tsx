@@ -176,14 +176,8 @@ describe("local review UI", () => {
     expect(screen.getByText("ローカルレビュー版 — Full 1 m")).toBeVisible();
     expect(screen.getByLabelText("雨量強度 (mm/h)")).toHaveValue("150");
     expect(screen.getByLabelText("継続時間 (min)")).toHaveValue("20");
-    expect(screen.getByRole("button", { name: "Adaptive OFF" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(screen.getByRole("button", { name: "Adaptive ON" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    expect(screen.queryByRole("button", { name: "Adaptive OFF" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Adaptive ON" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "解析開始" })).toBeVisible();
     expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "500");
 
@@ -220,13 +214,11 @@ describe("local review UI", () => {
   });
 
 
-  it("switches Adaptive on and keeps Full 1 m as the default/off path", async () => {
+  it("hides Adaptive controls and always uses the Full 1 m production path", async () => {
     render(<App />);
 
-    const adaptiveOn = screen.getByRole("button", { name: "Adaptive ON" });
-    const adaptiveOff = screen.getByRole("button", { name: "Adaptive OFF" });
-    expect(adaptiveOff).toHaveAttribute("aria-pressed", "true");
-    expect(adaptiveOn).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("button", { name: "Adaptive OFF" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Adaptive ON" })).not.toBeInTheDocument();
     expect(screen.getByText(/精度:/)).toHaveTextContent("Full 1 m");
 
     fireEvent.click(screen.getByRole("button", { name: "負荷を見積る" }));
@@ -237,15 +229,10 @@ describe("local review UI", () => {
       );
     });
 
-    fireEvent.click(adaptiveOn);
-    expect(adaptiveOn).toHaveAttribute("aria-pressed", "true");
-    expect(adaptiveOff).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByText(/精度:/)).toHaveTextContent("Adaptive");
-
     fireEvent.click(screen.getByRole("button", { name: "解析開始" }));
     await waitFor(() => {
       expect(createRun).toHaveBeenCalledWith(
-        expect.objectContaining({ requested_accuracy_mode: "adaptive" }),
+        expect.objectContaining({ requested_accuracy_mode: "full_1m" }),
       );
     });
   });
