@@ -1,0 +1,261 @@
+"""Full 1 m hydraulic grid preparation."""
+
+from __future__ import annotations
+
+import math
+import os
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+from rasterio.features import rasterize  # type: ignore[import-untyped]
+from rasterio.transform import from_origin  # type: ignore[import-untyped]
+from shapely.errors import GEOSException  # type: ignore[import-untyped]
+from shapely.geometry import LineString, Polygon  # type: ignore[import-untyped]
+
+from floodsim.domain.geometry import AnalysisArea
+from floodsim.preprocessing.roof_rainfall import (
+    RoofRainAllocation,
+    allocate_roof_rainfall,
+)
+from floodsim.providers.common import local_crs
+from floodsim.providers.gsi_elevation import ElevationProduct
+
+GENERAL_MANNING = 0.030
+ROAD_MANNING = 0.020
+
+
+@dataclass(frozen=True)
+class FullGridProduct:
+    elevation_m: np.ndarray
+    building_mask: np.ndarray
+    sfincs_mask: np.ndarray
+    manning_n: np.ndarray
+    rain_weight: np.ndarray
+    roof_allocation: RoofRainAllocation
+    width_cells: int
+    height_cells: int
+    dx_m: float
+    dy_m: float
+    x0_m: float
+    y0_m: float
+    crs_wkt: str
+    road_mask: np.ndarray | None = None
+    adaptive_hard_boundary_zone: np.ndarray | None = None
+    adaptive_resolution_ceiling_m: np.ndarray | None = None
+    native_structure_mask: np.ndarray | None = None
+
+    @property
+    def cell_count(self) -> int:
+        return self.width_cells * self.height_cells
+
+
+def _cell_count(size_m: float) -> int:
+    rounded = round(size_m)
+    if rounded <= 0 or not math.isclose(size_m, rounded, rel_tol=0.0, abs_tol=1e-6):
+        raise ValueError("Full 1 m mode requires integer-metre analysis dimensions")
+    return rounded
+
+
+def _cell_center_elevation(product: ElevationProduct, height: int, width: int) -> np.ndarray:
+    z = np.asarray(product.z, dtype=np.float32)
+    if z.shape == (height, width):
+        out = z.copy()
+    elif z.shape == (height + 1, width + 1):
+        out = 0.25 * (z[:-1, :-1] + z[1:, :-1] + z[:-1, 1:] + z[1:, 1:])
+    else:
+        raise ValueError(
+            f"unexpected elevation shape {z.shape}; expected {(height, width)} or "
+            f"{(height + 1, width + 1)}"
+        )
+    if not np.isfinite(out).all():
+        raise ValueError("Full 1 m terrain contains non-finite elevations")
+    return out.astype(np.float32, copy=False)
+
+
+def _polygon_shapes(items: list[np.ndarray]) -> list[tuple[Polygon, int]]:
+    shapes: list[tuple[Polygon, int]] = []
+    for coords in items:
+        try:
+            points = np.asarray(coords, dtype=float)
+        except (TypeError, ValueError):
+            continue
+        if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] < 2:
+            continue
+        xy = points[:, :2]
+        if not np.isfinite(xy).all():
+            continue
+        try:
+            polygon = Polygon(xy)
+        except (GEOSException, TypeError, ValueError):
+            continue
+        if polygon.is_valid and not polygon.is_empty and polygon.area > 0:
+            shapes.append((polygon, 1))
+    return shapes
+
+
+def _road_shapes(vectors: Any) -> list[tuple[object, int]]:
+    shapes: list[tuple[object, int]] = list(_polygon_shapes(list(vectors.road_polygons)))
+    for coords in vectors.road_lines:
+        try:
+            points = np.asarray(coords, dtype=float)
+        except (TypeError, ValueError):
+            continue
+        if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 2:
+            continue
+        xy = points[:, :2]
+        if not np.isfinite(xy).all():
+            continue
+        try:
+            line = LineString(xy)
+        except (GEOSException, TypeError, ValueError):
+            continue
+        if line.is_valid and not line.is_empty and line.length > 0:
+            shapes.append((line, 1))
+    return shapes
+
+
+def _rasterize_local(
+    shapes: list[tuple[object, int]],
+    *,
+    width: int,
+    height: int,
+    width_m: float,
+    height_m: float,
+    all_touched: bool,
+) -> np.ndarray:
+    if not shapes:
+        return np.zeros((height, width), dtype=bool)
+    transform = from_origin(-width_m / 2.0, height_m / 2.0, 1.0, 1.0)
+    north_to_south = rasterize(
+        shapes,
+        out_shape=(height, width),
+        transform=transform,
+        fill=0,
+        default_value=1,
+        all_touched=all_touched,
+        dtype="uint8",
+    )
+    return np.flipud(north_to_south).astype(bool)
+
+
+def build_full_1m_grid(
+    area: AnalysisArea,
+    elevation: ElevationProduct,
+    vectors: Any,
+    *,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> FullGridProduct:
+    """Create the exact 1 m hydraulic arrays required by the Phase 3 builder."""
+    width = _cell_count(area.width_m)
+    height = _cell_count(area.height_m)
+    if progress_callback is not None:
+        progress_callback(0.0, "Full 1 m前処理 0/3 完了 / 残り3処理")
+
+    def build_building_mask() -> np.ndarray:
+        shapes = _polygon_shapes(list(vectors.buildings))
+        return _rasterize_local(
+            shapes,
+            width=width,
+            height=height,
+            width_m=area.width_m,
+            height_m=area.height_m,
+            all_touched=True,
+        )
+
+    def build_road_mask() -> np.ndarray:
+        return _rasterize_local(
+            _road_shapes(vectors),
+            width=width,
+            height=height,
+            width_m=area.width_m,
+            height_m=area.height_m,
+            all_touched=True,
+        )
+
+    worker_count = min(3, max(1, os.cpu_count() or 1))
+    completed: dict[str, np.ndarray] = {}
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="full1m-prep") as executor:
+        futures = {
+            executor.submit(_cell_center_elevation, elevation, height, width): "地形",
+            executor.submit(build_building_mask): "建物マスク",
+            executor.submit(build_road_mask): "道路マスク",
+        }
+        for done_count, future in enumerate(as_completed(futures), start=1):
+            label_name = futures[future]
+            completed[label_name] = future.result()
+            if progress_callback is not None:
+                progress_callback(
+                    0.15 * done_count,
+                    f"Full 1 m前処理 {done_count}/3 完了（{label_name}） / 残り{3 - done_count}処理",
+                )
+
+    terrain = completed["地形"]
+    building_mask = completed["建物マスク"]
+    road_mask = completed["道路マスク"]
+
+    if progress_callback is not None:
+        progress_callback(
+            0.52,
+            f"建物セル {int(np.count_nonzero(building_mask)):,} / 道路セル "
+            f"{int(np.count_nonzero(road_mask)):,} を確定",
+        )
+
+    manning = np.full((height, width), GENERAL_MANNING, dtype=np.float32)
+    manning[road_mask & ~building_mask] = ROAD_MANNING
+
+    sfincs_mask = np.ones((height, width), dtype=np.uint8)
+    sfincs_mask[0, :] = 3
+    sfincs_mask[-1, :] = 3
+    sfincs_mask[:, 0] = 3
+    sfincs_mask[:, -1] = 3
+    sfincs_mask[building_mask] = 0
+
+    if progress_callback is not None:
+        progress_callback(0.60, "粗度・SFINCS建物マスク完了 / 屋根雨水配分を開始")
+
+    def roof_progress(done: int, total: int) -> None:
+        if progress_callback is None:
+            return
+        fraction = 1.0 if total == 0 else done / total
+        remaining = max(0, total - done)
+        progress_callback(
+            0.60 + 0.35 * fraction,
+            f"屋根雨水配分 {done}/{total}連結建物群"
+            f"（取得ポリゴン{len(vectors.buildings)}件を1 mマスク化）"
+            f" / 残り{remaining}群",
+        )
+
+    allocation = allocate_roof_rainfall(
+        building_mask,
+        cell_area_m2=1.0,
+        max_distance_cells=5,
+        tolerance=1e-9,
+        progress_callback=roof_progress,
+    )
+    if progress_callback is not None:
+        progress_callback(1.0, "Full 1 m格子・建物マスク・粗度の構築完了")
+    crs = local_crs(area)
+    return FullGridProduct(
+        elevation_m=terrain,
+        building_mask=building_mask,
+        road_mask=road_mask,
+        sfincs_mask=sfincs_mask,
+        manning_n=manning,
+        rain_weight=allocation.rain_weight.astype(np.float32),
+        roof_allocation=allocation,
+        width_cells=width,
+        height_cells=height,
+        dx_m=1.0,
+        dy_m=1.0,
+        x0_m=-area.width_m / 2.0,
+        y0_m=-area.height_m / 2.0,
+        crs_wkt=crs.to_wkt(),
+        # Reuse the authoritative Full 1 m SFINCS mask as the immutable
+        # Adaptive boundary-zone source. This simultaneously preserves
+        # building boundaries (0/1) and the analysis-domain edge (1/3)
+        # without inventing a second boundary definition.
+        adaptive_hard_boundary_zone=sfincs_mask.astype(np.int32, copy=True),
+    )

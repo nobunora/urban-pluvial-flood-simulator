@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 from pyproj import CRS, Transformer
 
-POSLIST_RE = re.compile(rb"<gml:posList>\s*([^<]+?)\s*</gml:posList>", re.S)
+POSLIST_RE = re.compile(rb"<gml:posList>\s*([^<]+?)\s*</gml:posList>", re.DOTALL)
 
 
 def main() -> None:

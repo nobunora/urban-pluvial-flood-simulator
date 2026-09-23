@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Full 1 m Smoke — Urban Pluvial Flood Simulator</title>
+  <style>
+    body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;background:#f4f6f8;color:#17202a}
+    header,footer{padding:16px 24px;background:#fff;border-bottom:1px solid #d8dee6} footer{border-top:1px solid #d8dee6;border-bottom:0;text-align:center}
+    main{max-width:1100px;margin:auto;padding:16px;display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:16px}
+    section{background:#fff;border:1px solid #d8dee6;border-radius:12px;padding:16px}
+    label{display:grid;gap:5px;margin:10px 0;font-weight:650} input,select,button{font:inherit;padding:9px;border:1px solid #aeb8c4;border-radius:8px;background:#fff}
+    button{cursor:pointer} button:disabled{opacity:.45;cursor:not-allowed}.row{display:flex;gap:10px;flex-wrap:wrap}.warn{background:#fff7d6;padding:9px;border-radius:8px}.err{color:#a61b1b;white-space:pre-wrap;overflow-wrap:anywhere}code{overflow-wrap:anywhere}
+    @media(max-width:800px){main{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header><h1>Urban Pluvial Flood Simulator</h1><strong>開発用 Full 1 m 動作確認</strong></header>
+<main>
+  <section>
+    <h2>入力</h2>
+    <label>緯度 <input id="lat" value="35.681236"></label>
+    <label>経度 <input id="lon" value="139.767125"></label>
+    <label>範囲 <select id="half"><option value="250">±250 m</option><option value="500">±500 m</option><option value="1000">±1000 m</option><option value="2000">±2000 m</option></select></label>
+    <label>雨量強度 (mm/h) <input id="rain" value="50"></label>
+    <label>継続時間 (min) <input id="duration" value="60"></label>
+    <p>精度: <b>Full 1 m</b>（Adaptiveはまだ無効）</p>
+    <div class="row"><button id="estimate">負荷を見積る</button><button id="run">解析開始</button><button id="cancel" disabled>キャンセル</button></div>
+  </section>
+  <section>
+    <h2>動作状態</h2>
+    <p>Backend: <span id="health">確認中…</span></p>
+    <div id="summary"></div>
+    <div id="estimateOut"></div>
+    <div id="runOut"></div>
+    <pre id="error" class="err"></pre>
+  </section>
+</main>
+<footer>下水・浸透は未考慮 / 雨は解析範囲内で一様 / 公的な洪水予報・避難情報ではありません</footer>
+<script>
+const $=id=>document.getElementById(id); let timer=null,runId=null;
+async function json(path,init){const r=await fetch(path,init);const d=await r.json();if(!r.ok){const e=d&&d.error;throw new Error((e&&e.code?e.code+': ':'')+(e&&e.message?e.message:'HTTP '+r.status));}return d;}
+function area(){const lat=Number($('lat').value),lon=Number($('lon').value),half=Number($('half').value);if(!Number.isFinite(lat)||!Number.isFinite(lon)||lat<-90||lat>90||lon<-180||lon>180)return null;const m=111320,dy=half/m,dx=half/(m*Math.max(Math.cos(lat*Math.PI/180),.01)),size=half*2;return{mode:'preset_square',center:{lat_deg:lat,lon_deg:lon},bounds:{west_deg:lon-dx,south_deg:lat-dy,east_deg:lon+dx,north_deg:lat+dy},width_m:size,height_m:size,area_m2:size*size};}
+function showArea(){const a=area();$('summary').textContent=a?`範囲 ${a.width_m} × ${a.height_m} m / Full 1 m相当 ${a.area_m2.toLocaleString()} cells`:'緯度経度を確認してください。';return a;}
+async function health(){try{const h=await json('/api/v1/health');$('health').textContent=`${h.status} / app ${h.application_version}`;}catch(e){$('health').textContent='NG';$('error').textContent=String(e);}}
+async function refresh(){if(!runId)return;try{const s=await json('/api/v1/runs/'+encodeURIComponent(runId));$('runOut').innerHTML=`<p><b>${s.stage_label}</b></p><p>state: <code>${s.state}</code></p>`+(s.failure_code?`<p class="err">${s.failure_code}: ${s.failure_message||''}</p>`:'');const terminal=['COMPLETE','FAILED','CANCELLED'].includes(s.state);$('cancel').disabled=terminal;if(terminal&&timer){clearInterval(timer);timer=null;}}catch(e){$('error').textContent=String(e);}}
+$('estimate').onclick=async()=>{const a=showArea();if(!a)return;$('error').textContent='';try{const e=await json('/api/v1/estimate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({analysis_area:a,accuracy_mode:'full_1m'})});$('estimateOut').innerHTML=`<h3>見積り</h3><p>${e.full_1m_equivalent_cells.toLocaleString()} cells / 負荷 ${e.runtime_class}</p>`+(e.warnings||[]).map(x=>`<p class="warn">${x}</p>`).join('');}catch(e){$('error').textContent=String(e);}};
+$('run').onclick=async()=>{const a=showArea(),rain=Number($('rain').value),duration=Number($('duration').value);if(!a||!Number.isFinite(rain)||rain<=0||rain>500||!Number.isInteger(duration)||duration<1||duration>10080){$('error').textContent='入力値を確認してください。';return;}$('error').textContent='';try{const r=await json('/api/v1/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({analysis_area:a,requested_accuracy_mode:'full_1m',rainfall:{kind:'constant',intensity_mm_per_h:rain,duration_minutes:duration}})});runId=r.run_id;$('runOut').innerHTML=`<p>Run ID: <code>${runId}</code></p>`;$('cancel').disabled=false;if(timer)clearInterval(timer);await refresh();timer=setInterval(refresh,1000);}catch(e){$('error').textContent=String(e);}};
+$('cancel').onclick=async()=>{if(!runId)return;try{await json('/api/v1/runs/'+encodeURIComponent(runId)+'/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await refresh();}catch(e){$('error').textContent=String(e);}};
+for(const id of ['lat','lon','half'])$(id).addEventListener('input',showArea);showArea();health();
+</script>
+</body>
+</html>

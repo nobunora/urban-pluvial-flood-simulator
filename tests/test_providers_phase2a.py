@@ -10,12 +10,13 @@ from floodsim.providers.common import (
     ProviderParseError,
     ProviderProvenance,
     ProviderRequestError,
+    ProviderTimeoutError,
     ProviderUnavailableError,
     request_with_retry,
 )
 from floodsim.providers.gsi_elevation import GsiElevationProvider
 from floodsim.providers.osm import OsmProvider, OsmVectors
-from floodsim.providers.plateau import PlateauProvider, extract_citygml
+from floodsim.providers.plateau import PlateauProvider, PlateauVectors, extract_citygml
 from floodsim.providers.vectors import acquire_vectors
 
 
@@ -119,6 +120,23 @@ def test_plateau_rectangular_clip_and_axis_order():
     assert np.max(np.abs(buildings[0][:, 1])) <= 10.0
 
 
+def test_plateau_accepts_gml_pos_with_element_dimension():
+    citygml = b'''<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0"
+      xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
+      <core:cityObjectMember><bldg:Building><bldg:lod0FootPrint><gml:MultiSurface><gml:surfaceMember>
+      <gml:Polygon><gml:exterior><gml:LinearRing srsDimension="2">
+      <gml:pos>35.68100 139.76700</gml:pos><gml:pos>35.68100 139.76710</gml:pos>
+      <gml:pos>35.68110 139.76710</gml:pos><gml:pos>35.68110 139.76700</gml:pos>
+      <gml:pos>35.68100 139.76700</gml:pos>
+      </gml:LinearRing></gml:exterior></gml:Polygon>
+      </gml:surfaceMember></gml:MultiSurface></bldg:lod0FootPrint></bldg:Building></core:cityObjectMember>
+      </core:CityModel>'''
+    buildings, lines, polygons = extract_citygml(citygml, rectangle(), margin_m=0.0)
+    assert len(buildings) == 1
+    assert not lines and not polygons
+
+
+
 def test_plateau_provider_writes_provenance_and_prefers_road_polygons(tmp_path):
     citygml = b'''<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0"
       xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0"
@@ -141,6 +159,9 @@ def test_plateau_provider_writes_provenance_and_prefers_road_polygons(tmp_path):
     assert len(result.road_polygons) == 1
     assert len(result.road_lines) == 1
     assert result.provenance.source_details["feature_types"] == ["bldg", "tran"]
+    assert result.provenance.source_details["building_geometry_detail"] == "native-full-detail"
+    assert result.provenance.source_details["map_zoom_dependent"] is False
+    assert result.provenance.source_details["geometry_simplification"] == "none"
     assert json.loads((tmp_path / "vectors" / "vectors_manifest.json").read_text(encoding="utf-8"))["provider"] == "PLATEAU"
 
 
@@ -159,28 +180,75 @@ def test_osm_rectangular_parsing_and_provenance(tmp_path):
     to_ll = Transformer.from_crs(local, CRS.from_epsg(4326), always_xy=True)
     building_ll = [to_ll.transform(x, y) for x, y in ((-15, -5), (-15, 5), (15, 5), (15, -5), (-15, -5))]
     road_ll = [to_ll.transform(x, y) for x, y in ((-20, 0), (20, 0))]
+    tiny_ll = [to_ll.transform(x, y) for x, y in ((1.0, 1.0), (1.0, 1.2), (1.2, 1.2), (1.2, 1.0), (1.0, 1.0))]
+    relation_ll = [to_ll.transform(x, y) for x, y in ((-2.0, 1.0), (-2.0, 1.3), (-1.7, 1.3), (-1.7, 1.0), (-2.0, 1.0))]
     payload = {"elements": [
         {"type": "way", "id": 1, "tags": {"building": "yes"}, "geometry": [{"lon": lon, "lat": lat} for lon, lat in building_ll]},
         {"type": "way", "id": 2, "tags": {"highway": "residential"}, "geometry": [{"lon": lon, "lat": lat} for lon, lat in road_ll]},
+        {"type": "way", "id": 3, "tags": {"building:part": "yes"}, "geometry": [{"lon": lon, "lat": lat} for lon, lat in tiny_ll]},
+        {"type": "relation", "id": 4, "tags": {"building": "yes"}, "members": [
+            {"type": "way", "role": "outer", "geometry": [{"lon": lon, "lat": lat} for lon, lat in relation_ll]}
+        ]},
     ]}
-    result = OsmProvider(session=Session([Response(payload=payload)])).acquire(
+    session = Session([Response(payload=payload)])
+    result = OsmProvider(session=session).acquire(
         area, cache_dir=tmp_path, acquired_at_utc="2026-09-02T00:00:00+00:00"
     )
-    assert len(result.buildings) == 1
+    assert len(result.buildings) == 3
+    query = session.calls[0][2]["data"]["data"]
+    assert 'way["building:part"]' in query
+    assert 'relation["building"]' in query
+    assert 'relation["building:part"]' in query
     assert len(result.road_lines) == 1
     assert result.provenance.provider_id == "osm"
     assert result.provenance.attribution == "© OpenStreetMap contributors"
     assert result.provenance.terms_url == "https://www.openstreetmap.org/copyright"
+    assert result.provenance.source_details["building_geometry_detail"] == "native-full-detail"
+    assert result.provenance.source_details["map_zoom_dependent"] is False
+    assert result.provenance.source_details["geometry_simplification"] == "none"
     json.dumps(result.provenance.to_dict(), ensure_ascii=False)
+
+
+def test_osm_relation_assembles_split_outer_members(tmp_path):
+    area = rectangle()
+    local = CRS.from_proj4(
+        f"+proj=aeqd +lat_0={area.center.lat_deg} +lon_0={area.center.lon_deg} "
+        "+datum=WGS84 +units=m +no_defs"
+    )
+    to_ll = Transformer.from_crs(local, CRS.from_epsg(4326), always_xy=True)
+
+    def geom(points):
+        return [
+            {"lon": lon, "lat": lat}
+            for lon, lat in (to_ll.transform(x, y) for x, y in points)
+        ]
+
+    payload = {"elements": [{
+        "type": "relation",
+        "id": 40,
+        "tags": {"building": "yes", "type": "multipolygon"},
+        "members": [
+            {"type": "way", "role": "outer", "geometry": geom([(-4, -3), (4, -3), (4, 3)])},
+            {"type": "way", "role": "outer", "geometry": geom([(4, 3), (-4, 3), (-4, -3)])},
+        ],
+    }]}
+    result = OsmProvider(session=Session([Response(payload=payload)])).acquire(
+        area, cache_dir=tmp_path
+    )
+    assert len(result.buildings) == 1
+    assert result.buildings[0].shape[0] >= 5
+
 
 
 class FakePlateau:
     def __init__(self, outcome):
         self.outcome = outcome
         self.calls = 0
+        self.last_kwargs = {}
 
     def acquire(self, *args, **kwargs):
         self.calls += 1
+        self.last_kwargs = kwargs
         if isinstance(self.outcome, BaseException):
             raise self.outcome
         return self.outcome
@@ -190,9 +258,11 @@ class FakeOsm:
     def __init__(self, outcome):
         self.outcome = outcome
         self.calls = 0
+        self.last_kwargs = {}
 
     def acquire(self, *args, **kwargs):
         self.calls += 1
+        self.last_kwargs = kwargs
         if isinstance(self.outcome, BaseException):
             raise self.outcome
         return self.outcome
@@ -204,7 +274,9 @@ def test_auto_fallback_is_disclosed_and_unexpected_errors_do_not_fallback():
     osm = FakeOsm(osm_result)
     with pytest.raises(RuntimeError):
         acquire_vectors(rectangle(), "auto", plateau=plateau, osm=osm)
-    assert osm.calls == 0
+    # Auto mode starts PLATEAU and the OSM completeness supplement concurrently,
+    # but an unexpected PLATEAU defect still propagates instead of silently falling back.
+    assert osm.calls == 1
 
     plateau = FakePlateau(ProviderParseError("catalog malformed"))
     osm = FakeOsm(osm_result)
@@ -217,3 +289,168 @@ def test_auto_fallback_is_disclosed_and_unexpected_errors_do_not_fallback():
     osm = FakeOsm(ProviderUnavailableError("no buildings"))
     with pytest.raises(ProviderUnavailableError, match="PLATEAU.*OSM"):
         acquire_vectors(rectangle(), "auto", plateau=plateau, osm=osm)
+
+
+def test_auto_supplements_plateau_buildings_with_osm() -> None:
+    plateau_building = np.asarray([[-2.0, -2.0], [-2.0, -1.0], [-1.0, -1.0], [-1.0, -2.0], [-2.0, -2.0]])
+    osm_building = np.asarray([[1.0, 1.0], [1.0, 1.2], [1.2, 1.2], [1.2, 1.0], [1.0, 1.0]])
+    plateau_result = PlateauVectors(
+        buildings=[plateau_building],
+        road_lines=[],
+        road_polygons=[],
+        provenance=provenance("plateau"),
+    )
+    osm_result = OsmVectors([osm_building], [], provenance("osm"))
+
+    plateau = FakePlateau(plateau_result)
+    osm = FakeOsm(osm_result)
+    result = acquire_vectors(rectangle(), "auto", plateau=plateau, osm=osm)
+
+    assert plateau.calls == 1
+    assert osm.calls == 1
+    assert len(result.buildings) == 2
+    assert result.provenance.provider_id == "plateau+osm"
+    assert result.provenance.source_details["osm_supplement"]["building_polygons"] == 1
+    assert "supplement" in result.provenance.warnings[-1].lower()
+
+
+def test_auto_vector_progress_reports_provider_work() -> None:
+    plateau_result = PlateauVectors(
+        buildings=[np.asarray([[-2.0, -2.0], [-2.0, -1.0], [-1.0, -1.0], [-1.0, -2.0], [-2.0, -2.0]])],
+        road_lines=[],
+        road_polygons=[],
+        provenance=provenance("plateau"),
+    )
+    osm_result = OsmVectors(
+        [np.asarray([[1.0, 1.0], [1.0, 1.2], [1.2, 1.2], [1.2, 1.0], [1.0, 1.0]])],
+        [],
+        provenance("osm"),
+    )
+
+    class ProgressPlateau(FakePlateau):
+        def acquire(self, *args, **kwargs):
+            callback = kwargs.get("progress_callback")
+            if callback is not None:
+                callback(0.5, "PLATEAU 1/2ファイル処理済み / 残り1ファイル")
+                callback(1.0, "PLATEAU取得完了")
+            return super().acquire(*args, **kwargs)
+
+    class ProgressOsm(FakeOsm):
+        def acquire(self, *args, **kwargs):
+            callback = kwargs.get("progress_callback")
+            if callback is not None:
+                callback(0.5, "OSM 50/100要素処理済み / 残り50要素")
+                callback(1.0, "OSM取得完了")
+            return super().acquire(*args, **kwargs)
+
+    updates: list[tuple[float, str]] = []
+    result = acquire_vectors(
+        rectangle(),
+        "auto",
+        plateau=ProgressPlateau(plateau_result),
+        osm=ProgressOsm(osm_result),
+        progress_callback=lambda fraction, message: updates.append((fraction, message)),
+    )
+
+    assert result.provenance.provider_id == "plateau+osm"
+    assert any("残り1ファイル" in message for _, message in updates)
+    assert any("残り50要素" in message for _, message in updates)
+    assert updates[-1][0] == pytest.approx(1.0)
+
+
+def test_osm_vectors_expose_empty_road_polygon_contract():
+    result = OsmVectors([], [], provenance("osm"))
+
+    assert result.road_polygons == []
+
+
+
+def test_retry_policy_rejects_expired_deadline_before_network_call():
+    session = Session([Response()])
+    with pytest.raises(ProviderTimeoutError):
+        request_with_retry(
+            session,
+            "GET",
+            "https://example.test",
+            deadline_monotonic=0.0,
+        )
+    assert session.calls == []
+
+
+def test_vector_auto_fallback_preserves_budgets_and_skips_fallback_on_cancel():
+    osm_result = OsmVectors([], [], provenance("osm"))
+    plateau = FakePlateau(ProviderTimeoutError("budget exceeded"))
+    osm = FakeOsm(osm_result)
+
+    result = acquire_vectors(
+        rectangle(),
+        "auto",
+        plateau=plateau,
+        osm=osm,
+        plateau_budget_s=20.0,
+        osm_budget_s=30.0,
+    )
+    assert result is osm_result
+    assert plateau.last_kwargs["time_budget_s"] == 20.0
+    assert osm.last_kwargs["time_budget_s"] == 30.0
+
+    class CancelEvent:
+        def is_set(self):
+            return True
+
+    plateau = FakePlateau(ProviderTimeoutError("budget exceeded"))
+    osm = FakeOsm(osm_result)
+    with pytest.raises(ProviderTimeoutError):
+        acquire_vectors(
+            rectangle(),
+            "auto",
+            plateau=plateau,
+            osm=osm,
+            plateau_budget_s=20.0,
+            osm_budget_s=30.0,
+            cancel_event=CancelEvent(),
+        )
+    assert plateau.calls == 0
+    assert osm.calls == 0
+
+
+
+def test_plateau_citygml_parsing_honors_total_deadline(monkeypatch):
+    from types import SimpleNamespace
+
+    from floodsim.providers import plateau
+
+    citygml = b'''<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0"
+      xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
+      <core:cityObjectMember><bldg:Building><bldg:lod0FootPrint><gml:MultiSurface><gml:surfaceMember>
+      <gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>35.68100 139.76700 0 35.68100 139.76710 0 35.68110 139.76710 0 35.68110 139.76700 0 35.68100 139.76700 0</gml:posList>
+      </gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface></bldg:lod0FootPrint></bldg:Building></core:cityObjectMember>
+      </core:CityModel>'''
+    ticks = iter([0.0, 0.0, 2.0])
+    monkeypatch.setattr(plateau, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+
+    with pytest.raises(ProviderTimeoutError, match="CityGML parsing"):
+        extract_citygml(
+            citygml,
+            rectangle(),
+            margin_m=0.0,
+            deadline_monotonic=1.0,
+        )
+
+
+def test_osm_geometry_processing_honors_total_deadline(monkeypatch, tmp_path):
+    import floodsim.providers.osm as osm_module
+
+    ticks = iter([0.0, 0.0, 0.0, 2.0])
+    monkeypatch.setattr(osm_module.time, "monotonic", lambda: next(ticks))
+    provider = OsmProvider(
+        session=Session([Response(payload={"elements": [{}]})]),
+        sleeper=lambda _: None,
+    )
+
+    with pytest.raises(ProviderTimeoutError, match="OSM geometry processing"):
+        provider.acquire(
+            rectangle(),
+            cache_dir=tmp_path,
+            time_budget_s=1.0,
+        )

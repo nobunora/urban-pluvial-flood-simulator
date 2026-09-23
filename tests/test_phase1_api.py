@@ -12,7 +12,7 @@ def test_health_returns_typed_phase1_response() -> None:
     assert response.json() == {
         "status": "ok",
         "api_version": "v1",
-        "application_version": "0.1.0",
+        "application_version": "0.1.15",
         "engine": {"required": "SFINCS 2.4.0 Galibier"},
     }
 
@@ -26,9 +26,19 @@ def test_built_placeholder_spa_is_served() -> None:
     assert asset_path is not None
     asset_response = TestClient(app).get(asset_path.group(1))
     assert asset_response.status_code == 200
-    assert "Application skeleton is running." in asset_response.text
+    assert asset_response.headers["content-type"].startswith(
+        ("text/javascript", "application/javascript")
+    )
+    assert len(asset_response.content) > 1_000
 
 
 def test_phase2_endpoints_are_not_fake() -> None:
     openapi = app.openapi()
-    assert set(openapi["paths"]) == {"/api/v1/health"}
+    required_phase2_paths = {
+        "/api/v1/geocode",
+        "/api/v1/health",
+        "/api/v1/rainfall/events/{event_id}",
+        "/api/v1/rainfall/stations",
+        "/api/v1/rainfall/stations/{station_id}/extremes",
+    }
+    assert required_phase2_paths <= set(openapi["paths"])

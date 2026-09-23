@@ -7,6 +7,7 @@ from floodsim.providers.common import (
     ProviderParseError,
     ProviderProvenance,
     ProviderRequestError,
+    ProviderTimeoutError,
     ProviderUnavailableError,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "ProviderParseError",
     "ProviderProvenance",
     "ProviderRequestError",
+    "ProviderTimeoutError",
     "ProviderUnavailableError",
 ]

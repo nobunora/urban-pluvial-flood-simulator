@@ -1,0 +1,2173 @@
+{
+  "components": {
+    "schemas": {
+      "AccuracyMode": {
+        "enum": [
+          "full_1m",
+          "adaptive"
+        ],
+        "title": "AccuracyMode",
+        "type": "string"
+      },
+      "AnalysisArea": {
+        "additionalProperties": false,
+        "properties": {
+          "area_m2": {
+            "exclusiveMinimum": 0.0,
+            "title": "Area M2",
+            "type": "number"
+          },
+          "bounds": {
+            "$ref": "#/components/schemas/GeoBounds"
+          },
+          "center": {
+            "$ref": "#/components/schemas/LonLat"
+          },
+          "height_m": {
+            "exclusiveMinimum": 0.0,
+            "title": "Height M",
+            "type": "number"
+          },
+          "mode": {
+            "enum": [
+              "preset_square",
+              "rectangle"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "width_m": {
+            "exclusiveMinimum": 0.0,
+            "title": "Width M",
+            "type": "number"
+          }
+        },
+        "required": [
+          "mode",
+          "bounds",
+          "center",
+          "width_m",
+          "height_m",
+          "area_m2"
+        ],
+        "title": "AnalysisArea",
+        "type": "object"
+      },
+      "CancelRunResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RunState"
+          }
+        },
+        "required": [
+          "run_id",
+          "state"
+        ],
+        "title": "CancelRunResponse",
+        "type": "object"
+      },
+      "ConstantRainfall": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_minutes": {
+            "default": 60,
+            "maximum": 10080.0,
+            "minimum": 1.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "intensity_mm_per_h": {
+            "maximum": 500.0,
+            "minimum": 0.0,
+            "title": "Intensity Mm Per H",
+            "type": "number"
+          },
+          "kind": {
+            "const": "constant",
+            "default": "constant",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intensity_mm_per_h"
+        ],
+        "title": "ConstantRainfall",
+        "type": "object"
+      },
+      "EngineSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "required": {
+            "const": "SFINCS 2.4.0 Galibier",
+            "default": "SFINCS 2.4.0 Galibier",
+            "title": "Required",
+            "type": "string"
+          }
+        },
+        "title": "EngineSummary",
+        "type": "object"
+      },
+      "GeoBounds": {
+        "additionalProperties": false,
+        "properties": {
+          "east_deg": {
+            "title": "East Deg",
+            "type": "number"
+          },
+          "north_deg": {
+            "title": "North Deg",
+            "type": "number"
+          },
+          "south_deg": {
+            "title": "South Deg",
+            "type": "number"
+          },
+          "west_deg": {
+            "title": "West Deg",
+            "type": "number"
+          }
+        },
+        "required": [
+          "west_deg",
+          "south_deg",
+          "east_deg",
+          "north_deg"
+        ],
+        "title": "GeoBounds",
+        "type": "object"
+      },
+      "GeocodeAttribution": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "url"
+        ],
+        "title": "GeocodeAttribution",
+        "type": "object"
+      },
+      "GeocodeCandidateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "converted": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Converted"
+          },
+          "lat": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat",
+            "type": "number"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "lon": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lon",
+            "type": "number"
+          },
+          "provider": {
+            "const": "csis_simple_geocoding",
+            "title": "Provider",
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "lon",
+          "lat",
+          "provider"
+        ],
+        "title": "GeocodeCandidateResponse",
+        "type": "object"
+      },
+      "GeocodeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "attribution": {
+            "$ref": "#/components/schemas/GeocodeAttribution"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/GeocodeCandidateResponse"
+            },
+            "maxItems": 10,
+            "title": "Candidates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidates",
+          "attribution"
+        ],
+        "title": "GeocodeResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "api_version": {
+            "const": "v1",
+            "default": "v1",
+            "title": "Api Version",
+            "type": "string"
+          },
+          "application_version": {
+            "title": "Application Version",
+            "type": "string"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineSummary"
+          },
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_version",
+          "engine"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "HistoricalObservedProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "kind": {
+            "const": "historical_observed_profile",
+            "default": "historical_observed_profile",
+            "title": "Kind",
+            "type": "string"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "title": "HistoricalObservedProfile",
+        "type": "object"
+      },
+      "HistoricalUniformRainfall": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "event_id": {
+            "minLength": 1,
+            "title": "Event Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "historical_uniform",
+            "default": "historical_uniform",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "available"
+        ],
+        "title": "HistoricalUniformRainfall",
+        "type": "object"
+      },
+      "LonLat": {
+        "additionalProperties": false,
+        "properties": {
+          "lat_deg": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat Deg",
+            "type": "number"
+          },
+          "lon_deg": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lon Deg",
+            "type": "number"
+          }
+        },
+        "required": [
+          "lon_deg",
+          "lat_deg"
+        ],
+        "title": "LonLat",
+        "type": "object"
+      },
+      "PointInspectionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "column": {
+            "minimum": 0.0,
+            "title": "Column",
+            "type": "integer"
+          },
+          "depth_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth M"
+          },
+          "grid_resolution_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Resolution M"
+          },
+          "has_data": {
+            "title": "Has Data",
+            "type": "boolean"
+          },
+          "lat_deg": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat Deg",
+            "type": "number"
+          },
+          "lon_deg": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lon Deg",
+            "type": "number"
+          },
+          "max_depth_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Depth M"
+          },
+          "max_time_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Time Index"
+          },
+          "max_time_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Time Value"
+          },
+          "row": {
+            "minimum": 0.0,
+            "title": "Row",
+            "type": "integer"
+          },
+          "terrain_elevation_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terrain Elevation M"
+          },
+          "time_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Index"
+          },
+          "time_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Value"
+          }
+        },
+        "required": [
+          "lon_deg",
+          "lat_deg",
+          "has_data",
+          "row",
+          "column"
+        ],
+        "title": "PointInspectionResponse",
+        "type": "object"
+      },
+      "RainfallEventResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog_generated_at_utc": {
+            "title": "Catalog Generated At Utc",
+            "type": "string"
+          },
+          "data_quality_flags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Data Quality Flags",
+            "type": "array"
+          },
+          "duration_minutes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "event_date_or_datetime_metadata": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Date Or Datetime Metadata"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "intensity_mm_per_h": {
+            "exclusiveMinimum": 0.0,
+            "title": "Intensity Mm Per H",
+            "type": "number"
+          },
+          "profile_available": {
+            "title": "Profile Available",
+            "type": "boolean"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "station_id": {
+            "title": "Station Id",
+            "type": "string"
+          },
+          "station_lat_deg": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Station Lat Deg",
+            "type": "number"
+          },
+          "station_lon_deg": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Station Lon Deg",
+            "type": "number"
+          },
+          "station_name": {
+            "title": "Station Name",
+            "type": "string"
+          },
+          "total_precipitation_mm": {
+            "exclusiveMinimum": 0.0,
+            "title": "Total Precipitation Mm",
+            "type": "number"
+          }
+        },
+        "required": [
+          "event_id",
+          "station_id",
+          "station_name",
+          "station_lon_deg",
+          "station_lat_deg",
+          "duration_minutes",
+          "total_precipitation_mm",
+          "source_url",
+          "catalog_generated_at_utc",
+          "data_quality_flags",
+          "profile_available",
+          "intensity_mm_per_h"
+        ],
+        "title": "RainfallEventResponse",
+        "type": "object"
+      },
+      "RainfallExtremesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RainfallEventResponse"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "station": {
+            "$ref": "#/components/schemas/RainfallStationResponse"
+          }
+        },
+        "required": [
+          "station",
+          "events"
+        ],
+        "title": "RainfallExtremesResponse",
+        "type": "object"
+      },
+      "RainfallStationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "distance_km": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance Km"
+          },
+          "lat_deg": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat Deg",
+            "type": "number"
+          },
+          "lon_deg": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lon Deg",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prefecture_or_region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefecture Or Region"
+          },
+          "station_id": {
+            "title": "Station Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "station_id",
+          "name",
+          "lon_deg",
+          "lat_deg"
+        ],
+        "title": "RainfallStationResponse",
+        "type": "object"
+      },
+      "RainfallStationSearchResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "stations": {
+            "items": {
+              "$ref": "#/components/schemas/RainfallStationResponse"
+            },
+            "title": "Stations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stations"
+        ],
+        "title": "RainfallStationSearchResponse",
+        "type": "object"
+      },
+      "RecentRainfallRankingResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "coverage_note": {
+            "title": "Coverage Note",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RainfallEventResponse"
+            },
+            "maxItems": 10,
+            "title": "Events",
+            "type": "array"
+          },
+          "period_end": {
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "title": "Period Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period_start",
+          "period_end",
+          "coverage_note",
+          "events"
+        ],
+        "title": "RecentRainfallRankingResponse",
+        "type": "object"
+      },
+      "ResourceEstimateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "accuracy_mode": {
+            "enum": [
+              "full_1m",
+              "adaptive"
+            ],
+            "title": "Accuracy Mode",
+            "type": "string"
+          },
+          "analysis_area": {
+            "$ref": "#/components/schemas/AnalysisArea"
+          }
+        },
+        "required": [
+          "analysis_area",
+          "accuracy_mode"
+        ],
+        "title": "ResourceEstimateRequest",
+        "type": "object"
+      },
+      "ResourceEstimateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "estimated_disk_class": {
+            "enum": [
+              "small",
+              "medium",
+              "heavy",
+              "very_heavy"
+            ],
+            "title": "Estimated Disk Class",
+            "type": "string"
+          },
+          "estimated_memory_class": {
+            "enum": [
+              "small",
+              "medium",
+              "heavy",
+              "very_heavy"
+            ],
+            "title": "Estimated Memory Class",
+            "type": "string"
+          },
+          "full_1m_equivalent_cells": {
+            "title": "Full 1M Equivalent Cells",
+            "type": "integer"
+          },
+          "preliminary_adaptive_cells": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preliminary Adaptive Cells"
+          },
+          "runtime_class": {
+            "enum": [
+              "small",
+              "medium",
+              "heavy",
+              "very_heavy"
+            ],
+            "title": "Runtime Class",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "full_1m_equivalent_cells",
+          "estimated_memory_class",
+          "estimated_disk_class",
+          "runtime_class",
+          "warnings"
+        ],
+        "title": "ResourceEstimateResponse",
+        "type": "object"
+      },
+      "ResultDepthLegendItem": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "pattern": "^#[0-9A-Fa-f]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "max_m": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max M"
+          },
+          "min_m": {
+            "minimum": 0.0,
+            "title": "Min M",
+            "type": "number"
+          }
+        },
+        "required": [
+          "label",
+          "min_m",
+          "color"
+        ],
+        "title": "ResultDepthLegendItem",
+        "type": "object"
+      },
+      "ResultEngineSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "hydromt_sfincs_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hydromt Sfincs Version"
+          },
+          "sfincs_build_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sfincs Build Sha256"
+          },
+          "sfincs_engine_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sfincs Engine Source"
+          },
+          "sfincs_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sfincs Version"
+          }
+        },
+        "title": "ResultEngineSummary",
+        "type": "object"
+      },
+      "ResultImportResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "COMPLETE",
+            "default": "COMPLETE",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "ResultImportResponse",
+        "type": "object"
+      },
+      "ResultMetadataResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "available_time_indices": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Available Time Indices",
+            "type": "array"
+          },
+          "bounds": {
+            "$ref": "#/components/schemas/GeoBounds"
+          },
+          "depth_legend": {
+            "items": {
+              "$ref": "#/components/schemas/ResultDepthLegendItem"
+            },
+            "title": "Depth Legend",
+            "type": "array"
+          },
+          "engine_summary": {
+            "$ref": "#/components/schemas/ResultEngineSummary"
+          },
+          "flow_vectors_available": {
+            "default": false,
+            "title": "Flow Vectors Available",
+            "type": "boolean"
+          },
+          "grid_level_summary": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Grid Level Summary",
+            "type": "object"
+          },
+          "limitations": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Limitations",
+            "type": "object"
+          },
+          "max_depth_summary": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Max Depth Summary",
+            "type": "object"
+          },
+          "no_data_policy": {
+            "title": "No Data Policy",
+            "type": "string"
+          },
+          "provider_summary": {
+            "$ref": "#/components/schemas/ResultProviderSummary"
+          },
+          "run_summary": {
+            "$ref": "#/components/schemas/ResultRunSummary"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "time_values": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Time Values",
+            "type": "array"
+          },
+          "units": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Units",
+            "type": "object"
+          }
+        },
+        "required": [
+          "schema_version",
+          "bounds",
+          "units",
+          "available_time_indices",
+          "time_values",
+          "max_depth_summary",
+          "grid_level_summary",
+          "run_summary",
+          "no_data_policy",
+          "limitations"
+        ],
+        "title": "ResultMetadataResponse",
+        "type": "object"
+      },
+      "ResultProviderSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "building_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Building Provider"
+          },
+          "road_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Road Provider"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "title": "ResultProviderSummary",
+        "type": "object"
+      },
+      "ResultRunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "application_version": {
+            "title": "Application Version",
+            "type": "string"
+          },
+          "boundary_policy": {
+            "title": "Boundary Policy",
+            "type": "string"
+          },
+          "elevation_provider_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Elevation Provider Counts",
+            "type": "object"
+          },
+          "elevation_source_summary": {
+            "additionalProperties": true,
+            "title": "Elevation Source Summary",
+            "type": "object"
+          },
+          "manning_defaults": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Manning Defaults",
+            "type": "object"
+          },
+          "rainfall_source": {
+            "additionalProperties": true,
+            "title": "Rainfall Source",
+            "type": "object"
+          },
+          "requested_accuracy_mode": {
+            "enum": [
+              "full_1m",
+              "adaptive"
+            ],
+            "title": "Requested Accuracy Mode",
+            "type": "string"
+          },
+          "roof_rain_mass_diagnostic": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Roof Rain Mass Diagnostic",
+            "type": "object"
+          }
+        },
+        "required": [
+          "application_version",
+          "requested_accuracy_mode",
+          "boundary_policy"
+        ],
+        "title": "ResultRunSummary",
+        "type": "object"
+      },
+      "RunConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_area": {
+            "$ref": "#/components/schemas/AnalysisArea"
+          },
+          "rainfall": {
+            "discriminator": {
+              "mapping": {
+                "constant": "#/components/schemas/ConstantRainfall",
+                "historical_observed_profile": "#/components/schemas/HistoricalObservedProfile",
+                "historical_uniform": "#/components/schemas/HistoricalUniformRainfall"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ConstantRainfall"
+              },
+              {
+                "$ref": "#/components/schemas/HistoricalUniformRainfall"
+              },
+              {
+                "$ref": "#/components/schemas/HistoricalObservedProfile"
+              }
+            ],
+            "title": "Rainfall"
+          },
+          "requested_accuracy_mode": {
+            "$ref": "#/components/schemas/AccuracyMode"
+          }
+        },
+        "required": [
+          "analysis_area",
+          "requested_accuracy_mode",
+          "rainfall"
+        ],
+        "title": "RunConfig",
+        "type": "object"
+      },
+      "RunCreateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "QUEUED",
+            "default": "QUEUED",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "RunCreateResponse",
+        "type": "object"
+      },
+      "RunState": {
+        "enum": [
+          "CREATED",
+          "VALIDATING",
+          "ACQUIRING_TERRAIN",
+          "ACQUIRING_VECTORS",
+          "ACQUIRING_RAINFALL",
+          "PREPROCESSING_TERRAIN",
+          "ALLOCATING_ROOF_RAIN",
+          "BUILDING_GRID",
+          "BUILDING_MODEL",
+          "ENSURING_ENGINE",
+          "RUNNING_ENGINE",
+          "READING_RESULTS",
+          "COMPLETE",
+          "FAILED",
+          "CANCELLING",
+          "CANCELLED"
+        ],
+        "title": "RunState",
+        "type": "string"
+      },
+      "RunStatusResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "activity_lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Activity Lines",
+            "type": "array"
+          },
+          "estimated_remaining_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Remaining Seconds"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
+          "progress_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Detail"
+          },
+          "progress_fraction": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Fraction"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "stage_code": {
+            "title": "Stage Code",
+            "type": "string"
+          },
+          "stage_label": {
+            "title": "Stage Label",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RunState"
+          }
+        },
+        "required": [
+          "run_id",
+          "state",
+          "stage_code",
+          "stage_label"
+        ],
+        "title": "RunStatusResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Urban Pluvial Flood Simulator",
+    "version": "0.1.15"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/estimate": {
+      "post": {
+        "operationId": "estimate_resources_api_v1_estimate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceEstimateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceEstimateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Estimate Resources",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/geocode": {
+      "get": {
+        "operationId": "geocode_api_v1_geocode_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeocodeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Geocode",
+        "tags": [
+          "geocode"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "description": "Return readiness information without probing or launching SFINCS.",
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/rainfall/events/{event_id}": {
+      "get": {
+        "operationId": "rainfall_event_api_v1_rainfall_events__event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RainfallEventResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rainfall Event",
+        "tags": [
+          "rainfall"
+        ]
+      }
+    },
+    "/api/v1/rainfall/recent-ranking": {
+      "get": {
+        "description": "Return the configured urban-flood rainfall scenarios in rank order.",
+        "operationId": "recent_rainfall_ranking_api_v1_rainfall_recent_ranking_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentRainfallRankingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Recent Rainfall Ranking",
+        "tags": [
+          "rainfall"
+        ]
+      }
+    },
+    "/api/v1/rainfall/stations": {
+      "get": {
+        "operationId": "rainfall_stations_api_v1_rainfall_stations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lon",
+            "required": true,
+            "schema": {
+              "maximum": 180,
+              "minimum": -180,
+              "title": "Lon",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lat",
+            "required": true,
+            "schema": {
+              "maximum": 90,
+              "minimum": -90,
+              "title": "Lat",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RainfallStationSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rainfall Stations",
+        "tags": [
+          "rainfall"
+        ]
+      }
+    },
+    "/api/v1/rainfall/stations/{station_id}/extremes": {
+      "get": {
+        "operationId": "rainfall_station_extremes_api_v1_rainfall_stations__station_id__extremes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "station_id",
+            "required": true,
+            "schema": {
+              "title": "Station Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RainfallExtremesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rainfall Station Extremes",
+        "tags": [
+          "rainfall"
+        ]
+      }
+    },
+    "/api/v1/results/import": {
+      "post": {
+        "operationId": "import_result_api_v1_results_import_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Import Result",
+        "tags": [
+          "results"
+        ]
+      }
+    },
+    "/api/v1/runs": {
+      "post": {
+        "operationId": "create_run_api_v1_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/cancel": {
+      "post": {
+        "operationId": "cancel_run_api_v1_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/events": {
+      "get": {
+        "operationId": "run_events_api_v1_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Events",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/export": {
+      "get": {
+        "operationId": "export_result_api_v1_runs__run_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Result",
+        "tags": [
+          "results"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/inspect": {
+      "get": {
+        "operationId": "inspect_result_api_v1_runs__run_id__inspect_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lon",
+            "required": true,
+            "schema": {
+              "maximum": 180,
+              "minimum": -180,
+              "title": "Lon",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lat",
+            "required": true,
+            "schema": {
+              "maximum": 90,
+              "minimum": -90,
+              "title": "Lat",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "time_index",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Time Index"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointInspectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect Result",
+        "tags": [
+          "results"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/layers/depth.png": {
+      "get": {
+        "operationId": "time_depth_layer_api_v1_runs__run_id__layers_depth_png_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "time_index",
+            "required": true,
+            "schema": {
+              "title": "Time Index",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_px",
+            "required": false,
+            "schema": {
+              "default": 4096,
+              "title": "Max Px",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Time Depth Layer",
+        "tags": [
+          "results"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/layers/grid-resolution.png": {
+      "get": {
+        "operationId": "grid_resolution_layer_api_v1_runs__run_id__layers_grid_resolution_png_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_px",
+            "required": false,
+            "schema": {
+              "default": 4096,
+              "title": "Max Px",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Grid Resolution Layer",
+        "tags": [
+          "results"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/layers/max-depth.png": {
+      "get": {
+        "operationId": "max_depth_layer_api_v1_runs__run_id__layers_max_depth_png_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_px",
+            "required": false,
+            "schema": {
+              "default": 4096,
+              "title": "Max Px",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Max Depth Layer",
+        "tags": [
+          "results"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/result-metadata": {
+      "get": {
+        "operationId": "result_metadata_api_v1_runs__run_id__result_metadata_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultMetadataResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Result Metadata",
+        "tags": [
+          "results"
+        ]
+      }
+    }
+  }
+}

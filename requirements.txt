@@ -1,4 +1,4 @@
-numpy
+# Legacy/reference pip requirements. Local review and validation use environment.yml.\nnumpy
 scipy
 matplotlib
 rasterio
@@ -6,5 +6,9 @@ shapely
 pyproj
 requests
 Pillow
+xarray
+netCDF4
+platformdirs
+hydromt_sfincs @ git+https://github.com/Deltares/hydromt_sfincs.git@82e58ee85136cf5155c92b42bb9a397869ed8035
 fastapi==0.141.1
 uvicorn==0.52.4

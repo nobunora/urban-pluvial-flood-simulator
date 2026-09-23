@@ -1,0 +1,124 @@
+name: Local review deterministic CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-local-review:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Record exact SHA
+        run: |
+          git rev-parse HEAD
+          git status --short
+
+      - name: Create canonical Python environment
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment.yml
+          environment-name: urban-pluvial-flood-phase0
+          cache-environment: true
+          init-shell: bash
+
+      - name: Validate repository environment bootstrap
+        run: python -m scripts.bootstrap_local_review --manager micromamba
+
+      - name: Verify canonical environment
+        run: python -m scripts.run_local_review --check-env
+
+      - name: Python static and regression gates
+        run: |
+          python -m ruff check floodsim tests scripts
+          python -m mypy floodsim
+          python -m pytest -q
+          git diff --check
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Frontend deterministic gates
+        working-directory: web
+        run: |
+          npm ci
+          npm run api:check
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Verify review build artifacts
+        run: |
+          test -f floodsim/static/index.html
+          test -f floodsim/static/smoke.html
+
+      - name: Same-origin HTTP smoke without external providers
+        run: |
+          python -m uvicorn floodsim.api.app:app --host 127.0.0.1 --port 8765 > local-review-ci.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          python - <<'PY'
+          import time
+
+          import httpx
+
+          base = "http://127.0.0.1:8765"
+          for _ in range(60):
+              try:
+                  response = httpx.get(f"{base}/api/v1/health", timeout=1)
+                  if response.status_code == 200:
+                      break
+              except httpx.HTTPError:
+                  pass
+              time.sleep(0.5)
+          else:
+              raise SystemExit("local review server did not become ready")
+
+          assert httpx.get(f"{base}/", timeout=5).status_code == 200
+          assert httpx.get(f"{base}/smoke.html", timeout=5).status_code == 200
+          health = httpx.get(f"{base}/api/v1/health", timeout=5)
+          assert health.status_code == 200
+          assert health.json()["status"] == "ok"
+
+          payload = {
+              "analysis_area": {
+                  "mode": "rectangle",
+                  "bounds": {
+                      "west_deg": 139.0,
+                      "south_deg": 35.0,
+                      "east_deg": 139.01,
+                      "north_deg": 35.01,
+                  },
+                  "center": {"lon_deg": 139.005, "lat_deg": 35.005},
+                  "width_m": 500.0,
+                  "height_m": 500.0,
+                  "area_m2": 250000.0,
+              },
+              "accuracy_mode": "full_1m",
+          }
+          estimate = httpx.post(
+              f"{base}/api/v1/estimate",
+              json=payload,
+              timeout=5,
+          )
+          assert estimate.status_code == 200, estimate.text
+          assert estimate.json()["full_1m_equivalent_cells"] == 250000
+          PY
