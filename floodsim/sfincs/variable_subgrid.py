@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 import numpy as np
 import xarray as xr
-from hydromt_sfincs.workflows.subgrid import subgrid_q_table, subgrid_v_table
+from hydromt_sfincs.workflows.subgrid import (  # type: ignore[import-untyped]
+    subgrid_q_table,
+    subgrid_v_table,
+)
 from numba import get_num_threads, njit, prange
+
+
+class SubgridPatchMetrics(TypedDict, total=False):
+    patched_faces: int
+    patched_uv_points: int
+    patch_sample_evaluations: int
+    parallel_threads: int
+    specialized_cell_sizes_m: list[int]
 
 
 @njit(cache=True, parallel=True)
@@ -215,7 +228,7 @@ def build_optimized_2248_subgrid(
     manning_n: np.ndarray,
     *,
     nr_levels: int,
-) -> tuple[xr.Dataset, dict[str, int]]:
+) -> tuple[xr.Dataset, SubgridPatchMetrics]:
     """Build 2/2/4/8 tables directly from aligned 1 m source arrays."""
     base_size = round(float(grid.attrs["dx"]))
     height = int(grid.attrs["nmax"]) * base_size
@@ -306,7 +319,7 @@ def apply_2248_subgrid_patch(
     manning_n: np.ndarray,
     *,
     nr_levels: int,
-) -> dict[str, int]:
+) -> SubgridPatchMetrics:
     """Replace coarse tables with aligned 1 m source-grid evaluations."""
     base_size = round(float(grid.attrs["dx"]))
     height = int(grid.attrs["nmax"]) * base_size

@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import xarray as xr
@@ -25,6 +25,9 @@ from floodsim.preprocessing.full_grid import FullGridProduct
 from floodsim.sfincs.adaptive_quadtree import create_adaptive_quadtree
 from floodsim.sfincs.quadtree_writer import write_quadtree_grid_compat
 from floodsim.storage.run_store import atomic_write_json
+
+if TYPE_CHECKING:
+    from floodsim.sfincs.variable_subgrid import SubgridPatchMetrics
 
 EXPECTED_HYDROMT_SFINCS = "2.0.0rc3"
 
@@ -451,7 +454,7 @@ class AdaptiveSfincsModelBuilder:
                         "HydroMT-SFINCS quadtree subgrid component is incompatible"
                     )
                 subgrid_cpu_started = time.process_time()
-                variable_patch: dict[str, int] | None = None
+                variable_patch: SubgridPatchMetrics | None = None
                 if self.subgrid_strategy == "2-2-4-8-optimized":
                     with _sfincs_environment():
                         from floodsim.sfincs.variable_subgrid import (
@@ -507,6 +510,10 @@ class AdaptiveSfincsModelBuilder:
                     subgrid_face_count + subgrid_uv_point_count
                 ) * base_subgrid_pixels * base_subgrid_pixels
                 if self.subgrid_strategy == "2-2-4-8-optimized":
+                    if variable_patch is None:
+                        raise ModelBuildError(
+                            "Optimized Adaptive subgrid did not report build metrics"
+                        )
                     subgrid_sample_evaluations = variable_patch[
                         "patch_sample_evaluations"
                     ]
