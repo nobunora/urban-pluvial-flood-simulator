@@ -512,6 +512,28 @@
             "title": "Catalog Generated At Utc",
             "type": "string"
           },
+          "damage_location_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Damage Location Name"
+          },
+          "damage_location_source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Damage Location Source Url"
+          },
           "data_quality_flags": {
             "items": {
               "type": "string"

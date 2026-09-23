@@ -505,6 +505,10 @@ export interface components {
         RainfallEventResponse: {
             /** Catalog Generated At Utc */
             catalog_generated_at_utc: string;
+            /** Damage Location Name */
+            damage_location_name?: string | null;
+            /** Damage Location Source Url */
+            damage_location_source_url?: string | null;
             /** Data Quality Flags */
             data_quality_flags: string[];
             /** Duration Minutes */

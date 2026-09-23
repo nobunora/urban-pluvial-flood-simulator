@@ -603,3 +603,10 @@
   font-size: 0.82rem;
   line-height: 1.2;
 }
+
+.rainfall-ranking-note {
+  margin: 0.35rem 0 0;
+  color: #64748b;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}

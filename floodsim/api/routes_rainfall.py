@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 
 from fastapi import APIRouter, Query
 
@@ -21,12 +21,70 @@ from floodsim.providers.jma import JmaCatalogProvider, JmaRainfallEvent, JmaStat
 router = APIRouter()
 catalog_provider = JmaCatalogProvider()
 
+
+@dataclass(frozen=True)
+class UrbanFloodScenario:
+    event_id: str
+    year: str
+    region: str
+    precipitation_mm: float
+    damage_location_name: str
+    lon: float
+    lat: float
+    source_url: str
+
+
 _URBAN_FLOOD_RANKING = (
-    ("2025-yokkaichi", "2025", "四日市市中心部", 123.5, 136.6245, 34.9650),
-    ("2026-chiba", "2026", "千葉市周辺", 115.0, 140.1063, 35.6074),
-    ("2019-saga", "2019", "佐賀県佐賀市", 110.0, 130.3009, 33.2635),
-    ("2026-nagoya", "2026", "愛知県名古屋市", 104.5, 136.9066, 35.1815),
-    ("2000-nagoya", "2000", "愛知県名古屋市周辺", 97.0, 136.9066, 35.1815),
+    UrbanFloodScenario(
+        "2025-yokkaichi",
+        "2025",
+        "四日市市中心部",
+        123.5,
+        "くすの木パーキング",
+        136.6208,
+        34.9665,
+        "https://www.city.yokkaichi.lg.jp/www/contents/1757987294730/index.html",
+    ),
+    UrbanFloodScenario(
+        "2026-chiba",
+        "2026",
+        "千葉市周辺",
+        115.0,
+        "千葉駅前地下道",
+        140.1141,
+        35.6129,
+        "https://www.city.chiba.jp/kensetsu/doboku/dobokukanri/chibagouu_ekimaetikadoueizou.html",
+    ),
+    UrbanFloodScenario(
+        "2019-saga",
+        "2019",
+        "佐賀県佐賀市",
+        110.0,
+        "JR佐賀駅前",
+        130.2975,
+        33.2642,
+        "https://www.pref.saga.lg.jp/kiji003116579/3_116579_371311_up_vp3eppoe.pdf",
+    ),
+    UrbanFloodScenario(
+        "2026-nagoya",
+        "2026",
+        "愛知県名古屋市",
+        104.5,
+        "昭和区・鶴舞周辺（代表点）",
+        136.9196,
+        35.1569,
+        "https://www.city.nagoya.jp/bousaiportal/shien/1054060.html",
+    ),
+    UrbanFloodScenario(
+        "2000-nagoya",
+        "2000",
+        "愛知県名古屋市周辺",
+        97.0,
+        "天白区野並地区",
+        136.9555,
+        35.1028,
+        "https://www.city.nagoya.jp/_res/projects/default_project/_page_/001/013/543/03.pdf",
+    ),
 )
 
 
@@ -86,29 +144,35 @@ def recent_rainfall_ranking() -> RecentRainfallRankingResponse:
     """Return the configured urban-flood rainfall scenarios in rank order."""
     events = [
         RainfallEventResponse(
-            event_id=event_id,
-            station_id=event_id,
-            station_name=region,
-            station_lon_deg=lon,
-            station_lat_deg=lat,
+            event_id=scenario.event_id,
+            station_id=scenario.event_id,
+            station_name=scenario.region,
+            station_lon_deg=scenario.lon,
+            station_lat_deg=scenario.lat,
             duration_minutes=60,
-            total_precipitation_mm=precipitation,
+            total_precipitation_mm=scenario.precipitation_mm,
             rank=rank,
-            event_date_or_datetime_metadata=year,
+            event_date_or_datetime_metadata=scenario.year,
             source_url="user-provided://urban-flood-ranking",
             catalog_generated_at_utc="2026-09-23T00:00:00+09:00",
-            data_quality_flags=["user_provided_scenario"],
+            data_quality_flags=[
+                "user_provided_scenario",
+                "representative_damage_location_not_absolute_maximum",
+            ],
             profile_available=False,
-            intensity_mm_per_h=precipitation,
+            intensity_mm_per_h=scenario.precipitation_mm,
+            damage_location_name=scenario.damage_location_name,
+            damage_location_source_url=scenario.source_url,
         )
-        for rank, (event_id, year, region, precipitation, lon, lat) in enumerate(
-            _URBAN_FLOOD_RANKING, start=1
-        )
+        for rank, scenario in enumerate(_URBAN_FLOOD_RANKING, start=1)
     ]
     return RecentRainfallRankingResponse(
         period_start="2000-01-01",
         period_end="2026-12-31",
-        coverage_note="指定された都市型豪雨シナリオ",
+        coverage_note=(
+            "指定された都市型豪雨シナリオ。解析中心は公的な被害記録で確認できる"
+            "代表被災地点であり、市内の絶対最大浸水地点を示すものではありません。"
+        ),
         events=events,
     )
 

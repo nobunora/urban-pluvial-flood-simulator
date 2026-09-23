@@ -100,6 +100,8 @@ class RainfallEventResponse(BaseModel):
     profile_available: bool
     profile_id: str | None = None
     intensity_mm_per_h: float = Field(gt=0)
+    damage_location_name: str | None = None
+    damage_location_source_url: str | None = None
 
 
 class RainfallExtremesResponse(BaseModel):

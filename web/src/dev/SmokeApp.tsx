@@ -336,6 +336,8 @@ export default function SmokeApp() {
                         onClick={() => {
                           setIntensity(String(Number(event.intensity_mm_per_h.toFixed(1))));
                           setDuration(String(event.duration_minutes));
+                          setLon(event.station_lon_deg.toFixed(6));
+                          setLat(event.station_lat_deg.toFixed(6));
                         }}
                       >
                         <span className="rainfall-event-place">
@@ -344,12 +346,16 @@ export default function SmokeApp() {
                         </span>
                         <span className="rainfall-event-amount">
                           1h降水量 {event.intensity_mm_per_h.toFixed(1)} mm
+                          {event.damage_location_name && ` ・ ${event.damage_location_name}`}
                         </span>
                       </button>
                     </li>
                   ))}
                 </ol>
               </section>
+            )}
+            {rainfallRanking && (
+              <p className="rainfall-ranking-note">{rainfallRanking.coverage_note}</p>
             )}
             <div className="smoke-actions">
               <button className="analysis-start-button" disabled={!area || setupLocked} onClick={() => void handleRun()}>
