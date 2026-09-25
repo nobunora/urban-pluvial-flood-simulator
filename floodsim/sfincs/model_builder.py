@@ -74,8 +74,8 @@ def _sfincs_datetime(value: datetime) -> datetime:
 
 
 def _raster(values: np.ndarray, grid: FullGridProduct, name: str) -> xr.DataArray:
-    x = grid.x0_m + 0.5 + np.arange(grid.width_cells, dtype=float)
-    y = grid.y0_m + 0.5 + np.arange(grid.height_cells, dtype=float)
+    x = grid.x0_m + grid.dx_m / 2.0 + grid.dx_m * np.arange(grid.width_cells, dtype=float)
+    y = grid.y0_m + grid.dy_m / 2.0 + grid.dy_m * np.arange(grid.height_cells, dtype=float)
     data = xr.DataArray(values, dims=("y", "x"), coords={"x": x, "y": y}, name=name)
     data.raster.set_crs(CRS.from_wkt(grid.crs_wkt))
     data.raster.set_nodata(-9999)
@@ -94,8 +94,8 @@ def _precipitation(
     ]
     rates = np.asarray(rainfall.intensity_mm_per_h, dtype=np.float32)
     values = rates[:, None, None] * grid.rain_weight[None, :, :]
-    x = grid.x0_m + 0.5 + np.arange(grid.width_cells, dtype=float)
-    y = grid.y0_m + 0.5 + np.arange(grid.height_cells, dtype=float)
+    x = grid.x0_m + grid.dx_m / 2.0 + grid.dx_m * np.arange(grid.width_cells, dtype=float)
+    y = grid.y0_m + grid.dy_m / 2.0 + grid.dy_m * np.arange(grid.height_cells, dtype=float)
     data = xr.DataArray(
         values,
         dims=("time", "y", "x"),
@@ -179,8 +179,8 @@ class SfincsModelBuilder:
             model.grid.create(
                 x0=grid.x0_m,
                 y0=grid.y0_m,
-                dx=1.0,
-                dy=1.0,
+                dx=grid.dx_m,
+                dy=grid.dy_m,
                 nmax=grid.height_cells,
                 mmax=grid.width_cells,
                 rotation=0,
@@ -232,8 +232,8 @@ class SfincsModelBuilder:
         report = {
             "schema_version": "1",
             "grid_type": "regular",
-            "grid_resolution_m": 1.0,
-            "cell_counts": {"1m": grid.cell_count},
+            "grid_resolution_m": grid.dx_m,
+            "cell_counts": {f"{grid.dx_m:g}m": grid.cell_count},
             "model_crs_wkt": grid.crs_wkt,
             "active_cells": int(np.count_nonzero(grid.sfincs_mask)),
             "blocked_building_cells": int(np.count_nonzero(grid.building_mask)),

@@ -32,6 +32,7 @@ class RoofRainAllocation:
 def allocate_roof_rainfall(
     building_mask: np.ndarray,
     *,
+    active_mask: np.ndarray | None = None,
     cell_area_m2: float = 1.0,
     max_distance_cells: int = 5,
     tolerance: float = 1e-9,
@@ -52,7 +53,10 @@ def allocate_roof_rainfall(
     if max_distance_cells < 1:
         raise ValueError("max_distance_cells must be at least one")
 
-    weights = np.ones(mask.shape, dtype=np.float64)
+    active = np.ones(mask.shape, dtype=bool) if active_mask is None else np.asarray(active_mask, dtype=bool)
+    if active.shape != mask.shape:
+        raise ValueError("active_mask must match building_mask")
+    weights = active.astype(np.float64)
     weights[mask] = 0.0
     components, count = label(mask, structure=np.ones((3, 3), dtype=np.uint8))
     component_slices = find_objects(components)
@@ -84,7 +88,7 @@ def allocate_roof_rainfall(
                 structure=np.ones((3, 3), dtype=bool),
                 iterations=distance,
             )
-            candidates = expanded & ~local_mask
+            candidates = expanded & ~local_mask & active[row0:row1, col0:col1]
             if np.any(candidates):
                 recipients = candidates
                 break
@@ -102,7 +106,7 @@ def allocate_roof_rainfall(
         ):
             progress_callback(component_id, int(count))
 
-    meteorological_area = float(mask.size) * cell_area_m2
+    meteorological_area = float(np.count_nonzero(active)) * cell_area_m2
     hydraulic_area = float(np.sum(weights) * cell_area_m2)
     relative_error = abs(hydraulic_area - meteorological_area) / meteorological_area
     if relative_error > tolerance:

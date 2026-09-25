@@ -271,6 +271,35 @@ def test_enabled_adaptive_runs_through_native_face_result_path(tmp_path: Path) -
     assert any("Adaptive計算が完了" in line for line in record.activity_lines)
 
 
+@pytest.mark.parametrize(
+    ("maximum_block_size_m", "expected_levels"),
+    [(1, (1,)), (2, (1, 2)), (4, (1, 2, 4))],
+)
+def test_adaptive_max_block_size_reaches_classifier(
+    tmp_path: Path,
+    maximum_block_size_m: int,
+    expected_levels: tuple[int, ...],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def classifier(grid: FullGridProduct, **kwargs: object):
+        captured.update(kwargs)
+        return build_adaptive_grid(grid, **kwargs)
+
+    coordinator, _builder = _coordinator(tmp_path, enabled=True)
+    coordinator.adaptive_grid_builder = classifier
+    config = _config().model_copy(
+        update={"adaptive_max_block_size_m": maximum_block_size_m}
+    )
+    record = coordinator.create_run(config)
+    assert record.future is not None
+    record.future.result(timeout=10)
+
+    assert record.machine.state is RunState.COMPLETE
+    policy = captured["policy"]
+    assert getattr(policy, "active_levels_m") == expected_levels
+
+
 def test_adaptive_constraints_survive_cache_and_reach_classifier(tmp_path: Path) -> None:
     hard_boundary = np.zeros((4, 4), dtype=np.int32)
     hard_boundary[:, 2:] = 1

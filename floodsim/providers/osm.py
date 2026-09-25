@@ -21,6 +21,7 @@ from floodsim.providers.common import (
     NetworkPolicy,
     ProviderParseError,
     ProviderProvenance,
+    ProviderRequestError,
     ProviderTimeoutError,
     ProviderUnavailableError,
     area_lonlat_bounds,
@@ -32,6 +33,10 @@ from floodsim.providers.common import (
 )
 
 OVERPASS = "https://overpass-api.de/api/interpreter"
+OVERPASS_ENDPOINTS = (
+    OVERPASS,
+    "https://overpass.private.coffee/api/interpreter",
+)
 TERMS_URL = "https://www.openstreetmap.org/copyright"
 OVERPASS_QUERY_TIMEOUT_S = 90
 
@@ -86,10 +91,19 @@ def _cache_path(cache_dir: Path, area: AnalysisArea, margin_m: float) -> Path:
 class OsmProvider:
     provider_id = "osm"
 
-    def __init__(self, session=None, policy: NetworkPolicy = DEFAULT_NETWORK_POLICY, sleeper=None):
+    def __init__(
+        self,
+        session=None,
+        policy: NetworkPolicy = DEFAULT_NETWORK_POLICY,
+        sleeper=None,
+        endpoints: tuple[str, ...] = OVERPASS_ENDPOINTS,
+    ):
+        if not endpoints:
+            raise ValueError("at least one Overpass endpoint is required")
         self.session = session or make_session(policy)
         self.policy = policy
         self.sleeper = sleeper
+        self.endpoints = endpoints
 
     def acquire(
         self,
@@ -123,6 +137,7 @@ class OsmProvider:
 );
 out geom;'''
         cache_file = _cache_path(Path(cache_dir), area, margin_m)
+        endpoint_used = self.endpoints[0]
         if cache_file.exists():
             _check_deadline(deadline, "OSM cache read")
             try:
@@ -131,25 +146,38 @@ out geom;'''
                 raise ProviderParseError("cached OSM response is invalid") from exc
             _check_deadline(deadline, "OSM cache parse")
         else:
-            if self.sleeper is None:
-                response = request_with_retry(
-                    self.session,
-                    "POST",
-                    OVERPASS,
-                    policy=self.policy,
-                    data={"data": query},
-                    deadline_monotonic=deadline,
-                )
-            else:
-                response = request_with_retry(
-                    self.session,
-                    "POST",
-                    OVERPASS,
-                    policy=self.policy,
-                    sleeper=self.sleeper,
-                    data={"data": query},
-                    deadline_monotonic=deadline,
-                )
+            response = None
+            last_error: ProviderRequestError | None = None
+            for endpoint_index, endpoint in enumerate(self.endpoints):
+                try:
+                    request_kwargs: dict[str, Any] = {
+                        "policy": self.policy,
+                        "data": {"data": query},
+                        "deadline_monotonic": deadline,
+                    }
+                    if self.sleeper is not None:
+                        request_kwargs["sleeper"] = self.sleeper
+                    response = request_with_retry(
+                        self.session,
+                        "POST",
+                        endpoint,
+                        **request_kwargs,
+                    )
+                    endpoint_used = endpoint
+                    break
+                except ProviderRequestError as exc:
+                    last_error = exc
+                    if endpoint_index + 1 >= len(self.endpoints):
+                        raise
+                    _check_deadline(deadline, "OSM Overpass endpoint fallback")
+                    if progress_callback is not None:
+                        progress_callback(
+                            0.08,
+                            "OSM Overpass応答なし。代替エンドポイントへ切替中",
+                        )
+            if response is None:
+                assert last_error is not None
+                raise last_error
             payload = read_json(response, "OSM Overpass")
             _check_deadline(deadline, "OSM response parse")
             if progress_callback is not None:
@@ -279,7 +307,7 @@ out geom;'''
             TERMS_URL,
             warnings=["Fallback data; completeness and geometry quality vary by area."],
             source_details={
-                "endpoint": OVERPASS,
+                "endpoint": endpoint_used,
                 "building_polygons": len(buildings),
                 "road_lines": len(roads),
                 "query_margin_m": margin_m,

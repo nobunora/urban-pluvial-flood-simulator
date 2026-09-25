@@ -358,7 +358,7 @@ export interface components {
          * AccuracyMode
          * @enum {string}
          */
-        AccuracyMode: "full_1m" | "adaptive";
+        AccuracyMode: "full_1m" | "uniform" | "adaptive";
         /** AnalysisArea */
         AnalysisArea: {
             /** Area M2 */
@@ -631,8 +631,14 @@ export interface components {
              * Accuracy Mode
              * @enum {string}
              */
-            accuracy_mode: "full_1m" | "adaptive";
+            accuracy_mode: "full_1m" | "uniform" | "adaptive";
             analysis_area: components["schemas"]["AnalysisArea"];
+            /**
+             * Grid Cell Size M
+             * @default 1
+             * @enum {integer}
+             */
+            grid_cell_size_m: 1 | 2 | 4;
         };
         /** ResourceEstimateResponse */
         ResourceEstimateResponse: {
@@ -767,7 +773,7 @@ export interface components {
              * Requested Accuracy Mode
              * @enum {string}
              */
-            requested_accuracy_mode: "full_1m" | "adaptive";
+            requested_accuracy_mode: "full_1m" | "uniform" | "adaptive";
             /** Roof Rain Mass Diagnostic */
             roof_rain_mass_diagnostic?: {
                 [key: string]: number;
@@ -775,7 +781,19 @@ export interface components {
         };
         /** RunConfig */
         RunConfig: {
+            /**
+             * Adaptive Max Block Size M
+             * @default 4
+             * @enum {integer}
+             */
+            adaptive_max_block_size_m: 1 | 2 | 4;
             analysis_area: components["schemas"]["AnalysisArea"];
+            /**
+             * Grid Cell Size M
+             * @default 1
+             * @enum {integer}
+             */
+            grid_cell_size_m: 1 | 2 | 4;
             /** Rainfall */
             rainfall: components["schemas"]["ConstantRainfall"] | components["schemas"]["HistoricalUniformRainfall"] | components["schemas"]["HistoricalObservedProfile"];
             requested_accuracy_mode: components["schemas"]["AccuracyMode"];

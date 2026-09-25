@@ -13,6 +13,7 @@ from PIL import Image
 from floodsim.api import routes_results
 from floodsim.api.app import app
 from floodsim.domain.geometry import AnalysisArea, GeoBounds, LonLat
+from floodsim.results.vector_viewport import flow_vectors_viewport_geojson
 from floodsim.results.view import (
     DEPTH_BANDS,
     NormalizedArrays,
@@ -146,6 +147,50 @@ def test_flow_arrow_geometry_preserves_stride_ratio() -> None:
     assert _display_arrow_length_m(sample_span_m=1.0) == 0.8
     assert _display_arrow_length_m(sample_span_m=4.0) == 3.2
     assert _display_arrow_length_m(sample_span_m=8.0) == 6.4
+
+
+def test_viewport_vectors_keep_display_density_across_grid_sizes() -> None:
+    area = _area().model_copy(
+        update={"width_m": 8.0, "height_m": 8.0, "area_m2": 64.0}
+    )
+
+    def arrays(size: int, grid_m: float) -> NormalizedArrays:
+        depth = np.full((1, size, size), 0.2, dtype=np.float32)
+        velocity = np.full((1, size, size), 0.5, dtype=np.float32)
+        return NormalizedArrays(
+            depth_time_m=depth,
+            max_depth_m=depth[0],
+            terrain_elevation_m=np.zeros((size, size), dtype=np.float32),
+            active_mask=np.ones((size, size), dtype=bool),
+            time_values=("0",),
+            grid_resolution_m=grid_m,
+            velocity_u_mps=velocity,
+            velocity_v_mps=np.zeros_like(velocity),
+        )
+
+    request = {
+        "area": area,
+        "time_index": 0,
+        "west": area.bounds.west_deg,
+        "south": area.bounds.south_deg,
+        "east": area.bounds.east_deg,
+        "north": area.bounds.north_deg,
+        "stride": 4,
+    }
+    one_m = flow_vectors_viewport_geojson(arrays(8, 1.0), **request)
+    two_m = flow_vectors_viewport_geojson(arrays(4, 2.0), **request)
+    four_m = flow_vectors_viewport_geojson(arrays(2, 4.0), **request)
+
+    assert len(one_m["features"]) == len(two_m["features"]) == len(four_m["features"]) == 4
+    assert (
+        one_m["metadata"]["arrow_length_m"]
+        == two_m["metadata"]["arrow_length_m"]
+        == four_m["metadata"]["arrow_length_m"]
+        == 3.2
+    )
+    assert one_m["metadata"]["sample_stride_cells"] == 4
+    assert two_m["metadata"]["sample_stride_cells"] == 2
+    assert four_m["metadata"]["sample_stride_cells"] == 1
 
 
 def test_flow_vector_geojson_uses_saved_velocity_and_speed_properties() -> None:

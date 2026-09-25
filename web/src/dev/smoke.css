@@ -274,6 +274,10 @@
   position: relative;
 }
 
+.setup-map-frame {
+  position: relative;
+}
+
 .setup-map-help {
   margin-bottom: 0.6rem;
   color: #475569;
@@ -287,6 +291,26 @@
   border-radius: 10px;
   overflow: hidden;
   background: #e2e8f0;
+}
+
+.setup-area-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.setup-area-dom-outline {
+  position: absolute;
+  z-index: 20;
+  box-sizing: border-box;
+  border: 5px solid #ef1b1b;
+  box-shadow: 0 0 0 5px #111827;
+  border-radius: 2px;
+  pointer-events: none;
 }
 
 .setup-map-disabled {
@@ -575,40 +599,66 @@
 }
 
 .rainfall-ranking ol {
-  max-height: 15rem;
-  overflow: auto;
-  padding-left: 1.35rem;
-}
-
-.rainfall-ranking li + li {
-  margin-top: 0.2rem;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
 }
 
 .smoke-card .rainfall-ranking button {
-  display: grid;
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
   width: 100%;
-  gap: 0.05rem;
-  padding: 0.45rem 0.6rem;
+  min-height: 2.35rem;
+  padding: 0.35rem 0.6rem;
   text-align: left;
 }
 
-.rainfall-event-place {
-  display: flex;
-  gap: 0.4rem;
-  line-height: 1.25;
-}
-
-.rainfall-event-amount {
-  color: #475569;
-  font-size: 0.82rem;
-  line-height: 1.2;
-}
-
-.rainfall-ranking-note {
-  margin: 0.35rem 0 0;
+.rainfall-ranking button small {
   color: #64748b;
   font-size: 0.72rem;
-  line-height: 1.35;
+}
+
+.rainfall-ranking button span {
+  margin-left: auto;
+  color: #475569;
+  font-size: 0.82rem;
+}
+
+.smoke-card .result-import-button {
+  width: 100%;
+  margin-bottom: 0.5rem;
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+.result-import-input {
+  display: none;
+}
+
+.compact-input-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.compact-input-grid > label {
+  margin-bottom: 0;
+}
+
+.smoke-map-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.setup-map-wrap {
+  flex: 1;
+}
+
+.setup-map-canvas {
+  min-height: 560px;
 }
 
 .download-app-link {

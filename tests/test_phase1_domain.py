@@ -40,6 +40,15 @@ def test_geometry_contracts_validate_bounds_and_explicit_crs() -> None:
 
 def test_analysis_area_enforces_preset_sizes_and_area() -> None:
     assert area().area_m2 == 250000
+    largest_preset = AnalysisArea(
+        mode="preset_square",
+        bounds=area().bounds,
+        center=area().center,
+        width_m=8000,
+        height_m=8000,
+        area_m2=64_000_000,
+    )
+    assert largest_preset.width_m == 8000
     with pytest.raises(ValidationError):
         AnalysisArea(
             mode="preset_square",

@@ -4,6 +4,7 @@
       "AccuracyMode": {
         "enum": [
           "full_1m",
+          "uniform",
           "adaptive"
         ],
         "title": "AccuracyMode",
@@ -815,6 +816,7 @@
           "accuracy_mode": {
             "enum": [
               "full_1m",
+              "uniform",
               "adaptive"
             ],
             "title": "Accuracy Mode",
@@ -822,6 +824,16 @@
           },
           "analysis_area": {
             "$ref": "#/components/schemas/AnalysisArea"
+          },
+          "grid_cell_size_m": {
+            "default": 1,
+            "enum": [
+              1,
+              2,
+              4
+            ],
+            "title": "Grid Cell Size M",
+            "type": "integer"
           }
         },
         "required": [
@@ -1174,6 +1186,7 @@
           "requested_accuracy_mode": {
             "enum": [
               "full_1m",
+              "uniform",
               "adaptive"
             ],
             "title": "Requested Accuracy Mode",
@@ -1205,8 +1218,28 @@
       "RunConfig": {
         "additionalProperties": false,
         "properties": {
+          "adaptive_max_block_size_m": {
+            "default": 4,
+            "enum": [
+              1,
+              2,
+              4
+            ],
+            "title": "Adaptive Max Block Size M",
+            "type": "integer"
+          },
           "analysis_area": {
             "$ref": "#/components/schemas/AnalysisArea"
+          },
+          "grid_cell_size_m": {
+            "default": 1,
+            "enum": [
+              1,
+              2,
+              4
+            ],
+            "title": "Grid Cell Size M",
+            "type": "integer"
           },
           "rainfall": {
             "discriminator": {

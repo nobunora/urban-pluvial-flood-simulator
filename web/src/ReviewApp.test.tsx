@@ -118,6 +118,7 @@ const metadata: ResultMetadataResponse = {
 
 describe("local review UI", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     vi.mocked(getAppConfig).mockResolvedValue({
       mode: "local",
       allow_run: true,
@@ -203,21 +204,30 @@ describe("local review UI", () => {
     expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "1000");
   });
 
-  it("fills rainfall inputs from the recent rainfall ranking", async () => {
+  it("fills rainfall inputs from the static rainfall ranking", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /四日市市中心部/ }));
+    await waitFor(() => expect(getAppConfig).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /2025.*四日市.*123.5 mm\/h/ }));
 
-    const rainfallEvent = screen.getByRole("button", { name: /四日市市中心部/ });
-    expect(rainfallEvent).toHaveTextContent("2025年四日市市中心部");
-    expect(rainfallEvent).toHaveTextContent("1h降水量 123.5 mm ・ くすの木パーキング");
+    const rainfallEvent = screen.getByRole("button", { name: /2025.*四日市.*123.5 mm\/h/ });
+    expect(rainfallEvent).toHaveTextContent("2025四日市123.5 mm/h");
 
     expect(screen.getByLabelText("雨量強度 (mm/h)")).toHaveValue("123.5");
     expect(screen.getByLabelText("継続時間 (min)")).toHaveValue("60");
-    expect(screen.getByLabelText("緯度")).toHaveValue("35.690000");
-    expect(screen.getByLabelText("経度")).toHaveValue("139.750000");
+    expect(screen.getByLabelText("緯度")).toHaveValue("34.966500");
+    expect(screen.getByLabelText("経度")).toHaveValue("136.620800");
     expect(screen.getByLabelText("範囲")).toHaveValue("2000");
-    expect(screen.getByText(/絶対最大浸水地点を示すものではありません/)).toBeVisible();
+    expect(screen.getByLabelText("最小ブロック")).toHaveValue("auto");
+  });
+
+  it("reconnects to the saved run after a browser reload", async () => {
+    const runId = "00000000-0000-0000-0000-000000000001";
+    window.localStorage.setItem("urban-pluvial-flood-simulator.active-run-id", runId);
+
+    render(<App />);
+
+    await waitFor(() => expect(getRun).toHaveBeenCalledWith(runId));
   });
 
   it("offers a prepared result in local mode and opens it on request", async () => {
@@ -226,7 +236,7 @@ describe("local review UI", () => {
       allow_run: true,
       allow_result_import: true,
       download_url: "https://github.com/example/releases/latest",
-      demo_result_event_ids: ["tokyo-60m-1"],
+      demo_result_event_ids: ["2025-yokkaichi"],
     });
     vi.mocked(openDemoResult).mockResolvedValue({
       run_id: "00000000-0000-0000-0000-000000000002",
@@ -234,11 +244,12 @@ describe("local review UI", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /四日市市中心部/ }));
-    expect(screen.getByRole("dialog", { name: "解析済み結果があります" })).toBeVisible();
+    await waitFor(() => expect(getAppConfig).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /2025.*四日市.*123.5 mm\/h/ }));
+    expect(await screen.findByRole("dialog", { name: "解析済み結果があります" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "解析済み結果を表示" }));
 
-    await waitFor(() => expect(openDemoResult).toHaveBeenCalledWith("tokyo-60m-1"));
+    await waitFor(() => expect(openDemoResult).toHaveBeenCalledWith("2025-yokkaichi"));
     expect(await screen.findByRole("heading", { name: "解析結果" })).toBeVisible();
   });
 
@@ -248,7 +259,7 @@ describe("local review UI", () => {
       allow_run: false,
       allow_result_import: false,
       download_url: "https://github.com/example/releases/latest",
-      demo_result_event_ids: ["tokyo-60m-1"],
+      demo_result_event_ids: ["2025-yokkaichi"],
     });
     vi.mocked(openDemoResult).mockResolvedValue({
       run_id: "00000000-0000-0000-0000-000000000002",
@@ -261,17 +272,17 @@ describe("local review UI", () => {
       "https://github.com/example/releases/latest",
     );
     expect(screen.queryByRole("button", { name: "解析開始" })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("解析結果を読み込んでレビュー")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("解析済みデータを読み込む")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /四日市市中心部/ }));
-    await waitFor(() => expect(openDemoResult).toHaveBeenCalledWith("tokyo-60m-1"));
+    fireEvent.click(screen.getByRole("button", { name: /2025.*四日市.*123.5 mm\/h/ }));
+    await waitFor(() => expect(openDemoResult).toHaveBeenCalledWith("2025-yokkaichi"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("imports a saved result for review and offers compressed export", async () => {
     render(<App />);
     const file = new File(["archive"], "saved-result.zip", { type: "application/zip" });
-    fireEvent.change(screen.getByLabelText("解析結果を読み込んでレビュー"), {
+    fireEvent.change(screen.getByLabelText("解析済みデータを読み込む"), {
       target: { files: [file] },
     });
 
@@ -284,7 +295,7 @@ describe("local review UI", () => {
   });
 
 
-  it("hides Adaptive controls and always uses the Full 1 m production path", async () => {
+  it("uses the selected uniform block size for a new calculation", async () => {
     render(<App />);
 
     expect(screen.queryByRole("button", { name: "Adaptive OFF" })).not.toBeInTheDocument();
@@ -294,9 +305,31 @@ describe("local review UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "解析開始" }));
     await waitFor(() => {
       expect(createRun).toHaveBeenCalledWith(
-        expect.objectContaining({ requested_accuracy_mode: "full_1m" }),
+        expect.objectContaining({ requested_accuracy_mode: "uniform", grid_cell_size_m: 1 }),
       );
     });
+  });
+
+  it("sends a manually selected 4 m block size to the run API", async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("最小ブロック"), {
+      target: { value: "4" },
+    });
+    expect(screen.getByText("15,625")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "解析開始" }));
+
+    await waitFor(() => {
+      expect(createRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requested_accuracy_mode: "uniform",
+          grid_cell_size_m: 4,
+        }),
+      );
+    });
+    expect(createRun).not.toHaveBeenCalledWith(
+      expect.objectContaining({ requested_accuracy_mode: "adaptive" }),
+    );
   });
 
 
@@ -374,7 +407,7 @@ describe("local review UI", () => {
 
     await waitFor(() => {
       expect(createRun).toHaveBeenCalledWith(
-        expect.objectContaining({ requested_accuracy_mode: "full_1m" }),
+        expect.objectContaining({ requested_accuracy_mode: "uniform", grid_cell_size_m: 1 }),
       );
     });
     await waitFor(() => {

@@ -170,7 +170,8 @@ class ResourceEstimateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     analysis_area: AnalysisArea
-    accuracy_mode: Literal["full_1m", "adaptive"]
+    accuracy_mode: Literal["full_1m", "uniform", "adaptive"]
+    grid_cell_size_m: Literal[1, 2, 4] = 1
 
 
 class ResourceEstimateResponse(BaseModel):
@@ -214,7 +215,7 @@ class ResultRunSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     application_version: str
-    requested_accuracy_mode: Literal["full_1m", "adaptive"]
+    requested_accuracy_mode: Literal["full_1m", "uniform", "adaptive"]
     rainfall_source: dict[str, Any] = Field(default_factory=dict)
     elevation_provider_counts: dict[str, int] = Field(default_factory=dict)
     elevation_source_summary: dict[str, Any] = Field(default_factory=dict)

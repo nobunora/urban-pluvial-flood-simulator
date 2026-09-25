@@ -1,4 +1,4 @@
-"""Full 1 m hydraulic grid preparation."""
+"""Uniform hydraulic grid preparation."""
 
 from __future__ import annotations
 
@@ -52,10 +52,11 @@ class FullGridProduct:
         return self.width_cells * self.height_cells
 
 
-def _cell_count(size_m: float) -> int:
-    rounded = round(size_m)
-    if rounded <= 0 or not math.isclose(size_m, rounded, rel_tol=0.0, abs_tol=1e-6):
-        raise ValueError("Full 1 m mode requires integer-metre analysis dimensions")
+def _cell_count(size_m: float, grid_m: float) -> int:
+    count = size_m / grid_m
+    rounded = round(count)
+    if rounded <= 0 or not math.isclose(count, rounded, rel_tol=0.0, abs_tol=1e-6):
+        raise ValueError("analysis dimensions must be divisible by the uniform grid size")
     return rounded
 
 
@@ -71,8 +72,27 @@ def _cell_center_elevation(product: ElevationProduct, height: int, width: int) -
             f"{(height + 1, width + 1)}"
         )
     if not np.isfinite(out).all():
-        raise ValueError("Full 1 m terrain contains non-finite elevations")
+        raise ValueError("uniform-grid terrain contains non-finite elevations")
     return out.astype(np.float32, copy=False)
+
+
+def _cell_center_uncovered_mask(
+    product: ElevationProduct,
+    height: int,
+    width: int,
+) -> np.ndarray:
+    uncovered = getattr(product, "uncovered_boundary_mask", None)
+    if uncovered is None:
+        return np.zeros((height, width), dtype=bool)
+    mask = np.asarray(uncovered, dtype=bool)
+    if mask.shape == (height, width):
+        return mask.copy()
+    if mask.shape == (height + 1, width + 1):
+        return mask[:-1, :-1] & mask[1:, :-1] & mask[:-1, 1:] & mask[1:, 1:]
+    raise ValueError(
+        f"unexpected uncovered boundary mask shape {mask.shape}; expected {(height, width)} "
+        f"or {(height + 1, width + 1)}"
+    )
 
 
 def _polygon_shapes(items: list[np.ndarray]) -> list[tuple[Polygon, int]]:
@@ -124,11 +144,12 @@ def _rasterize_local(
     height: int,
     width_m: float,
     height_m: float,
+    grid_m: float,
     all_touched: bool,
 ) -> np.ndarray:
     if not shapes:
         return np.zeros((height, width), dtype=bool)
-    transform = from_origin(-width_m / 2.0, height_m / 2.0, 1.0, 1.0)
+    transform = from_origin(-width_m / 2.0, height_m / 2.0, grid_m, grid_m)
     north_to_south = rasterize(
         shapes,
         out_shape=(height, width),
@@ -146,13 +167,16 @@ def build_full_1m_grid(
     elevation: ElevationProduct,
     vectors: Any,
     *,
+    grid_m: float = 1.0,
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> FullGridProduct:
-    """Create the exact 1 m hydraulic arrays required by the Phase 3 builder."""
-    width = _cell_count(area.width_m)
-    height = _cell_count(area.height_m)
+    """Create uniform hydraulic arrays required by the SFINCS builder."""
+    if grid_m not in {1.0, 2.0, 4.0}:
+        raise ValueError("uniform grid size must be 1, 2, or 4 metres")
+    width = _cell_count(area.width_m, grid_m)
+    height = _cell_count(area.height_m, grid_m)
     if progress_callback is not None:
-        progress_callback(0.0, "Full 1 m前処理 0/3 完了 / 残り3処理")
+        progress_callback(0.0, f"均一 {grid_m:g} m 前処理 0/3 完了 / 残り3処理")
 
     def build_building_mask() -> np.ndarray:
         shapes = _polygon_shapes(list(vectors.buildings))
@@ -162,6 +186,7 @@ def build_full_1m_grid(
             height=height,
             width_m=area.width_m,
             height_m=area.height_m,
+            grid_m=grid_m,
             all_touched=True,
         )
 
@@ -172,6 +197,7 @@ def build_full_1m_grid(
             height=height,
             width_m=area.width_m,
             height_m=area.height_m,
+            grid_m=grid_m,
             all_touched=True,
         )
 
@@ -195,6 +221,8 @@ def build_full_1m_grid(
     terrain = completed["地形"]
     building_mask = completed["建物マスク"]
     road_mask = completed["道路マスク"]
+    water_mask = _cell_center_uncovered_mask(elevation, height, width)
+    land_mask = ~water_mask
 
     if progress_callback is not None:
         progress_callback(
@@ -206,11 +234,18 @@ def build_full_1m_grid(
     manning = np.full((height, width), GENERAL_MANNING, dtype=np.float32)
     manning[road_mask & ~building_mask] = ROAD_MANNING
 
-    sfincs_mask = np.ones((height, width), dtype=np.uint8)
-    sfincs_mask[0, :] = 3
-    sfincs_mask[-1, :] = 3
-    sfincs_mask[:, 0] = 3
-    sfincs_mask[:, -1] = 3
+    sfincs_mask = np.zeros((height, width), dtype=np.uint8)
+    sfincs_mask[land_mask] = 1
+    sfincs_mask[0, land_mask[0, :]] = 3
+    sfincs_mask[-1, land_mask[-1, :]] = 3
+    sfincs_mask[land_mask[:, 0], 0] = 3
+    sfincs_mask[land_mask[:, -1], -1] = 3
+    adjacent_water = np.zeros((height, width), dtype=bool)
+    adjacent_water[1:, :] |= water_mask[:-1, :]
+    adjacent_water[:-1, :] |= water_mask[1:, :]
+    adjacent_water[:, 1:] |= water_mask[:, :-1]
+    adjacent_water[:, :-1] |= water_mask[:, 1:]
+    sfincs_mask[land_mask & adjacent_water] = 3
     sfincs_mask[building_mask] = 0
 
     if progress_callback is not None:
@@ -230,8 +265,9 @@ def build_full_1m_grid(
 
     allocation = allocate_roof_rainfall(
         building_mask,
-        cell_area_m2=1.0,
-        max_distance_cells=5,
+        active_mask=land_mask,
+        cell_area_m2=grid_m * grid_m,
+        max_distance_cells=max(1, math.ceil(5.0 / grid_m)),
         tolerance=1e-9,
         progress_callback=roof_progress,
     )
@@ -248,8 +284,8 @@ def build_full_1m_grid(
         roof_allocation=allocation,
         width_cells=width,
         height_cells=height,
-        dx_m=1.0,
-        dy_m=1.0,
+        dx_m=grid_m,
+        dy_m=grid_m,
         x0_m=-area.width_m / 2.0,
         y0_m=-area.height_m / 2.0,
         crs_wkt=crs.to_wkt(),

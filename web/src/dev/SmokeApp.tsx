@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   cancelRun,
@@ -6,14 +6,12 @@ import {
   getAppConfig,
   getHealth,
   getResultMetadata,
-  getRecentRainfallRanking,
   getRun,
   importResult,
   openDemoResult,
   type AppConfigResponse,
   type AnalysisArea,
   type ResultMetadataResponse,
-  type RecentRainfallRankingResponse,
   type RunStatusResponse,
 } from "../api/client";
 import ResultPanel from "../result/ResultPanel";
@@ -23,8 +21,17 @@ import SetupMap from "./SetupMap";
 import "./smoke.css";
 
 const TERMINAL = new Set<RunStatusResponse["state"]>(["COMPLETE", "FAILED", "CANCELLED"]);
+const ACTIVE_RUN_STORAGE_KEY = "urban-pluvial-flood-simulator.active-run-id";
+const RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEFAULT_LAT = 35.681236;
 const DEFAULT_LON = 139.767125;
+const STATIC_RAINFALL_RANKING = [
+  { eventId: "2025-yokkaichi", year: "2025", city: "四日市", lon: 136.6208, lat: 34.9665, intensity: 123.5, duration: 60 },
+  { eventId: "2026-chiba", year: "2026", city: "千葉", lon: 140.1141, lat: 35.6129, intensity: 115, duration: 60 },
+  { eventId: "2019-saga", year: "2019", city: "佐賀", lon: 130.2975, lat: 33.2642, intensity: 110, duration: 60 },
+  { eventId: "2026-nagoya", year: "2026", city: "名古屋", lon: 136.9196, lat: 35.1569, intensity: 104.5, duration: 60 },
+  { eventId: "2000-nagoya", year: "2000", city: "名古屋", lon: 136.9555, lat: 35.1028, intensity: 97, duration: 60 },
+] as const;
 
 function squareArea(lat: number, lon: number, halfSizeM: number): AnalysisArea {
   const metresPerDegree = 111_320;
@@ -52,12 +59,19 @@ function parseNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function recommendedMinimumBlockSize(halfSizeM: number): 1 | 2 | 4 {
+  if (halfSizeM <= 500) return 1;
+  if (halfSizeM <= 1000) return 2;
+  return 4;
+}
+
 export default function SmokeApp() {
   const [lat, setLat] = useState(String(DEFAULT_LAT));
   const [lon, setLon] = useState(String(DEFAULT_LON));
   const [halfSize, setHalfSize] = useState("250");
   const [intensity, setIntensity] = useState("150");
   const [duration, setDuration] = useState("20");
+  const [minimumBlockSizeChoice, setMinimumBlockSizeChoice] = useState<"auto" | "1" | "2" | "4">("auto");
   const [backend, setBackend] = useState("確認中…");
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<RunStatusResponse | null>(null);
@@ -68,7 +82,6 @@ export default function SmokeApp() {
   const [resultError, setResultError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [rainfallRanking, setRainfallRanking] = useState<RecentRainfallRankingResponse | null>(null);
   const [appConfig, setAppConfig] = useState<AppConfigResponse>({
     mode: "local",
     allow_run: true,
@@ -77,6 +90,7 @@ export default function SmokeApp() {
     demo_result_event_ids: [],
   });
   const [pendingDemoEventId, setPendingDemoEventId] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const latValue = parseNumber(lat);
   const lonValue = parseNumber(lon);
@@ -97,12 +111,19 @@ export default function SmokeApp() {
       parsedLat > 90 ||
       parsedLon < -180 ||
       parsedLon > 180 ||
-      ![250, 500, 1000, 2000].includes(halfValue)
+      ![250, 500, 1000, 2000, 4000].includes(halfValue)
     ) {
       return null;
     }
     return squareArea(parsedLat, parsedLon, halfValue);
   }, [lat, lon, halfSize]);
+  const suggestedMinimumBlockSize = recommendedMinimumBlockSize(parseNumber(halfSize) ?? 500);
+  const gridCellSizeM = Number(
+    minimumBlockSizeChoice === "auto" ? suggestedMinimumBlockSize : minimumBlockSizeChoice,
+  ) as 1 | 2 | 4;
+  const gridCellCount = area
+    ? Math.round(area.area_m2 / (gridCellSizeM * gridCellSizeM))
+    : null;
 
   const runActive = status !== null && !TERMINAL.has(status.state);
   const setupLocked =
@@ -116,13 +137,24 @@ export default function SmokeApp() {
   }, []);
 
   useEffect(() => {
-    getAppConfig().then(setAppConfig).catch((cause: unknown) => {
-      setError(`アプリ設定を取得できません: ${String(cause)}`);
-    });
+    const savedRunId = window.localStorage.getItem(ACTIVE_RUN_STORAGE_KEY);
+    if (savedRunId && RUN_ID_PATTERN.test(savedRunId)) {
+      setRunId(savedRunId);
+    }
   }, []);
 
   useEffect(() => {
-    getRecentRainfallRanking().then(setRainfallRanking).catch(() => setRainfallRanking(null));
+    if (runId) {
+      window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY, runId);
+    } else {
+      window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+    }
+  }, [runId]);
+
+  useEffect(() => {
+    getAppConfig().then(setAppConfig).catch((cause: unknown) => {
+      setError(`アプリ設定を取得できません: ${String(cause)}`);
+    });
   }, []);
 
   useEffect(() => {
@@ -204,7 +236,9 @@ export default function SmokeApp() {
     try {
       const created = await createRun({
         analysis_area: area,
-        requested_accuracy_mode: "full_1m",
+        requested_accuracy_mode: "uniform",
+        grid_cell_size_m: gridCellSizeM,
+        adaptive_max_block_size_m: gridCellSizeM,
         rainfall: {
           kind: "constant",
           intensity_mm_per_h: intensityValue,
@@ -308,105 +342,69 @@ export default function SmokeApp() {
       {!resultMetadata && (
         <section className="smoke-grid">
           <div className="smoke-card">
-            {appConfig.allow_result_import && (
-              <>
-                <h2>保存済み結果</h2>
-                <label className="result-import-control">
-                  解析結果を読み込んでレビュー
+            {importing && <p>解析済み結果を読み込んでいます…</p>}
+            <section className="rainfall-ranking" aria-label="過去ランキング5件">
+              <h2>サンプルまたは読込み</h2>
+              {appConfig.allow_result_import && (
+                <>
+                  <button type="button" className="result-import-button" disabled={setupLocked || importing} onClick={() => importInputRef.current?.click()}>
+                    解析済みデータを読み込む
+                  </button>
                   <input
+                    ref={importInputRef}
                     type="file"
+                    aria-label="解析済みデータを読み込む"
                     accept=".zip,application/zip"
+                    className="result-import-input"
                     disabled={setupLocked || importing}
                     onChange={(event) => void handleImport(event.target.files?.[0])}
                   />
-                </label>
-                <hr />
-              </>
-            )}
-            {importing && <p>解析済み結果を読み込んでいます…</p>}
+                </>
+              )}
+              <ol>
+                {STATIC_RAINFALL_RANKING.map((event) => (
+                  <li key={event.eventId}>
+                    <button
+                      type="button"
+                      disabled={setupLocked}
+                      onClick={() => {
+                        setIntensity(String(event.intensity));
+                        setDuration(String(event.duration));
+                        setLon(event.lon.toFixed(6));
+                        setLat(event.lat.toFixed(6));
+                        setHalfSize("2000");
+                        setMinimumBlockSizeChoice("auto");
+                        if (appConfig.demo_result_event_ids.includes(event.eventId)) {
+                          if (appConfig.mode === "demo") {
+                            void handleOpenDemoResult(event.eventId);
+                          } else {
+                            setPendingDemoEventId(event.eventId);
+                          }
+                        }
+                      }}
+                    >
+                      <small>{event.year}</small>
+                      <strong>{event.city}</strong>
+                      <span>{event.intensity} mm/h</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+              <hr />
+            </section>
             <h2>1. 条件</h2>
             <LocationSearch disabled={setupLocked} onSelect={updateLocation} />
             <div className="location-manual-divider">
               <span>または緯度経度を直接入力</span>
             </div>
-            <label>
-              緯度
-              <input
-                value={lat}
-                disabled={setupLocked}
-                onChange={(event) => {
-                  setLat(event.target.value);
-                }}
-              />
-            </label>
-            <label>
-              経度
-              <input
-                value={lon}
-                disabled={setupLocked}
-                onChange={(event) => {
-                  setLon(event.target.value);
-                }}
-              />
-            </label>
-            <label>
-              範囲
-              <select
-                value={halfSize}
-                disabled={setupLocked}
-                onChange={(event) => {
-                  setHalfSize(event.target.value);
-                }}
-              >
-                <option value="250">±250 m</option>
-                <option value="500">±500 m</option>
-                <option value="1000">±1000 m</option>
-                <option value="2000">±2000 m</option>
-              </select>
-            </label>
-            <label>雨量強度 (mm/h)<input value={intensity} disabled={setupLocked} onChange={(event) => setIntensity(event.target.value)} /></label>
-            <label>継続時間 (min)<input value={duration} disabled={setupLocked} onChange={(event) => setDuration(event.target.value)} /></label>
-            {rainfallRanking && rainfallRanking.events.length > 0 && (
-              <section className="rainfall-ranking" aria-label="都市型豪雨の降雨リスト">
-                <h3>都市型豪雨の降雨リスト</h3>
-                <ol>
-                  {rainfallRanking.events.map((event) => (
-                    <li key={event.event_id}>
-                      <button
-                        type="button"
-                        disabled={setupLocked}
-                        onClick={() => {
-                          setIntensity(String(Number(event.intensity_mm_per_h.toFixed(1))));
-                          setDuration(String(event.duration_minutes));
-                          setLon(event.station_lon_deg.toFixed(6));
-                          setLat(event.station_lat_deg.toFixed(6));
-                          setHalfSize("2000");
-                          if (appConfig.demo_result_event_ids.includes(event.event_id)) {
-                            if (appConfig.mode === "demo") {
-                              void handleOpenDemoResult(event.event_id);
-                            } else {
-                              setPendingDemoEventId(event.event_id);
-                            }
-                          }
-                        }}
-                      >
-                        <span className="rainfall-event-place">
-                          <strong>{event.event_date_or_datetime_metadata ?? "年不明"}年</strong>
-                          {event.station_name}
-                        </span>
-                        <span className="rainfall-event-amount">
-                          1h降水量 {event.intensity_mm_per_h.toFixed(1)} mm
-                          {event.damage_location_name && ` ・ ${event.damage_location_name}`}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-              </section>
-            )}
-            {rainfallRanking && (
-              <p className="rainfall-ranking-note">{rainfallRanking.coverage_note}</p>
-            )}
+            <div className="compact-input-grid">
+              <label>緯度<input value={lat} disabled={setupLocked} onChange={(event) => setLat(event.target.value)} /></label>
+              <label>経度<input value={lon} disabled={setupLocked} onChange={(event) => setLon(event.target.value)} /></label>
+              <label>範囲<select value={halfSize} disabled={setupLocked} onChange={(event) => { setHalfSize(event.target.value); setMinimumBlockSizeChoice("auto"); }}><option value="250">±250 m</option><option value="500">±500 m</option><option value="1000">±1000 m</option><option value="2000">±2000 m</option><option value="4000">±4000 m</option></select></label>
+              <label>最小ブロック<select value={minimumBlockSizeChoice} disabled={setupLocked} onChange={(event) => setMinimumBlockSizeChoice(event.target.value as "auto" | "1" | "2" | "4")}><option value="auto">自動 ({suggestedMinimumBlockSize} m)</option><option value="1">1 m</option><option value="2">2 m</option><option value="4">4 m</option></select></label>
+              <label>雨量強度 (mm/h)<input value={intensity} disabled={setupLocked} onChange={(event) => setIntensity(event.target.value)} /></label>
+              <label>継続時間 (min)<input value={duration} disabled={setupLocked} onChange={(event) => setDuration(event.target.value)} /></label>
+            </div>
             <div className="smoke-actions">
               {appConfig.allow_run ? (
                 <button className="analysis-start-button" disabled={!area || setupLocked} onClick={() => void handleRun()}>
@@ -456,7 +454,7 @@ export default function SmokeApp() {
               {area ? (
                 <dl>
                   <dt>範囲</dt><dd>{area.width_m} × {area.height_m} m</dd>
-                  <dt>セル数</dt><dd>{area.area_m2.toLocaleString()}</dd>
+                  <dt>セル数</dt><dd>{gridCellCount?.toLocaleString()}</dd>
                 </dl>
               ) : <p className="smoke-error">入力値を確認してください。</p>}
 

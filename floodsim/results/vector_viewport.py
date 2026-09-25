@@ -1,4 +1,4 @@
-"""Viewport/stride flow-vector sampling on the canonical 1 m result grid."""
+"""Viewport flow-vector sampling at a display-space target density."""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ def flow_vectors_viewport_geojson(
     stride: int,
     min_speed_mps: float = _MIN_SPEED_MPS,
 ) -> dict[str, Any]:
-    """Return stable canonical-1m samples for one viewport and integer stride."""
+    """Return viewport samples at ``stride`` metres, independent of grid size."""
     if stride < 1:
         raise ResultViewError("stride must be a positive integer")
     if time_index < 0 or time_index >= arrays.depth_time_m.shape[0]:
@@ -101,11 +101,13 @@ def flow_vectors_viewport_geojson(
         face_lookup = None
     cell_width_m = area.width_m / float(arrays.shape[1])
     cell_height_m = area.height_m / float(arrays.shape[0])
-    arrow_length_m = 0.8 * float(stride) * min(cell_width_m, cell_height_m)
+    cell_spacing_m = min(cell_width_m, cell_height_m)
+    stride_cells = max(1, round(float(stride) / cell_spacing_m))
+    arrow_length_m = 0.8 * float(stride)
     features: list[dict[str, Any]] = []
 
-    for row in range(row0, row1, stride):
-        for col in range(col0, col1, stride):
+    for row in range(row0, row1, stride_cells):
+        for col in range(col0, col1, stride_cells):
             face = int(face_lookup[row, col]) if face_lookup is not None else -1
             if adaptive:
                 assert isinstance(arrays, AdaptiveNormalizedArrays)
@@ -184,11 +186,12 @@ def flow_vectors_viewport_geojson(
         "metadata": {
             "speed_unit": "m/s",
             "min_speed_mps": float(min_speed_mps),
-            "sample_stride_cells": stride,
+            "sample_stride_cells": stride_cells,
+            "target_spacing_m": float(stride),
             "arrow_length_m": arrow_length_m,
             "arrow_count": len(features),
-            "sampling_method": "canonical-full-1m-grid-global-stride",
-            "canonical_grid_spacing_m": min(cell_width_m, cell_height_m),
+            "sampling_method": "viewport-target-spacing-m",
+            "canonical_grid_spacing_m": cell_spacing_m,
             "stride_anchor_row": 0,
             "stride_anchor_column": 0,
             "viewport": {"west": west, "south": south, "east": east, "north": north},

@@ -1,5 +1,6 @@
 .result-shell {
-  margin-top: 1rem;
+  max-width: 1320px;
+  margin: 1rem auto;
   background: #fff;
   border: 1px solid #d8dee6;
   border-radius: 12px;
@@ -151,7 +152,7 @@
 
 .result-layout {
   display: grid;
-  grid-template-columns: 330px minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 390px) minmax(520px, 1fr);
   grid-template-areas: "sidebar map";
   gap: 1rem;
 }

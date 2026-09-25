@@ -1,4 +1,4 @@
-"""Versioned prepared Full 1 m input cache for fast reruns."""
+"""Versioned prepared uniform-grid input cache for fast reruns."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from floodsim.preprocessing.roof_rainfall import RoofRainAllocation
 from floodsim.storage.run_store import atomic_write_json
 
 PREPARED_GRID_CACHE_SCHEMA = "1"
-PREPARED_GRID_REVISION = "full1m-preprocess-v4-adaptive-constraints"
+PREPARED_GRID_REVISION = "uniform-grid-v1-coastal-boundary"
 
 
 @dataclass(frozen=True)
@@ -29,43 +29,43 @@ class PreparedGridEntry:
 
 
 class PreparedGridCache:
-    """Persist rainfall-independent Full 1 m grid inputs by exact area identity."""
+    """Persist rainfall-independent uniform-grid inputs by exact area identity."""
 
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root) / "prepared_full1m"
 
     @staticmethod
-    def identity(area: AnalysisArea) -> dict[str, Any]:
+    def identity(area: AnalysisArea, grid_m: float = 1.0) -> dict[str, Any]:
         return {
             "schema": PREPARED_GRID_CACHE_SCHEMA,
             "revision": PREPARED_GRID_REVISION,
-            "grid_mode": "full_1m",
-            "grid_resolution_m": 1.0,
+            "grid_mode": "uniform",
+            "grid_resolution_m": grid_m,
             "analysis_area": area.model_dump(mode="json"),
         }
 
     @classmethod
-    def key_for(cls, area: AnalysisArea) -> str:
+    def key_for(cls, area: AnalysisArea, grid_m: float = 1.0) -> str:
         payload = json.dumps(
-            cls.identity(area),
+            cls.identity(area, grid_m),
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,
         ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()[:24]
 
-    def _entry_dir(self, area: AnalysisArea) -> Path:
-        return self.root / self.key_for(area)
+    def _entry_dir(self, area: AnalysisArea, grid_m: float = 1.0) -> Path:
+        return self.root / self.key_for(area, grid_m)
 
-    def load(self, area: AnalysisArea) -> PreparedGridEntry | None:
-        entry_dir = self._entry_dir(area)
+    def load(self, area: AnalysisArea, grid_m: float = 1.0) -> PreparedGridEntry | None:
+        entry_dir = self._entry_dir(area, grid_m)
         arrays_path = entry_dir / "grid.npz"
         metadata_path = entry_dir / "metadata.json"
         if not arrays_path.is_file() or not metadata_path.is_file():
             return None
         try:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            if metadata.get("identity") != self.identity(area):
+            if metadata.get("identity") != self.identity(area, grid_m):
                 return None
             roof = metadata["roof_allocation"]
             with np.load(arrays_path, allow_pickle=False) as archive:
@@ -154,7 +154,7 @@ class PreparedGridCache:
         *,
         metadata: dict[str, Any],
     ) -> PreparedGridEntry:
-        entry_dir = self._entry_dir(area)
+        entry_dir = self._entry_dir(area, grid.dx_m)
         entry_dir.mkdir(parents=True, exist_ok=True)
         arrays_path = entry_dir / "grid.npz"
 
@@ -216,7 +216,7 @@ class PreparedGridCache:
             raise
 
         payload = dict(metadata)
-        payload["identity"] = self.identity(area)
+        payload["identity"] = self.identity(area, grid.dx_m)
         payload["roof_allocation"] = {
             "meteorological_area_m2": grid.roof_allocation.meteorological_area_m2,
             "hydraulic_weighted_area_m2": grid.roof_allocation.hydraulic_weighted_area_m2,
@@ -225,4 +225,4 @@ class PreparedGridCache:
             "redistributed_roof_cells": grid.roof_allocation.redistributed_roof_cells,
         }
         atomic_write_json(entry_dir / "metadata.json", payload)
-        return PreparedGridEntry(self.key_for(area), grid, payload)
+        return PreparedGridEntry(self.key_for(area, grid.dx_m), grid, payload)

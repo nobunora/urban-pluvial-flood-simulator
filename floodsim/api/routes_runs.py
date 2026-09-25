@@ -59,7 +59,7 @@ class _JsonMutationRoute(APIRoute):
 
 
 router = APIRouter(route_class=_JsonMutationRoute)
-coordinator = RunCoordinator(adaptive_enabled=True)
+coordinator = RunCoordinator()
 
 
 def _map_coordinator_error(error: RuntimeError) -> ApiContractError:
@@ -86,14 +86,18 @@ def _resource_class(cells: int) -> str:
 
 @router.post("/estimate", response_model=ResourceEstimateResponse)
 def estimate_resources(request: Request, payload: ResourceEstimateRequest) -> ResourceEstimateResponse:
-    cells = int(math.ceil(payload.analysis_area.width_m) * math.ceil(payload.analysis_area.height_m))
+    grid_m = payload.grid_cell_size_m
+    cells = int(
+        math.ceil(payload.analysis_area.width_m / grid_m)
+        * math.ceil(payload.analysis_area.height_m / grid_m)
+    )
     classification = _resource_class(cells)
     warnings: list[str] = []
     preliminary_adaptive: int | None = None
     if payload.accuracy_mode == "adaptive":
         warnings.append("Adaptive のセル数は Phase 4 の実格子構築まで確定しません。")
     if classification in {"heavy", "very_heavy"}:
-        warnings.append("Full 1 m は大規模計算です。メモリとディスク使用量を確認してください。")
+        warnings.append(f"均一 {grid_m} m 格子は大規模計算です。メモリとディスク使用量を確認してください。")
     return ResourceEstimateResponse(
         full_1m_equivalent_cells=cells,
         preliminary_adaptive_cells=preliminary_adaptive,
@@ -114,7 +118,6 @@ def create_run(request: Request, config: RunConfig) -> RunCreateResponse:
         )
     try:
         record = coordinator.create_run(config)
-        coordinator.enable_client_lease(record.run_id)
     except (RunAlreadyActive, AdaptiveNotAvailable) as exc:
         raise _map_coordinator_error(exc) from exc
     return RunCreateResponse(run_id=record.run_id)
@@ -124,7 +127,6 @@ def create_run(request: Request, config: RunConfig) -> RunCreateResponse:
 def get_run(run_id: UUID) -> RunStatusResponse:
     try:
         record = coordinator.get(run_id)
-        coordinator.client_heartbeat(run_id)
     except RunNotFound as exc:
         raise _map_coordinator_error(exc) from exc
     with record.lock:

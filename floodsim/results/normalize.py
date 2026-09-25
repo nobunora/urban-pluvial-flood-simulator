@@ -32,7 +32,10 @@ def normalize_regular_result(
     provider_summary: Mapping[str, Any] | None = None,
     engine_summary: Mapping[str, Any] | None = None,
     run_summary: Mapping[str, Any] | None = None,
+    grid_resolution_m: float = 1.0,
 ) -> NormalizedResult:
+    if grid_resolution_m <= 0:
+        raise ValueError("grid_resolution_m must be positive")
     root = Path(results_dir)
     root.mkdir(parents=True, exist_ok=True)
     arrays_path = root / "normalized_full_1m.npz"
@@ -42,7 +45,7 @@ def normalize_regular_result(
         "terrain_elevation_m": result.terrain_elevation_m,
         "active_mask": result.active_mask,
         "time_values": np.asarray(result.time_values),
-        "grid_resolution_m": np.float32(1.0),
+        "grid_resolution_m": np.float32(grid_resolution_m),
     }
     if result.flow_vectors_available:
         arrays_payload["velocity_u_mps"] = result.velocity_u_mps
@@ -70,7 +73,7 @@ def normalize_regular_result(
             "excluded_boundary_cells": result.excluded_boundary_cells,
         },
         "grid_level_summary": {
-            "1m": int(np.count_nonzero(result.active_mask)),
+            f"{grid_resolution_m:g}m": int(np.count_nonzero(result.active_mask)),
         },
         "depth_legend": depth_legend_metadata(),
         "provider_summary": dict(provider_summary or {}),

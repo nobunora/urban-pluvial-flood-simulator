@@ -12,7 +12,7 @@ from PIL import Image, UnidentifiedImageError
 from pyproj import CRS
 from rasterio.transform import from_origin  # type: ignore[import-untyped]
 from rasterio.warp import Resampling, reproject  # type: ignore[import-untyped]
-from scipy.ndimage import distance_transform_edt  # type: ignore[import-untyped]
+from scipy.ndimage import distance_transform_edt, label  # type: ignore[import-untyped]
 
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.providers.common import (
@@ -48,6 +48,7 @@ class ElevationProduct:
     source_names: list[str]
     nearest_filled: int
     provenance: ProviderProvenance
+    uncovered_boundary_mask: np.ndarray | None = None
 
     def write_legacy(self, out: str | Path, area: AnalysisArea, grid_m: float) -> dict:
         output = Path(out)
@@ -211,6 +212,21 @@ def reproject_provider(mosaic: np.ndarray, src_transform: object, area: Analysis
     return np.flipud(dst)
 
 
+def _boundary_connected_missing(mask: np.ndarray) -> np.ndarray:
+    """Return missing cells connected to the requested area's outer boundary."""
+    missing = np.asarray(mask, dtype=bool)
+    if missing.ndim != 2:
+        raise ValueError("missing mask must be two-dimensional")
+    labels, count = label(missing, structure=np.ones((3, 3), dtype=np.uint8))
+    if count == 0:
+        return np.zeros(missing.shape, dtype=bool)
+    edge_labels = np.unique(
+        np.concatenate((labels[0, :], labels[-1, :], labels[:, 0], labels[:, -1]))
+    )
+    edge_labels = edge_labels[edge_labels != 0]
+    return np.isin(labels, edge_labels)
+
+
 class GsiElevationProvider:
     provider_id = "gsi"
 
@@ -257,11 +273,15 @@ class GsiElevationProvider:
                 break
         missing = ~np.isfinite(z)
         missing_fraction = float(missing.mean())
+        uncovered_boundary = _boundary_connected_missing(missing)
+        interior_missing = missing & ~uncovered_boundary
+        interior_fraction = float(interior_missing.mean())
         nearest_filled = 0
         if np.any(missing):
-            if missing_fraction > max_nearest_fill_fraction:
+            if interior_fraction > max_nearest_fill_fraction:
                 raise ProviderCoverageError(
-                    f"Elevation coverage incomplete: {missing_fraction:.2%} remains after GSI fallbacks"
+                    "Elevation coverage incomplete: "
+                    f"{interior_fraction:.2%} inland gap remains after GSI fallbacks"
                 )
             if not np.isfinite(z).any():
                 raise ProviderCoverageError("No GSI elevation data found for requested area")
@@ -278,13 +298,24 @@ class GsiElevationProvider:
                 "provider_counts": counts,
                 "nearest_filled_cells": nearest_filled,
                 "missing_fraction_before_nearest_fill": missing_fraction,
+                "boundary_uncovered_cells": int(uncovered_boundary.sum()),
+                "inland_missing_fraction_before_nearest_fill": interior_fraction,
                 "grid_m": grid_m,
                 "source_names": provider_names,
                 "row_orientation": "south_to_north after normalization",
             },
             acquired_at_utc=acquired_at_utc,
         )
-        return ElevationProduct(z, x, y, source_id, provider_names, nearest_filled, provenance)
+        return ElevationProduct(
+            z,
+            x,
+            y,
+            source_id,
+            provider_names,
+            nearest_filled,
+            provenance,
+            uncovered_boundary,
+        )
 
 
 GSIProvider = GsiElevationProvider
