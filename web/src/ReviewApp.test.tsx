@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import {
+  createElevationPreview,
   createRun,
   getAppConfig,
   getHealth,
@@ -22,6 +23,7 @@ vi.mock("./api/client", async (importOriginal) => {
     getHealth: vi.fn(),
     getAppConfig: vi.fn(),
     getRecentRainfallRanking: vi.fn(),
+    createElevationPreview: vi.fn(),
     createRun: vi.fn(),
     getRun: vi.fn(),
     cancelRun: vi.fn(),
@@ -112,6 +114,7 @@ const metadata: ResultMetadataResponse = {
     spatial_meteorological_rainfall_modelled: false,
     river_stage_boundary_modelled: false,
     coastal_tide_surge_modelled: false,
+    grade_separated_transport_modelled: false,
     official_forecast: false,
   },
 };
@@ -135,6 +138,19 @@ describe("local review UI", () => {
     vi.mocked(createRun).mockResolvedValue({
       run_id: "00000000-0000-0000-0000-000000000001",
       status: "QUEUED",
+    });
+    vi.mocked(createElevationPreview).mockResolvedValue({
+      preview_id: "00000000-0000-0000-0000-000000000009",
+      bounds: metadata.bounds,
+      grid_cell_size_m: 1,
+      width_samples: 501,
+      height_samples: 501,
+      elevation_legend: [
+        { label: "1.00–2.00 m", min_m: 1, max_m: 2, color: "#313695" },
+      ],
+      provider_counts: { gsi_1m: 251001 },
+      nearest_filled_cells: 0,
+      image_url: "/api/v1/elevation-previews/preview.png",
     });
     vi.mocked(getRun).mockResolvedValue({
       run_id: "00000000-0000-0000-0000-000000000001",
@@ -195,6 +211,7 @@ describe("local review UI", () => {
     expect(screen.queryByText(/精度:/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "解析開始" })).toBeVisible();
     expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "500");
+    expect(screen.getByText("約 0.6〜1.2 GB")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "地図で地点選択" }));
     expect(screen.getByLabelText("緯度")).toHaveValue("35.700000");
@@ -202,16 +219,21 @@ describe("local review UI", () => {
 
     fireEvent.change(screen.getByLabelText("範囲"), { target: { value: "500" } });
     expect(screen.getByTestId("setup-map")).toHaveAttribute("data-area-width", "1000");
+    expect(screen.getByText("約 1.0〜2.0 GB")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("最小ブロック"), { target: { value: "2" } });
+    expect(screen.getByText("約 0.6〜1.2 GB")).toBeVisible();
   });
 
   it("fills rainfall inputs from the static rainfall ranking", async () => {
     render(<App />);
 
     await waitFor(() => expect(getAppConfig).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: /2025.*四日市.*123.5 mm\/h/ }));
+    fireEvent.click(screen.getByRole("button", { name: /2025.*四日市.*123\.5 mm\/h/ }));
+    expect(screen.getByRole("dialog")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "解析条件に反映" }));
 
-    const rainfallEvent = screen.getByRole("button", { name: /2025.*四日市.*123.5 mm\/h/ });
-    expect(rainfallEvent).toHaveTextContent("2025四日市123.5 mm/h");
+    expect(screen.getByText(/123.5 mm\/h/)).toBeVisible();
 
     expect(screen.getByLabelText("雨量強度 (mm/h)")).toHaveValue("123.5");
     expect(screen.getByLabelText("継続時間 (min)")).toHaveValue("60");
@@ -245,15 +267,14 @@ describe("local review UI", () => {
     render(<App />);
 
     await waitFor(() => expect(getAppConfig).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: /2025.*四日市.*123.5 mm\/h/ }));
-    expect(await screen.findByRole("dialog", { name: "解析済み結果があります" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "解析済み結果を表示" }));
+    fireEvent.click(await screen.findByRole("button", { name: /2025.*四日市.*123\.5 mm\/h/ }));
+    fireEvent.click(screen.getByRole("button", { name: "解析済みデータを読み込む" }));
 
     await waitFor(() => expect(openDemoResult).toHaveBeenCalledWith("2025-yokkaichi"));
     expect(await screen.findByRole("heading", { name: "解析結果" })).toBeVisible();
   });
 
-  it("opens prepared results directly and replaces analysis with download in demo mode", async () => {
+  it("opens prepared results from the sample choice dialog and replaces analysis with download in demo mode", async () => {
     vi.mocked(getAppConfig).mockResolvedValue({
       mode: "demo",
       allow_run: false,
@@ -272,17 +293,30 @@ describe("local review UI", () => {
       "https://github.com/example/releases/latest",
     );
     expect(screen.queryByRole("button", { name: "解析開始" })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("解析済みデータを読み込む")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("解析済みデータをファイルから読み込む")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /2025.*四日市.*123.5 mm\/h/ }));
+    fireEvent.click(screen.getByRole("button", { name: /2025.*四日市.*123\.5 mm\/h/ }));
+    expect(screen.getByRole("dialog")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "解析済みデータを読み込む" }));
     await waitFor(() => expect(openDemoResult).toHaveBeenCalledWith("2025-yokkaichi"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("disables analyzed-data loading when a sample archive is unavailable", async () => {
+    render(<App />);
+
+    await waitFor(() => expect(getAppConfig).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /2026.*千葉.*115 mm\/h/ }));
+
+    expect(screen.getByRole("dialog")).toBeVisible();
+    expect(screen.getByRole("button", { name: "解析済みデータを読み込む" })).toBeDisabled();
+    expect(screen.getByText("このサンプルの解析済みデータは現在ありません。")).toBeVisible();
   });
 
   it("imports a saved result for review and offers compressed export", async () => {
     render(<App />);
     const file = new File(["archive"], "saved-result.zip", { type: "application/zip" });
-    fireEvent.change(screen.getByLabelText("解析済みデータを読み込む"), {
+    fireEvent.change(screen.getByLabelText("解析済みデータをファイルから読み込む"), {
       target: { files: [file] },
     });
 
@@ -292,6 +326,22 @@ describe("local review UI", () => {
       "href",
       "/api/v1/runs/00000000-0000-0000-0000-000000000002/export",
     );
+  });
+
+  it("previews elevation without starting a run and can continue to analysis", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "標高のみ取得" }));
+    await waitFor(() => expect(createElevationPreview).toHaveBeenCalledWith(
+      expect.objectContaining({ width_m: 500, height_m: 500 }),
+      1,
+    ));
+    expect(createRun).not.toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: "取得した標高" })).toBeVisible();
+    expect(screen.getByLabelText("取得した標高の凡例")).toHaveTextContent("1.00–2.00 m");
+
+    fireEvent.click(screen.getByRole("button", { name: "この条件で解析開始" }));
+    await waitFor(() => expect(createRun).toHaveBeenCalledTimes(1));
   });
 
 

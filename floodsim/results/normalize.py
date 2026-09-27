@@ -11,7 +11,11 @@ import numpy as np
 
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.domain.manifest import Limitations
-from floodsim.results.view import depth_legend_metadata
+from floodsim.results.regular_netcdf_source import (
+    RegularNetcdfSource,
+    scan_regular_diagnostics,
+)
+from floodsim.results.view import depth_legend_metadata, elevation_legend_metadata
 from floodsim.sfincs.output_reader import SfincsQuadtreeResult, SfincsRegularResult
 from floodsim.storage.run_store import atomic_write_json
 
@@ -21,6 +25,62 @@ class NormalizedResult:
     arrays_path: Path
     metadata_path: Path
     metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class NetcdfFinalizedResult:
+    """Regular result artefacts that retain NetCDF instead of a dense NPZ."""
+
+    descriptor_path: Path
+    metadata_path: Path
+    metadata: dict[str, Any]
+
+
+def finalize_regular_netcdf_result(
+    source: RegularNetcdfSource,
+    *,
+    model_dir: str | Path,
+    results_dir: str | Path,
+    limitations: Limitations,
+    provider_summary: Mapping[str, Any] | None = None,
+    engine_summary: Mapping[str, Any] | None = None,
+    run_summary: Mapping[str, Any] | None = None,
+) -> NetcdfFinalizedResult:
+    """Persist a descriptor and bounded diagnostics for a regular NetCDF source."""
+    root = Path(results_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    diagnostics = scan_regular_diagnostics(source, model_dir=model_dir)
+    metadata = {
+        "schema_version": "1",
+        "storage_kind": "regular_netcdf_source",
+        "bounds": source.bounds,
+        "units": {"water_depth": "m", "terrain_elevation": "m", "grid_resolution": "m"},
+        "available_time_indices": list(range(len(source.time_values))),
+        "time_values": list(source.time_values),
+        "flow_vectors_available": source.flow_vectors_available,
+        "chunk_shape": list(source.chunk_shape),
+        "cache_schema_revision": 1,
+        "max_depth_summary": diagnostics,
+        "grid_level_summary": {f"{source.block_size_m:g}m": diagnostics["active_cells"]},
+        "depth_legend": depth_legend_metadata(),
+        "elevation_legend": elevation_legend_metadata(
+            diagnostics["terrain_min_elevation_m"],
+            diagnostics["terrain_max_elevation_m"],
+        ),
+        "provider_summary": dict(provider_summary or {}),
+        "engine_summary": dict(engine_summary or {}),
+        "run_summary": dict(run_summary or {}),
+        "no_data_policy": "Regular SFINCS NetCDF is retained; viewport reads are bounded to source chunks.",
+        "limitations": limitations.model_dump(),
+    }
+    descriptor_path = root / "regular_netcdf_source.json"
+    metadata_path = root / "result_metadata.json"
+    atomic_write_json(descriptor_path, source.to_json())
+    atomic_write_json(metadata_path, metadata)
+    # A successful rename is not sufficient proof when a process may be interrupted.
+    if not descriptor_path.is_file() or not metadata_path.is_file():
+        raise RuntimeError("regular result finalizer did not persist its artefacts")
+    return NetcdfFinalizedResult(descriptor_path, metadata_path, metadata)
 
 
 def normalize_regular_result(
@@ -50,6 +110,7 @@ def normalize_regular_result(
     if result.flow_vectors_available:
         arrays_payload["velocity_u_mps"] = result.velocity_u_mps
         arrays_payload["velocity_v_mps"] = result.velocity_v_mps
+        arrays_payload["velocity_grid_stride"] = np.int32(result.velocity_grid_stride)
     # Keep the normal run path fast. Portable compression is applied only when
     # the user explicitly exports a result archive.
     np.savez(arrays_path, **arrays_payload)
@@ -76,6 +137,10 @@ def normalize_regular_result(
             f"{grid_resolution_m:g}m": int(np.count_nonzero(result.active_mask)),
         },
         "depth_legend": depth_legend_metadata(),
+        "elevation_legend": elevation_legend_metadata(
+            float(np.min(result.terrain_elevation_m[result.active_mask])),
+            float(np.max(result.terrain_elevation_m[result.active_mask])),
+        ),
         "provider_summary": dict(provider_summary or {}),
         "engine_summary": dict(engine_summary or {}),
         "run_summary": dict(run_summary or {}),
@@ -167,6 +232,10 @@ def normalize_quadtree_result(
         },
         "grid_level_summary": level_summary,
         "depth_legend": depth_legend_metadata(),
+        "elevation_legend": elevation_legend_metadata(
+            float(np.min(result.terrain_elevation_m[result.active_mask])),
+            float(np.max(result.terrain_elevation_m[result.active_mask])),
+        ),
         "provider_summary": dict(provider_summary or {}),
         "engine_summary": dict(engine_summary or {}),
         "run_summary": dict(run_summary or {}),

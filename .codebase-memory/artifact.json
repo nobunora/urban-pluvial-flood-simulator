@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "73d564eb1c7d2a45bdf47af3c35b199617389ef2",
-    "indexed_at": "2026-09-25T14:21:04Z",
+    "commit": "8ec3da932bdaa499e305f527afe83093f8a72d4c",
+    "indexed_at": "2026-09-27T14:48:45Z",
     "project": "C-VSC-urban-pluvial-flood-simulator-ui-review",
-    "nodes": 6583,
-    "edges": 24310,
-    "original_size": 22937600,
-    "compressed_size": 3846855,
+    "nodes": 6857,
+    "edges": 25988,
+    "original_size": 23855104,
+    "compressed_size": 4018595,
     "compression_level": 9
 }

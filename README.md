@@ -262,8 +262,10 @@ $env:FLOODSIM_DOWNLOAD_URL = "https://github.com/owner/repository/releases/lates
 python -m uvicorn floodsim.api.app:app
 ```
 
-Generate the five 4 km x 4 km (`±2000 m`) Full 1 m archives sequentially with
-an already permitted local SFINCS executable:
+Generate the allowlisted Full 1 m archives sequentially with an already
+permitted local SFINCS executable. The publication set uses the existing
+Yokkaichi (`±2000 m`) and Chiba (`±1000 m`) results, plus Saga and both Nagoya
+cases at `±500 m`:
 
 ```powershell
 $env:SFINCS_BIN = "C:\path\to\sfincs.exe"
@@ -277,6 +279,21 @@ history frames every 15 minutes to keep portable review archives bounded;
 SFINCS maximum-depth output remains independent. Coastal demo generation uses
 the production nearest-neighbour elevation fill with a documented 5% coverage
 ceiling, without changing the normal application's 2% default.
+
+The Windows one-folder launcher automatically discovers `demo-results` and a
+self-built `sfincs/sfincs.exe` placed beside
+`UrbanPluvialFloodSimulator.exe`. The public archive includes the runtime DLLs,
+GPL-3.0 license and exact corresponding SFINCS source archive, so neither a
+separate SFINCS download nor a Python installation is required. An explicit
+`--sfincs-bin` still overrides the bundled engine. A reproducible package can
+be built from an activated canonical environment with:
+
+```powershell
+.\scripts\build_windows_release.ps1 `
+  -Version v0.1.17 `
+  -DemoResultsDir C:\path\to\demo-results `
+  -SfincsSourceDir C:\path\to\SFINCS
+```
 
 ## Tests
 

@@ -132,8 +132,8 @@ def _find_manager(explicit: str | None, *, allow_bootstrap: bool) -> Environment
             raise SystemExit(f"Environment manager not found: {explicit}")
         return EnvironmentManager(executable, os.environ.copy())
 
-    for candidate in MANAGERS:
-        executable = shutil.which(candidate)
+    for manager_name in MANAGERS:
+        executable = shutil.which(manager_name)
         if executable is not None:
             return EnvironmentManager(executable, os.environ.copy())
 

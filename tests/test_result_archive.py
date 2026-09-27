@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import numpy as np
+import xarray as xr
 from fastapi.testclient import TestClient
 
 from floodsim.api import routes_results, routes_runs
@@ -18,10 +19,14 @@ from floodsim.domain.run_state import RunState
 from floodsim.orchestration.run_coordinator import RunCoordinator
 from floodsim.results.archive import (
     EXPECTED_MEMBERS,
+    EXPECTED_REGULAR_MEMBERS,
     NORMALIZED_ARRAYS,
+    REGULAR_DESCRIPTOR,
+    REGULAR_NETCDF,
     create_result_archive,
     import_result_archive,
 )
+from floodsim.results.regular_netcdf_source import inspect_regular_netcdf_source
 from floodsim.storage.run_store import atomic_write_json
 
 
@@ -128,6 +133,69 @@ def test_result_archive_http_import_and_export(
     exported_path.write_bytes(exported.content)
     with zipfile.ZipFile(exported_path) as round_trip:
         assert set(round_trip.namelist()) == EXPECTED_MEMBERS
+
+
+def test_regular_result_archive_schema_two_round_trips(tmp_path: Path, monkeypatch) -> None:
+    config_path, manifest_path, metadata_path, _ = _contract_files(tmp_path)
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    source_path = model_dir / REGULAR_NETCDF
+    values = np.arange(5 * 2 * 2, dtype=np.float32).reshape(5, 2, 2)
+    xr.Dataset(
+        {
+            "h": (("time", "n", "m"), values),
+            "hmax": (("timemax", "n", "m"), values[-1:]),
+            "zb": (("n", "m"), np.ones((2, 2), dtype=np.float32)),
+            "msk": (("n", "m"), np.ones((2, 2), dtype=np.int8)),
+        },
+        coords={"time": np.arange(5) * 900, "timemax": [3600]},
+    ).to_netcdf(
+        source_path,
+        engine="netcdf4",
+        encoding={"h": {"chunksizes": (1, 2, 2)}},
+    )
+    source = inspect_regular_netcdf_source(
+        source_path,
+        model_dir=model_dir,
+        bounds={"west_deg": 139, "south_deg": 35, "east_deg": 139.001, "north_deg": 35.001},
+        block_size_m=1,
+    )
+    descriptor_path = tmp_path / REGULAR_DESCRIPTOR
+    atomic_write_json(descriptor_path, source.to_json())
+    archive_path = tmp_path / "regular.zip"
+
+    create_result_archive(
+        archive_path,
+        config_path=config_path,
+        manifest_path=manifest_path,
+        metadata_path=metadata_path,
+        descriptor_path=descriptor_path,
+        source_path=source_path,
+    )
+
+    with zipfile.ZipFile(archive_path) as exported:
+        assert set(exported.namelist()) == EXPECTED_REGULAR_MEMBERS
+    destination = tmp_path / "regular-imported"
+    import_result_archive(archive_path, destination)
+    assert (destination / "results" / REGULAR_DESCRIPTOR).is_file()
+    with xr.open_dataset(destination / "model" / REGULAR_NETCDF) as imported:
+        assert imported.sizes["time"] == 5
+
+    coordinator = RunCoordinator(runs_root=tmp_path / "regular-runs")
+    record = coordinator.import_result(archive_path)
+    assert record.manifest.output_files == {
+        "result_source": REGULAR_DESCRIPTOR,
+        "sfincs_map_nc": REGULAR_NETCDF,
+        "result_metadata": "result_metadata.json",
+    }
+    monkeypatch.setattr(routes_results, "coordinator", coordinator)
+    monkeypatch.setattr(routes_runs, "coordinator", coordinator)
+    exported = TestClient(app).get(f"/api/v1/runs/{record.run_id}/export")
+    assert exported.status_code == 200
+    round_trip = tmp_path / "regular-round-trip.zip"
+    round_trip.write_bytes(exported.content)
+    with zipfile.ZipFile(round_trip) as exported_archive:
+        assert set(exported_archive.namelist()) == EXPECTED_REGULAR_MEMBERS
 
 
 def test_demo_result_endpoint_opens_only_allowlisted_archives(

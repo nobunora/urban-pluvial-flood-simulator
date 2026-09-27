@@ -1,4 +1,4 @@
-"""Generate the allowlisted 4 km x 4 km demo result archives sequentially."""
+"""Generate the allowlisted demo result archives sequentially."""
 
 from __future__ import annotations
 
@@ -35,14 +35,15 @@ class DemoEvent:
     latitude: float
     longitude: float
     rainfall_mm_per_h: float
+    half_size_m: int
 
 
 EVENTS = (
-    DemoEvent("2025-yokkaichi", 2025, "三重県四日市市中心部", 34.9665, 136.6208, 123.5),
-    DemoEvent("2026-chiba", 2026, "千葉県千葉市周辺", 35.6129, 140.1141, 115.0),
-    DemoEvent("2019-saga", 2019, "佐賀県佐賀市中心部", 33.2642, 130.2975, 110.0),
-    DemoEvent("2026-nagoya", 2026, "愛知県名古屋市中心部", 35.1569, 136.9196, 104.5),
-    DemoEvent("2000-nagoya", 2000, "愛知県名古屋市周辺", 35.1028, 136.9555, 97.0),
+    DemoEvent("2025-yokkaichi", 2025, "三重県四日市市中心部", 34.9665, 136.6208, 123.5, 2000),
+    DemoEvent("2026-chiba", 2026, "千葉県千葉市周辺", 35.6129, 140.1141, 115.0, 1000),
+    DemoEvent("2019-saga", 2019, "佐賀県佐賀市中心部", 33.2642, 130.2975, 110.0, 500),
+    DemoEvent("2026-nagoya", 2026, "愛知県名古屋市中心部", 35.1569, 136.9196, 104.5, 500),
+    DemoEvent("2000-nagoya", 2000, "愛知県名古屋市周辺", 35.1028, 136.9555, 97.0, 500),
 )
 TERMINAL_STATES = {RunState.COMPLETE, RunState.FAILED, RunState.CANCELLED}
 
@@ -79,7 +80,7 @@ def _sha256(path: Path) -> str:
 
 def _archive_run(coordinator: RunCoordinator, event: DemoEvent, output_dir: Path) -> dict[str, object]:
     config = RunConfig(
-        analysis_area=area_from_square(event.latitude, event.longitude, 2000.0),
+        analysis_area=area_from_square(event.latitude, event.longitude, float(event.half_size_m)),
         requested_accuracy_mode=AccuracyMode.FULL_1M,
         rainfall=ConstantRainfall(
             intensity_mm_per_h=event.rainfall_mm_per_h,
@@ -110,23 +111,29 @@ def _archive_run(coordinator: RunCoordinator, event: DemoEvent, output_dir: Path
 
     run_dir = coordinator.store.run_dir(record.run_id)
     archive_path = output_dir / f"{event.event_id}.zip"
+    archive_arguments: dict[str, Path] = {}
+    if "result_source" in record.manifest.output_files:
+        archive_arguments = {
+            "descriptor_path": run_dir / "results" / record.manifest.output_files["result_source"],
+            "source_path": run_dir / "model" / record.manifest.output_files["sfincs_map_nc"],
+        }
+    else:
+        archive_arguments = {
+            "arrays_path": run_dir / "results" / record.manifest.output_files["normalized_arrays"]
+        }
     create_result_archive(
         archive_path,
         config_path=run_dir / "run_config.json",
         manifest_path=run_dir / "manifest.json",
         metadata_path=run_dir / "results" / "result_metadata.json",
-        arrays_path=(
-            run_dir
-            / "results"
-            / record.manifest.output_files["normalized_arrays"]
-        ),
+        **archive_arguments,
     )
     return {
         "event_id": event.event_id,
         "year": event.year,
         "location": event.location,
         "center": {"latitude": event.latitude, "longitude": event.longitude},
-        "half_size_m": 2000,
+        "half_size_m": event.half_size_m,
         "rainfall_mm_per_h": event.rainfall_mm_per_h,
         "duration_minutes": 60,
         "output_interval_seconds": 900,

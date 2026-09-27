@@ -12,19 +12,25 @@ from PIL import Image
 
 from floodsim.api import routes_results
 from floodsim.api.app import app
+from floodsim.api.schemas import ResultElevationLegendItem
 from floodsim.domain.geometry import AnalysisArea, GeoBounds, LonLat
+from floodsim.orchestration.run_coordinator import ResultNotReady
+from floodsim.results.elevation_preview import ElevationPreviewStore
 from floodsim.results.vector_viewport import flow_vectors_viewport_geojson
 from floodsim.results.view import (
     DEPTH_BANDS,
+    ELEVATION_COLORS,
     NormalizedArrays,
     PointOutsideResult,
     ResultTimeIndexInvalid,
     _display_arrow_length_m,
+    elevation_legend_metadata,
     flow_vectors_geojson,
     inspect_native_point,
     load_normalized_arrays,
     render_grid_resolution_png,
     render_max_depth_png,
+    render_terrain_elevation_png,
     render_time_depth_png,
 )
 
@@ -143,6 +149,46 @@ def test_time_depth_frames_and_grid_layer_are_visibly_distinct() -> None:
     assert _rgba(first).tobytes() != _rgba(second).tobytes()
 
 
+def test_terrain_elevation_png_uses_rainbow_bands_and_active_mask() -> None:
+    rgba = _rgba(render_terrain_elevation_png(_arrays()))
+
+    assert rgba[0, 0, 3] == 0
+    assert tuple(rgba[1, 0]) == ELEVATION_COLORS[0]
+    assert tuple(rgba[0, 1]) == ELEVATION_COLORS[-1]
+
+
+def test_elevation_legend_divides_the_analysis_range_into_eight_bands() -> None:
+    legend = elevation_legend_metadata(1.0, 4.0)
+
+    assert len(legend) == 8
+    assert legend[0]["label"] == "1.00–1.38 m"
+    assert legend[-1]["label"] == "3.62–4.00 m"
+    assert legend[0]["min_m"] == 1.0
+    assert legend[-1]["max_m"] == 4.0
+
+
+def test_elevation_legend_schema_accepts_below_sea_level_elevation() -> None:
+    item = ResultElevationLegendItem.model_validate(
+        {
+            "label": "-2.50–-0.99 m",
+            "min_m": -2.5,
+            "max_m": -0.99,
+            "color": "#313695",
+        }
+    )
+
+    assert item.min_m == -2.5
+
+
+def test_elevation_preview_store_is_bounded_and_keeps_latest_record() -> None:
+    store = ElevationPreviewStore(max_bytes=5)
+    first = store.add(b"1234", {"name": "first"})
+    second = store.add(b"5678", {"name": "second"})
+
+    assert store.get(first.preview_id) is None
+    assert store.get(second.preview_id) == second
+
+
 def test_flow_arrow_geometry_preserves_stride_ratio() -> None:
     assert _display_arrow_length_m(sample_span_m=1.0) == 0.8
     assert _display_arrow_length_m(sample_span_m=4.0) == 3.2
@@ -191,6 +237,77 @@ def test_viewport_vectors_keep_display_density_across_grid_sizes() -> None:
     assert one_m["metadata"]["sample_stride_cells"] == 4
     assert two_m["metadata"]["sample_stride_cells"] == 2
     assert four_m["metadata"]["sample_stride_cells"] == 1
+
+
+def test_viewport_vectors_select_visible_flow_inside_each_spacing_bin() -> None:
+    area = _area().model_copy(
+        update={"width_m": 4.0, "height_m": 4.0, "area_m2": 16.0}
+    )
+    depth = np.zeros((1, 4, 4), dtype=np.float32)
+    velocity = np.zeros_like(depth)
+    depth[0, 1, 2] = 0.2
+    velocity[0, 1, 2] = 0.75
+    arrays = NormalizedArrays(
+        depth_time_m=depth,
+        max_depth_m=depth[0],
+        terrain_elevation_m=np.zeros((4, 4), dtype=np.float32),
+        active_mask=np.ones((4, 4), dtype=bool),
+        time_values=("0",),
+        grid_resolution_m=1.0,
+        velocity_u_mps=velocity,
+        velocity_v_mps=np.zeros_like(velocity),
+    )
+
+    payload = flow_vectors_viewport_geojson(
+        arrays,
+        area=area,
+        time_index=0,
+        west=area.bounds.west_deg,
+        south=area.bounds.south_deg,
+        east=area.bounds.east_deg,
+        north=area.bounds.north_deg,
+        stride=4,
+    )
+
+    assert payload["metadata"]["sampling_method"] == "nearest-wet-cell-to-spacing-bin-center"
+    assert payload["metadata"]["arrow_count"] == 1
+    assert payload["features"][0]["properties"]["row"] == 1
+    assert payload["features"][0]["properties"]["column"] == 2
+
+
+def test_viewport_vectors_prefer_the_wet_cell_nearest_each_bin_center() -> None:
+    area = _area().model_copy(
+        update={"width_m": 4.0, "height_m": 4.0, "area_m2": 16.0}
+    )
+    depth = np.full((1, 4, 4), 0.2, dtype=np.float32)
+    velocity = np.full_like(depth, 0.2)
+    velocity[0, 0, 0] = 3.0
+    arrays = NormalizedArrays(
+        depth_time_m=depth,
+        max_depth_m=depth[0],
+        terrain_elevation_m=np.zeros((4, 4), dtype=np.float32),
+        active_mask=np.ones((4, 4), dtype=bool),
+        time_values=("0",),
+        grid_resolution_m=1.0,
+        velocity_u_mps=velocity,
+        velocity_v_mps=np.zeros_like(velocity),
+    )
+
+    payload = flow_vectors_viewport_geojson(
+        arrays,
+        area=area,
+        time_index=0,
+        west=area.bounds.west_deg,
+        south=area.bounds.south_deg,
+        east=area.bounds.east_deg,
+        north=area.bounds.north_deg,
+        stride=4,
+    )
+
+    feature = payload["features"][0]
+    assert feature["properties"]["row"] == 1
+    assert feature["properties"]["column"] == 1
+    assert feature["properties"]["speed_mps"] == pytest.approx(0.2)
 
 
 def test_flow_vector_geojson_uses_saved_velocity_and_speed_properties() -> None:
@@ -335,6 +452,10 @@ class _ResultCoordinator:
         assert run_id == self.run_id
         return self.arrays_path
 
+    def result_source_path(self, run_id: UUID) -> Path:
+        assert run_id == self.run_id
+        raise ResultNotReady(str(run_id))
+
     def result_metadata(self, run_id: UUID) -> dict[str, object]:
         assert run_id == self.run_id
         return {
@@ -381,6 +502,7 @@ class _ResultCoordinator:
                 "spatial_meteorological_rainfall_modelled": False,
                 "river_stage_boundary_modelled": False,
                 "coastal_tide_surge_modelled": False,
+                "grade_separated_transport_modelled": False,
                 "official_forecast": False,
             },
         }
@@ -388,6 +510,61 @@ class _ResultCoordinator:
     def get(self, run_id: UUID) -> SimpleNamespace:
         assert run_id == self.run_id
         return SimpleNamespace(config=SimpleNamespace(analysis_area=self.area))
+
+
+def test_elevation_preview_api_fetches_terrain_without_creating_a_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    elevation_provider = SimpleNamespace(
+        acquire=lambda area, grid_m, cache_dir: SimpleNamespace(
+            z=np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
+            uncovered_boundary_mask=np.asarray([[False, False], [True, False]]),
+            nearest_filled=2,
+            provenance=SimpleNamespace(
+                source_details={"provider_counts": {"gsi_1m": 3}}
+            ),
+        )
+    )
+    coordinator = SimpleNamespace(
+        elevation_provider=elevation_provider,
+        store=SimpleNamespace(root=tmp_path / "runs"),
+    )
+    monkeypatch.setattr(routes_results, "coordinator", coordinator)
+    monkeypatch.setattr(
+        routes_results,
+        "runtime_config",
+        lambda: SimpleNamespace(allow_run=True),
+    )
+    monkeypatch.setattr(
+        routes_results,
+        "_elevation_previews",
+        ElevationPreviewStore(max_bytes=1024 * 1024),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/elevation-previews",
+        json={"analysis_area": _area().model_dump(), "grid_cell_size_m": 1},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["width_samples"] == 2
+    assert payload["height_samples"] == 2
+    assert payload["provider_counts"] == {"gsi_1m": 3}
+    assert payload["nearest_filled_cells"] == 2
+    assert len(payload["elevation_legend"]) == 8
+    assert payload["elevation_legend"][0]["min_m"] == pytest.approx(1.0)
+    assert payload["elevation_legend"][-1]["max_m"] == pytest.approx(4.0)
+
+    image = client.get(payload["image_url"])
+    assert image.status_code == 200
+    assert image.headers["content-type"] == "image/png"
+    assert image.headers["cache-control"] == "private, max-age=300"
+    rgba = _rgba(image.content)
+    assert rgba[0, 0, 3] == 0
+    assert tuple(rgba[1, 0]) == ELEVATION_COLORS[0]
 
 
 def test_result_api_exposes_png_metadata_and_native_inspection(
@@ -404,6 +581,9 @@ def test_result_api_exposes_png_metadata_and_native_inspection(
     assert metadata.json()["engine_summary"]["sfincs_version"] == "2.4.0 Galibier"
     assert metadata.json()["run_summary"]["requested_accuracy_mode"] == "full_1m"
     assert metadata.json()["run_summary"]["manning_defaults"]["road"] == pytest.approx(0.02)
+    assert len(metadata.json()["elevation_legend"]) == 8
+    assert metadata.json()["elevation_legend"][0]["min_m"] == pytest.approx(1.0)
+    assert metadata.json()["elevation_legend"][-1]["max_m"] == pytest.approx(4.0)
 
     max_depth = client.get(f"/api/v1/runs/{coordinator.run_id}/layers/max-depth.png")
     assert max_depth.status_code == 200
@@ -425,6 +605,11 @@ def test_result_api_exposes_png_metadata_and_native_inspection(
 
     grid = client.get(f"/api/v1/runs/{coordinator.run_id}/layers/grid-resolution.png")
     assert grid.status_code == 200
+
+    elevation = client.get(f"/api/v1/runs/{coordinator.run_id}/layers/elevation.png")
+    assert elevation.status_code == 200
+    assert elevation.headers["content-type"] == "image/png"
+    assert elevation.content != grid.content
 
     assert time_depth.content != grid.content
 

@@ -6,6 +6,7 @@ export type GeocodeResponse = components["schemas"]["GeocodeResponse"];
 export type GeocodeCandidateResponse = components["schemas"]["GeocodeCandidateResponse"];
 export type AnalysisArea = components["schemas"]["AnalysisArea"];
 export type ResourceEstimateResponse = components["schemas"]["ResourceEstimateResponse"];
+export type ElevationPreviewResponse = components["schemas"]["ElevationPreviewResponse"];
 export type RunConfig = components["schemas"]["RunConfig"];
 export type RunCreateResponse = components["schemas"]["RunCreateResponse"];
 export type RunStatusResponse = components["schemas"]["RunStatusResponse"];
@@ -50,6 +51,20 @@ export function estimateResources(
     body: JSON.stringify({
       analysis_area: analysisArea,
       accuracy_mode: accuracyMode,
+      grid_cell_size_m: gridCellSizeM,
+    }),
+  });
+}
+
+export function createElevationPreview(
+  analysisArea: AnalysisArea,
+  gridCellSizeM: 1 | 2 | 4,
+): Promise<ElevationPreviewResponse> {
+  return jsonRequest<ElevationPreviewResponse>("/api/v1/elevation-previews", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      analysis_area: analysisArea,
       grid_cell_size_m: gridCellSizeM,
     }),
   });
@@ -125,7 +140,7 @@ export function inspectResult(
 
 export function resultLayerUrl(
   runId: string,
-  layer: "max-depth" | "grid-resolution" | "depth",
+  layer: "max-depth" | "grid-resolution" | "elevation" | "depth",
   timeIndex: number | null = null,
 ): string {
   const encodedRunId = encodeURIComponent(runId);

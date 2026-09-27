@@ -3,11 +3,13 @@ import {
   Map as MapLibreMap,
   Marker,
   NavigationControl,
+  setWorkerUrl,
   type GeoJSONSource,
   type ImageSource,
   type MapMouseEvent,
   type StyleSpecification,
 } from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import type {
@@ -16,6 +18,8 @@ import type {
   ResultMetadataResponse,
 } from "../api/client";
 import { resultBounds, resultImageCoordinates } from "./resultGeometry";
+
+setWorkerUrl(maplibreWorkerUrl);
 
 export type FlowRenderStats = {
   sourceFeatureCount: number;
@@ -27,12 +31,13 @@ export type FlowRenderStats = {
 };
 
 type Props = {
-  metadata: ResultMetadataResponse;
+  metadata: Pick<ResultMetadataResponse, "bounds">;
   imageUrl: string;
   flowVectorData: FlowVectorFeatureCollection | null;
+  flowDisplayMode?: "vectors" | "particles" | null;
   backgroundOpacity: number;
   mapLabel: string;
-  onInspect: (lon: number, lat: number) => void;
+  onInspect?: (lon: number, lat: number) => void;
   onFlowRenderStats?: (stats: FlowRenderStats | null) => void;
   onViewportChange?: (viewport: FlowViewport, zoom: number) => void;
   onCaptureReady?: (capture: (() => Promise<HTMLCanvasElement>) | null) => void;
@@ -47,6 +52,39 @@ const FLOW_SOURCE_ID = "flow-vector-source";
 const FLOW_HALO_LAYER_ID = "flow-vector-halo";
 const FLOW_LINE_LAYER_ID = "flow-vector-lines";
 const FLOW_ARROW_LENGTH_PX = 18;
+const PARTICLE_TRAIL_LENGTH_PX = 25;
+const PARTICLE_MIN_VECTOR_CROSSINGS = 5;
+const PARTICLE_TRAIL_SAMPLE_PX = 3;
+const PARTICLE_MAX_NEIGHBORS = 8;
+const PARTICLE_PHASE_GROUPS = 4;
+const PARTICLE_SPEED_SCALE_PX_PER_METER = 36;
+const PARTICLE_MIN_SPEED_PX_PER_SECOND = 1.5;
+const PARTICLE_MAX_SPEED_PX_PER_SECOND = 96;
+const RESULT_MAX_ZOOM = 18;
+
+type ScreenPoint = { x: number; y: number };
+
+type ProjectedFlowNode = ScreenPoint & {
+  dx: number;
+  dy: number;
+  speedMps: number;
+  speedPxPerSecond: number;
+};
+
+type ProjectedFlowField = {
+  nodes: ProjectedFlowNode[];
+  buckets: Map<string, number[]>;
+  spacingPx: number;
+  cellSizePx: number;
+};
+
+type FlowParticle = ScreenPoint & {
+  travelledPx: number;
+  targetDistancePx: number;
+  trail: ScreenPoint[];
+  generation: number;
+  activationDelaySeconds: number;
+};
 
 function flowColor(speedMps: number): string {
   if (speedMps >= 2.0) return "#7F0000";
@@ -57,8 +95,160 @@ function flowColor(speedMps: number): string {
   return "#2DC4B2";
 }
 
+export function particleSpeedPxPerSecond(speedMps: number): number {
+  return Math.min(
+    PARTICLE_MAX_SPEED_PX_PER_SECOND,
+    Math.max(PARTICLE_MIN_SPEED_PX_PER_SECOND, Math.max(0, speedMps) * PARTICLE_SPEED_SCALE_PX_PER_METER),
+  );
+}
+
+function colorWithAlpha(hex: string, alpha: number): string {
+  const red = Number.parseInt(hex.slice(1, 3), 16);
+  const green = Number.parseInt(hex.slice(3, 5), 16);
+  const blue = Number.parseInt(hex.slice(5, 7), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
+function particlePhase(row: number, column: number): number {
+  // Stable pseudo-random phase keeps one-second lifetimes continuous while
+  // the surrounding flow geometry is interpolated during timeline playback.
+  const mixed = Math.imul(row + 1, 73856093) ^ Math.imul(column + 1, 19349663);
+  return (mixed >>> 0) / 0x1_0000_0000;
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 24;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle];
+}
+
+function estimateVectorSpacing(nodes: ProjectedFlowNode[]): number {
+  if (nodes.length < 2) return 24;
+  const nearestDistances = nodes.map((node, index) => {
+    let nearest = Number.POSITIVE_INFINITY;
+    nodes.forEach((candidate, candidateIndex) => {
+      if (candidateIndex === index) return;
+      nearest = Math.min(nearest, Math.hypot(candidate.x - node.x, candidate.y - node.y));
+    });
+    return nearest;
+  }).filter(Number.isFinite);
+  return Math.max(8, median(nearestDistances));
+}
+
+function bucketKey(x: number, y: number, cellSizePx: number): string {
+  return `${Math.floor(x / cellSizePx)}:${Math.floor(y / cellSizePx)}`;
+}
+
+function createProjectedFlowField(nodes: ProjectedFlowNode[]): ProjectedFlowField {
+  const spacingPx = estimateVectorSpacing(nodes);
+  const cellSizePx = Math.max(8, spacingPx * 1.5);
+  const buckets = new Map<string, number[]>();
+  nodes.forEach((node, index) => {
+    const key = bucketKey(node.x, node.y, cellSizePx);
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(index);
+    buckets.set(key, bucket);
+  });
+  return { nodes, buckets, spacingPx, cellSizePx };
+}
+
+function sampleProjectedFlow(
+  field: ProjectedFlowField,
+  x: number,
+  y: number,
+): Pick<ProjectedFlowNode, "dx" | "dy" | "speedMps" | "speedPxPerSecond"> | null {
+  if (field.nodes.length === 0) return null;
+  const cellX = Math.floor(x / field.cellSizePx);
+  const cellY = Math.floor(y / field.cellSizePx);
+  const searchRadius = 2;
+  const maximumDistance = field.spacingPx * 3;
+  const candidates: Array<{ node: ProjectedFlowNode; distance: number }> = [];
+  for (let offsetY = -searchRadius; offsetY <= searchRadius; offsetY += 1) {
+    for (let offsetX = -searchRadius; offsetX <= searchRadius; offsetX += 1) {
+      const indices = field.buckets.get(`${cellX + offsetX}:${cellY + offsetY}`) ?? [];
+      indices.forEach((index) => {
+        const node = field.nodes[index];
+        const distance = Math.hypot(node.x - x, node.y - y);
+        if (distance <= maximumDistance) candidates.push({ node, distance });
+      });
+    }
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((left, right) => left.distance - right.distance);
+
+  let weightedDx = 0;
+  let weightedDy = 0;
+  let weightedSpeedMps = 0;
+  let weightedSpeedPx = 0;
+  let totalWeight = 0;
+  candidates.slice(0, PARTICLE_MAX_NEIGHBORS).forEach(({ node, distance }) => {
+    const normalizedDistance = distance / field.spacingPx;
+    const weight = 1 / (0.15 + normalizedDistance * normalizedDistance);
+    weightedDx += node.dx * weight;
+    weightedDy += node.dy * weight;
+    weightedSpeedMps += node.speedMps * weight;
+    weightedSpeedPx += node.speedPxPerSecond * weight;
+    totalWeight += weight;
+  });
+  const directionLength = Math.hypot(weightedDx, weightedDy);
+  if (totalWeight <= 0 || directionLength <= 1e-6) return null;
+  return {
+    dx: weightedDx / directionLength,
+    dy: weightedDy / directionLength,
+    speedMps: weightedSpeedMps / totalWeight,
+    speedPxPerSecond: weightedSpeedPx / totalWeight,
+  };
+}
+
+function appendTrailPoint(particle: FlowParticle, point: ScreenPoint): void {
+  const last = particle.trail[particle.trail.length - 1];
+  if (last && Math.hypot(point.x - last.x, point.y - last.y) < PARTICLE_TRAIL_SAMPLE_PX) return;
+  particle.trail.push(point);
+  let trailLength = 0;
+  for (let index = particle.trail.length - 1; index > 0; index -= 1) {
+    const current = particle.trail[index];
+    const previous = particle.trail[index - 1];
+    trailLength += Math.hypot(current.x - previous.x, current.y - previous.y);
+    if (trailLength > PARTICLE_TRAIL_LENGTH_PX) {
+      particle.trail.splice(0, index - 1);
+      break;
+    }
+  }
+}
+
+function drawFadingTrail(
+  context: CanvasRenderingContext2D,
+  trail: ScreenPoint[],
+  particleColor: string,
+): void {
+  if (trail.length < 2) return;
+  const tail = trail[0];
+  const head = trail[trail.length - 1];
+  context.beginPath();
+  context.moveTo(tail.x, tail.y);
+  trail.slice(1).forEach((point) => context.lineTo(point.x, point.y));
+  context.lineCap = "round";
+
+  const haloGradient = context.createLinearGradient(tail.x, tail.y, head.x, head.y);
+  haloGradient.addColorStop(0, "rgba(255, 255, 255, 0)");
+  haloGradient.addColorStop(1, "rgba(255, 255, 255, 0.9)");
+  context.strokeStyle = haloGradient;
+  context.lineWidth = 5.5;
+  context.stroke();
+
+  const trailGradient = context.createLinearGradient(tail.x, tail.y, head.x, head.y);
+  trailGradient.addColorStop(0, colorWithAlpha(particleColor, 0));
+  trailGradient.addColorStop(1, particleColor);
+  context.strokeStyle = trailGradient;
+  context.lineWidth = 2.5;
+  context.stroke();
+}
+
 function overlayStyle(
-  metadata: ResultMetadataResponse,
+  metadata: Pick<ResultMetadataResponse, "bounds">,
   imageUrl: string,
 ): StyleSpecification {
   const coordinates = resultImageCoordinates(metadata.bounds);
@@ -195,6 +385,7 @@ export default function ResultMap({
   metadata,
   imageUrl,
   flowVectorData,
+  flowDisplayMode = flowVectorData ? "vectors" : null,
   backgroundOpacity,
   mapLabel,
   onInspect,
@@ -208,6 +399,7 @@ export default function ResultMap({
   const overlayMapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
   const flowSvgRef = useRef<SVGSVGElement | null>(null);
+  const flowCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const inspectRef = useRef(onInspect);
   const viewportRef = useRef(onViewportChange);
   const initialImageUrlRef = useRef(imageUrl);
@@ -236,6 +428,7 @@ export default function ResultMap({
             type: "raster",
             tiles: ["https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png"],
             tileSize: 256,
+            maxzoom: RESULT_MAX_ZOOM,
             attribution: "国土地理院",
           },
         },
@@ -243,6 +436,7 @@ export default function ResultMap({
       },
       bounds,
       fitBoundsOptions: { padding: 32, maxZoom: 18 },
+      maxZoom: RESULT_MAX_ZOOM,
       interactive: false,
     });
     baseMapRef.current = baseMap;
@@ -252,6 +446,7 @@ export default function ResultMap({
       style: overlayStyle(metadata, initialImageUrlRef.current),
       bounds,
       fitBoundsOptions: { padding: 32, maxZoom: 18 },
+      maxZoom: RESULT_MAX_ZOOM,
       attributionControl: false,
     });
     overlayMapRef.current = overlayMap;
@@ -263,6 +458,8 @@ export default function ResultMap({
       const context = output.getContext("2d");
       if (!context) throw new Error("Canvas 2D context is unavailable");
       context.drawImage(source, 0, 0);
+      const particles = flowCanvasRef.current;
+      if (particles) context.drawImage(particles, 0, 0, output.width, output.height);
       const svg = flowSvgRef.current;
       if (svg && svg.childElementCount > 0) {
         const markup = new XMLSerializer().serializeToString(svg);
@@ -299,6 +496,7 @@ export default function ResultMap({
     };
 
     const handleClick = (event: MapMouseEvent) => {
+      if (!inspectRef.current) return;
       markerRef.current?.remove();
       markerRef.current = new Marker({ color: "#1f2937" })
         .setLngLat(event.lngLat)
@@ -310,6 +508,7 @@ export default function ResultMap({
     overlayMap.on("zoomend", emitViewport);
     overlayMap.on("moveend", emitViewport);
     overlayMap.on("click", handleClick);
+    emitViewport();
     overlayMap.once("load", () => {
       syncBase();
       emitViewport();
@@ -470,9 +669,9 @@ export default function ResultMap({
     };
 
     const update = () => {
-      const displayFlow = flowVectorData;
+      const displayFlow = flowDisplayMode === "vectors" ? flowVectorData : null;
       const source = map.getSource(FLOW_SOURCE_ID) as GeoJSONSource | undefined;
-      source?.setData(displayFlow ?? EMPTY_FLOW);
+      source?.setData(flowVectorData ?? EMPTY_FLOW);
       const visibility = displayFlow && displayFlow.features.length > 0
         ? "visible"
         : "none";
@@ -517,7 +716,185 @@ export default function ResultMap({
       svg.replaceChildren();
       svg.dataset.flowSvgArrows = "0";
     };
-  }, [flowVectorData, onFlowRenderStats]);
+  }, [flowDisplayMode, flowVectorData, onFlowRenderStats]);
+
+  useEffect(() => {
+    const map = overlayMapRef.current;
+    const canvas = flowCanvasRef.current;
+    if (!map || !canvas) return;
+    if (flowDisplayMode !== "particles" || !flowVectorData) {
+      canvas.dataset.flowParticles = "0";
+      return;
+    }
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const buildField = () => createProjectedFlowField(flowVectorData.features.flatMap((feature) => {
+      const shaft = feature.geometry.coordinates[0];
+      if (!shaft || shaft.length < 2) return [];
+      const tail = map.project([shaft[0][0], shaft[0][1]]);
+      const tip = map.project([shaft[shaft.length - 1][0], shaft[shaft.length - 1][1]]);
+      const length = Math.hypot(tip.x - tail.x, tip.y - tail.y);
+      if (length <= 1e-6) return [];
+      return [{
+        x: tail.x,
+        y: tail.y,
+        dx: (tip.x - tail.x) / length,
+        dy: (tip.y - tail.y) / length,
+        speedMps: feature.properties.speed_mps,
+        speedPxPerSecond: particleSpeedPxPerSecond(feature.properties.speed_mps),
+      }];
+    }));
+
+    let field = buildField();
+    const resetParticle = (
+      particle: FlowParticle,
+      index: number,
+      staggerInitialStart = false,
+    ) => {
+      if (field.nodes.length === 0) return;
+      particle.generation += 1;
+      const seedIndex = (index + Math.imul(particle.generation, 97)) % field.nodes.length;
+      const seed = field.nodes[seedIndex];
+      const sourceFeature = flowVectorData.features[seedIndex % flowVectorData.features.length];
+      const phase = particlePhase(
+        sourceFeature?.properties.row ?? seedIndex,
+        (sourceFeature?.properties.column ?? seedIndex) + particle.generation,
+      );
+      const offset = (phase - 0.5) * field.spacingPx;
+      particle.x = seed.x + seed.dx * offset;
+      particle.y = seed.y + seed.dy * offset;
+      particle.travelledPx = 0;
+      particle.targetDistancePx = field.spacingPx * PARTICLE_MIN_VECTOR_CROSSINGS;
+      particle.trail = [{ x: particle.x, y: particle.y }];
+      const estimatedLifetimeSeconds = particle.targetDistancePx / seed.speedPxPerSecond;
+      particle.activationDelaySeconds = staggerInitialStart
+        ? (index % PARTICLE_PHASE_GROUPS) * estimatedLifetimeSeconds / PARTICLE_PHASE_GROUPS
+        : 0;
+    };
+    let particles: FlowParticle[] = field.nodes.map((node, index) => {
+      const particle: FlowParticle = {
+        x: node.x,
+        y: node.y,
+        travelledPx: 0,
+        targetDistancePx: field.spacingPx * PARTICLE_MIN_VECTOR_CROSSINGS,
+        trail: [{ x: node.x, y: node.y }],
+        generation: -1,
+        activationDelaySeconds: 0,
+      };
+      resetParticle(particle, index, true);
+      return particle;
+    });
+    const rebuildField = () => {
+      field = buildField();
+      particles = field.nodes.map((node, index) => {
+        const particle: FlowParticle = {
+          x: node.x,
+          y: node.y,
+          travelledPx: 0,
+          targetDistancePx: field.spacingPx * PARTICLE_MIN_VECTOR_CROSSINGS,
+          trail: [{ x: node.x, y: node.y }],
+          generation: -1,
+          activationDelaySeconds: 0,
+        };
+        resetParticle(particle, index, true);
+        return particle;
+      });
+      canvas.dataset.flowParticleSpacingPx = field.spacingPx.toFixed(1);
+      canvas.dataset.flowParticleTargetDistancePx = (
+        field.spacingPx * PARTICLE_MIN_VECTOR_CROSSINGS
+      ).toFixed(1);
+    };
+    canvas.dataset.flowParticleMinCrossings = String(PARTICLE_MIN_VECTOR_CROSSINGS);
+    canvas.dataset.flowParticlePhaseGroups = String(PARTICLE_PHASE_GROUPS);
+    canvas.dataset.flowParticleSpacingPx = field.spacingPx.toFixed(1);
+    canvas.dataset.flowParticleTargetDistancePx = (
+      field.spacingPx * PARTICLE_MIN_VECTOR_CROSSINGS
+    ).toFixed(1);
+    map.on("moveend", rebuildField);
+    map.on("resize", rebuildField);
+
+    let frame = 0;
+    let disposed = false;
+    let previousFrameMs: number | null = null;
+
+    const render = (now: number) => {
+      if (disposed) return;
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.max(1, canvas.clientWidth);
+      const height = Math.max(1, canvas.clientHeight);
+      const pixelWidth = Math.round(width * ratio);
+      const pixelHeight = Math.round(height * ratio);
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+      }
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.clearRect(0, 0, width, height);
+      const elapsedSeconds = previousFrameMs === null
+        ? 1 / 60
+        : Math.min(0.05, Math.max(0, (now - previousFrameMs) / 1000));
+      previousFrameMs = now;
+
+      let rendered = 0;
+      particles.forEach((particle, index) => {
+        if (particle.activationDelaySeconds > 0) {
+          particle.activationDelaySeconds = Math.max(
+            0,
+            particle.activationDelaySeconds - elapsedSeconds,
+          );
+          if (particle.activationDelaySeconds > 0) return;
+        }
+        let flow = sampleProjectedFlow(field, particle.x, particle.y);
+        if (!flow) {
+          resetParticle(particle, index);
+          flow = sampleProjectedFlow(field, particle.x, particle.y);
+        }
+        if (!flow) return;
+        const distance = flow.speedPxPerSecond * elapsedSeconds;
+        particle.x += flow.dx * distance;
+        particle.y += flow.dy * distance;
+        particle.travelledPx += distance;
+        appendTrailPoint(particle, { x: particle.x, y: particle.y });
+
+        const outsideViewport = particle.x < -6
+          || particle.y < -6
+          || particle.x > width + 6
+          || particle.y > height + 6;
+        if (outsideViewport || particle.travelledPx >= particle.targetDistancePx) {
+          resetParticle(particle, index);
+          return;
+        }
+
+        const particleColor = flowColor(flow.speedMps);
+        drawFadingTrail(context, particle.trail, particleColor);
+
+        // The particle itself is a zero-length point; only its fading history
+        // forms a line behind it.
+        context.beginPath();
+        context.arc(particle.x, particle.y, 3.2, 0, Math.PI * 2);
+        context.fillStyle = "rgba(255, 255, 255, 0.92)";
+        context.fill();
+        context.beginPath();
+        context.arc(particle.x, particle.y, 1.8, 0, Math.PI * 2);
+        context.fillStyle = particleColor;
+        context.fill();
+        rendered += 1;
+      });
+      canvas.dataset.flowParticles = String(rendered);
+      frame = window.requestAnimationFrame(render);
+    };
+
+    frame = window.requestAnimationFrame(render);
+    return () => {
+      disposed = true;
+      window.cancelAnimationFrame(frame);
+      map.off("moveend", rebuildField);
+      map.off("resize", rebuildField);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.dataset.flowParticles = "0";
+    };
+  }, [flowDisplayMode, flowVectorData]);
 
   return (
     <div className="result-map-stack" role="region" aria-label={mapLabel}>
@@ -536,6 +913,12 @@ export default function ResultMap({
         className="result-flow-svg"
         aria-hidden="true"
         data-flow-svg-arrows="0"
+      />
+      <canvas
+        ref={flowCanvasRef}
+        className="result-flow-canvas"
+        aria-hidden="true"
+        data-flow-particles="0"
       />
     </div>
   );

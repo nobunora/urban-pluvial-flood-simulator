@@ -297,7 +297,7 @@ def test_adaptive_max_block_size_reaches_classifier(
 
     assert record.machine.state is RunState.COMPLETE
     policy = captured["policy"]
-    assert getattr(policy, "active_levels_m") == expected_levels
+    assert policy.active_levels_m == expected_levels
 
 
 def test_adaptive_constraints_survive_cache_and_reach_classifier(tmp_path: Path) -> None:

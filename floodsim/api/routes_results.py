@@ -10,6 +10,7 @@ from threading import Lock
 from typing import Any
 from uuid import UUID
 
+import numpy as np
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
@@ -18,30 +19,44 @@ from floodsim.api.errors import ApiContractError
 from floodsim.api.routes_runs import coordinator
 from floodsim.api.runtime_config import demo_archive_path, runtime_config
 from floodsim.api.schemas import (
+    ElevationPreviewRequest,
+    ElevationPreviewResponse,
     PointInspectionResponse,
     ResultImportResponse,
     ResultMetadataResponse,
 )
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.orchestration.run_coordinator import ResultNotReady, RunNotFound
+from floodsim.providers.common import ProviderError
 from floodsim.results.archive import ResultArchiveError, create_result_archive
+from floodsim.results.elevation_preview import ElevationPreviewStore
+from floodsim.results.regular_netcdf_source import (
+    RegularNetcdfSourceError,
+    load_regular_netcdf_descriptor,
+    regular_window_arrays,
+)
 from floodsim.results.vector_viewport import flow_vectors_viewport_geojson
 from floodsim.results.view import (
     PointOutsideResult,
     ResultArrays,
     ResultTimeIndexInvalid,
     ResultViewError,
+    elevation_legend_metadata,
     inspect_native_point,
     load_normalized_arrays,
+    render_elevation_values_png,
     render_grid_resolution_png,
     render_max_depth_png,
+    render_terrain_elevation_png,
     render_time_depth_png,
+    terrain_elevation_range,
 )
 
 router = APIRouter()
 MAX_ARCHIVE_UPLOAD_BYTES = 8 * 1024**3
 _demo_result_runs: dict[str, UUID] = {}
 _demo_result_lock = Lock()
+_elevation_previews = ElevationPreviewStore()
 
 
 def _map_result_error(exc: Exception) -> ApiContractError:
@@ -107,15 +122,39 @@ def _arrays_path_for_run(run_id: UUID) -> tuple[Path, int]:
 
 def _arrays_for_run(run_id: UUID) -> ResultArrays:
     try:
-        path, mtime_ns = _arrays_path_for_run(run_id)
-        return _load_arrays_cached(str(path), mtime_ns)
-    except (RunNotFound, ResultNotReady, ResultViewError, OSError) as exc:
+        try:
+            path, mtime_ns = _arrays_path_for_run(run_id)
+            return _load_arrays_cached(str(path), mtime_ns)
+        except ResultNotReady:
+            source_path = coordinator.result_source_path(run_id)
+            source = load_regular_netcdf_descriptor(source_path)
+            return regular_window_arrays(
+                source,
+                model_dir=coordinator.store.run_dir(run_id) / "model",
+                time_index=0,
+            )
+    except (RunNotFound, ResultNotReady, ResultViewError, RegularNetcdfSourceError, OSError) as exc:
         raise _map_result_error(exc) from exc
+
+
+def _source_arrays_for_run(run_id: UUID, time_index: int) -> ResultArrays | None:
+    """Return a single-frame source-backed regular result, or None for NPZ runs."""
+    try:
+        source_path = coordinator.result_source_path(run_id)
+    except ResultNotReady:
+        return None
+    source = load_regular_netcdf_descriptor(source_path)
+    return regular_window_arrays(
+        source,
+        model_dir=coordinator.store.run_dir(run_id) / "model",
+        time_index=time_index,
+    )
 
 
 LAYER_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=31536000, immutable",
 }
+PREVIEW_CACHE_HEADERS = {"Cache-Control": "private, max-age=300"}
 
 
 @router.get("/runs/{run_id}/result-metadata", response_model=ResultMetadataResponse)
@@ -124,25 +163,114 @@ def result_metadata(run_id: UUID) -> ResultMetadataResponse:
         metadata = coordinator.result_metadata(run_id)
     except (RunNotFound, ResultNotReady) as exc:
         raise _map_result_error(exc) from exc
+    if not metadata.get("elevation_legend"):
+        arrays = _arrays_for_run(run_id)
+        minimum_m, maximum_m = terrain_elevation_range(arrays)
+        metadata["elevation_legend"] = elevation_legend_metadata(minimum_m, maximum_m)
     return ResultMetadataResponse.model_validate(metadata)
+
+
+@router.post("/elevation-previews", response_model=ElevationPreviewResponse)
+def create_elevation_preview(request: ElevationPreviewRequest) -> ElevationPreviewResponse:
+    if not runtime_config().allow_run:
+        raise ApiContractError(
+            403,
+            "ELEVATION_PREVIEW_DISABLED_IN_DEMO",
+            "Webデモ版では新しい標高を取得できません。",
+        )
+    try:
+        product = coordinator.elevation_provider.acquire(
+            request.analysis_area,
+            grid_m=float(request.grid_cell_size_m),
+            cache_dir=coordinator.store.root.parent / "cache",
+        )
+        active = product.uncovered_boundary_mask
+        active_mask = (
+            np.isfinite(product.z)
+            if active is None
+            else np.isfinite(product.z) & ~active
+        )
+        if not np.any(active_mask):
+            raise ResultViewError("取得した標高に表示可能なセルがありません。")
+        minimum_m = float(np.min(product.z[active_mask]))
+        maximum_m = float(np.max(product.z[active_mask]))
+        png = render_elevation_values_png(product.z, active_mask)
+        counts = {
+            str(key): int(value)
+            for key, value in product.provenance.source_details.get(
+                "provider_counts", {}
+            ).items()
+        }
+        metadata = {
+            "bounds": request.analysis_area.bounds.model_dump(),
+            "grid_cell_size_m": request.grid_cell_size_m,
+            "width_samples": int(product.z.shape[1]),
+            "height_samples": int(product.z.shape[0]),
+            "elevation_legend": elevation_legend_metadata(minimum_m, maximum_m),
+            "provider_counts": counts,
+            "nearest_filled_cells": int(product.nearest_filled),
+        }
+        preview = _elevation_previews.add(png, metadata)
+    except ProviderError as exc:
+        raise ApiContractError(
+            502,
+            exc.code,
+            "標高データを取得できません。時間を置いて再試行してください。",
+            retryable=exc.retryable,
+        ) from exc
+    except (ValueError, ResultViewError) as exc:
+        raise ApiContractError(
+            500,
+            "ELEVATION_PREVIEW_FAILED",
+            "標高プレビューを作成できません。",
+        ) from exc
+    return ElevationPreviewResponse.model_validate(
+        {
+            "preview_id": preview.preview_id,
+            **preview.metadata,
+            "image_url": f"/api/v1/elevation-previews/{preview.preview_id}.png",
+        }
+    )
+
+
+@router.get("/elevation-previews/{preview_id}.png", include_in_schema=False)
+def elevation_preview_png(preview_id: UUID) -> Response:
+    preview = _elevation_previews.get(preview_id)
+    if preview is None:
+        raise ApiContractError(
+            404,
+            "ELEVATION_PREVIEW_NOT_FOUND",
+            "標高プレビューの有効期限が切れています。もう一度取得してください。",
+        )
+    return Response(content=preview.png, media_type="image/png", headers=PREVIEW_CACHE_HEADERS)
 
 
 @router.get("/runs/{run_id}/export")
 def export_result(run_id: UUID) -> FileResponse:
     archive_path: Path | None = None
     try:
-        arrays_path = coordinator.result_arrays_path(run_id)
         run_dir = coordinator.store.run_dir(run_id)
         fd, temporary_name = tempfile.mkstemp(prefix=f"flood-result-{run_id}-", suffix=".zip")
         os.close(fd)
         archive_path = Path(temporary_name)
-        create_result_archive(
-            archive_path,
-            config_path=run_dir / "run_config.json",
-            manifest_path=run_dir / "manifest.json",
-            metadata_path=run_dir / "results" / "result_metadata.json",
-            arrays_path=arrays_path,
-        )
+        common_paths = {
+            "config_path": run_dir / "run_config.json",
+            "manifest_path": run_dir / "manifest.json",
+            "metadata_path": run_dir / "results" / "result_metadata.json",
+        }
+        try:
+            arrays_path = coordinator.result_arrays_path(run_id)
+            create_result_archive(archive_path, arrays_path=arrays_path, **common_paths)
+        except ResultNotReady:
+            descriptor_path = coordinator.result_source_path(run_id)
+            descriptor = load_regular_netcdf_descriptor(descriptor_path)
+            source_path = run_dir / "model" / descriptor.source_filename
+            create_result_archive(
+                archive_path,
+                descriptor_path=descriptor_path,
+                source_path=source_path,
+                **common_paths,
+            )
     except (RunNotFound, ResultNotReady, OSError) as exc:
         if archive_path is not None:
             archive_path.unlink(missing_ok=True)
@@ -232,14 +360,13 @@ def time_depth_layer(
     max_px: int = 4096,
 ) -> Response:
     try:
-        path, mtime_ns = _arrays_path_for_run(run_id)
-        content = _render_time_depth_cached(
-            str(path),
-            mtime_ns,
-            time_index,
-            max_px,
-        )
-    except (RunNotFound, ResultNotReady, ResultViewError, OSError) as exc:
+        source_arrays = _source_arrays_for_run(run_id, time_index)
+        if source_arrays is not None:
+            content = render_time_depth_png(source_arrays, time_index=0, max_px=max_px)
+        else:
+            path, mtime_ns = _arrays_path_for_run(run_id)
+            content = _render_time_depth_cached(str(path), mtime_ns, time_index, max_px)
+    except (RunNotFound, ResultNotReady, ResultViewError, RegularNetcdfSourceError, OSError) as exc:
         raise _map_result_error(exc) from exc
     return Response(
         content=content,
@@ -258,6 +385,16 @@ def grid_resolution_layer(run_id: UUID, max_px: int = 4096) -> Response:
     return Response(content=content, media_type="image/png", headers=LAYER_CACHE_HEADERS)
 
 
+@router.get("/runs/{run_id}/layers/elevation.png")
+def elevation_layer(run_id: UUID, max_px: int = 4096) -> Response:
+    arrays = _arrays_for_run(run_id)
+    try:
+        content = render_terrain_elevation_png(arrays, max_px=max_px)
+    except ResultViewError as exc:
+        raise _map_result_error(exc) from exc
+    return Response(content=content, media_type="image/png", headers=LAYER_CACHE_HEADERS)
+
+
 
 @router.get(
     "/runs/{run_id}/layers/flow-vectors.geojson",
@@ -270,23 +407,36 @@ def flow_vectors_geojson_layer(
     south: float = Query(ge=-90, le=90),
     east: float = Query(ge=-180, le=180),
     north: float = Query(ge=-90, le=90),
-    stride: int = Query(default=8, ge=1, le=512),
+    stride: int = Query(default=8, ge=1, le=4096),
 ) -> JSONResponse:
     try:
-        path, mtime_ns = _arrays_path_for_run(run_id)
         record = coordinator.get(run_id)
-        payload = _flow_viewport_cached(
-            str(path),
-            mtime_ns,
-            record.config.analysis_area.model_dump_json(),
-            time_index,
-            west,
-            south,
-            east,
-            north,
-            stride,
-        )
-    except (RunNotFound, ResultNotReady, ResultViewError, OSError) as exc:
+        source_arrays = _source_arrays_for_run(run_id, time_index)
+        if source_arrays is not None:
+            payload = flow_vectors_viewport_geojson(
+                source_arrays,
+                area=record.config.analysis_area,
+                time_index=0,
+                west=west,
+                south=south,
+                east=east,
+                north=north,
+                stride=stride,
+            )
+        else:
+            path, mtime_ns = _arrays_path_for_run(run_id)
+            payload = _flow_viewport_cached(
+                str(path),
+                mtime_ns,
+                record.config.analysis_area.model_dump_json(),
+                time_index,
+                west,
+                south,
+                east,
+                north,
+                stride,
+            )
+    except (RunNotFound, ResultNotReady, ResultViewError, RegularNetcdfSourceError, OSError) as exc:
         raise _map_result_error(exc) from exc
     return JSONResponse(content=payload, headers=LAYER_CACHE_HEADERS)
 
@@ -298,16 +448,25 @@ def inspect_result(
     lat: float = Query(ge=-90, le=90),
     time_index: int | None = Query(default=None, ge=0),
 ) -> PointInspectionResponse:
-    arrays = _arrays_for_run(run_id)
     try:
         record = coordinator.get(run_id)
+        source_arrays = _source_arrays_for_run(run_id, time_index or 0)
+        arrays = source_arrays or _arrays_for_run(run_id)
         payload = inspect_native_point(
             arrays,
             area=record.config.analysis_area,
             lon_deg=lon,
             lat_deg=lat,
-            time_index=time_index,
+            time_index=(0 if source_arrays is not None and time_index is not None else time_index),
         )
-    except (RunNotFound, ResultViewError) as exc:
+        if source_arrays is not None:
+            assert record.result_metadata is not None
+            payload["time_index"] = time_index
+            payload["time_value"] = (
+                record.result_metadata["time_values"][time_index]
+                if time_index is not None
+                else None
+            )
+    except (RunNotFound, ResultViewError, RegularNetcdfSourceError) as exc:
         raise _map_result_error(exc) from exc
     return PointInspectionResponse.model_validate(payload)

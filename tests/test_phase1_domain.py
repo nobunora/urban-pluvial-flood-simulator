@@ -98,6 +98,7 @@ def test_limitations_defaults_are_explicitly_false() -> None:
         "spatial_meteorological_rainfall_modelled": False,
         "river_stage_boundary_modelled": False,
         "coastal_tide_surge_modelled": False,
+        "grade_separated_transport_modelled": False,
         "official_forecast": False,
     }
 

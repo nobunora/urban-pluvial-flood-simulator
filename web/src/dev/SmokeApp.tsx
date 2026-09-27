@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   cancelRun,
+  createElevationPreview,
   createRun,
   getAppConfig,
   getHealth,
@@ -11,10 +12,12 @@ import {
   openDemoResult,
   type AppConfigResponse,
   type AnalysisArea,
+  type ElevationPreviewResponse,
   type ResultMetadataResponse,
   type RunStatusResponse,
 } from "../api/client";
 import ResultPanel from "../result/ResultPanel";
+import ElevationPreviewPanel from "./ElevationPreviewPanel";
 import LocationSearch from "./LocationSearch";
 import RunProgress from "./RunProgress";
 import SetupMap from "./SetupMap";
@@ -65,6 +68,20 @@ function recommendedMinimumBlockSize(halfSizeM: number): 1 | 2 | 4 {
   return 4;
 }
 
+function estimatedPeakMemoryRange(cellCount: number): string {
+  // This deliberately broad range covers the Python preprocessing arrays,
+  // duplicated conversion buffers and the SFINCS working set. It is a setup
+  // warning, not an operating-system reservation or a hard upper bound.
+  const gibibyte = 1024 ** 3;
+  const lowerBytes = 0.5 * gibibyte + cellCount * 512;
+  const upperBytes = gibibyte + cellCount * 1024;
+  const format = (bytes: number) => {
+    const gibibytes = bytes / gibibyte;
+    return gibibytes < 10 ? gibibytes.toFixed(1) : String(Math.ceil(gibibytes));
+  };
+  return `約 ${format(lowerBytes)}〜${format(upperBytes)} GB`;
+}
+
 export default function SmokeApp() {
   const [lat, setLat] = useState(String(DEFAULT_LAT));
   const [lon, setLon] = useState(String(DEFAULT_LON));
@@ -89,7 +106,9 @@ export default function SmokeApp() {
     download_url: "https://github.com/nobunora/urban-pluvial-flood-simulator/releases/latest",
     demo_result_event_ids: [],
   });
-  const [pendingDemoEventId, setPendingDemoEventId] = useState<string | null>(null);
+  const [elevationPreview, setElevationPreview] = useState<ElevationPreviewResponse | null>(null);
+  const [elevationLoading, setElevationLoading] = useState(false);
+  const [sampleChoiceEventId, setSampleChoiceEventId] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const latValue = parseNumber(lat);
@@ -124,11 +143,19 @@ export default function SmokeApp() {
   const gridCellCount = area
     ? Math.round(area.area_m2 / (gridCellSizeM * gridCellSizeM))
     : null;
+  const peakMemoryEstimate = gridCellCount === null
+    ? null
+    : estimatedPeakMemoryRange(gridCellCount);
 
   const runActive = status !== null && !TERMINAL.has(status.state);
   const setupLocked =
     busy ||
+    elevationLoading ||
     (runId !== null && status?.state !== "FAILED" && status?.state !== "CANCELLED");
+
+  useEffect(() => {
+    setElevationPreview(null);
+  }, [lat, lon, halfSize, gridCellSizeM]);
 
   useEffect(() => {
     getHealth()
@@ -233,6 +260,7 @@ export default function SmokeApp() {
     setLastPollAtMs(null);
     setResultMetadata(null);
     setResultError(null);
+    setElevationPreview(null);
     try {
       const created = await createRun({
         analysis_area: area,
@@ -250,6 +278,19 @@ export default function SmokeApp() {
       setError(String(cause));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleElevationPreview = async () => {
+    if (!area) return;
+    setElevationLoading(true);
+    setError(null);
+    try {
+      setElevationPreview(await createElevationPreview(area, gridCellSizeM));
+    } catch (cause: unknown) {
+      setError(String(cause));
+    } finally {
+      setElevationLoading(false);
     }
   };
 
@@ -308,7 +349,7 @@ export default function SmokeApp() {
 
   const handleOpenDemoResult = async (eventId: string) => {
     setImporting(true);
-    setPendingDemoEventId(null);
+    setSampleChoiceEventId(null);
     setError(null);
     setResultError(null);
     try {
@@ -327,7 +368,22 @@ export default function SmokeApp() {
     }
   };
 
+  const applySampleCondition = (event: (typeof STATIC_RAINFALL_RANKING)[number]) => {
+    setIntensity(String(event.intensity));
+    setDuration(String(event.duration));
+    setLon(event.lon.toFixed(6));
+    setLat(event.lat.toFixed(6));
+    setHalfSize("2000");
+    setMinimumBlockSizeChoice("auto");
+  };
+
   const rainfallSummary = `${intensity} mm/h × ${duration}分`;
+  const selectedSample = STATIC_RAINFALL_RANKING.find(
+    (event) => event.eventId === sampleChoiceEventId,
+  );
+  const selectedSampleResultAvailable = selectedSample
+    ? appConfig.demo_result_event_ids.includes(selectedSample.eventId)
+    : false;
 
   return (
     <main className="smoke-shell">
@@ -343,17 +399,17 @@ export default function SmokeApp() {
         <section className="smoke-grid">
           <div className="smoke-card">
             {importing && <p>解析済み結果を読み込んでいます…</p>}
-            <section className="rainfall-ranking" aria-label="過去ランキング5件">
+            <section className="rainfall-ranking" aria-label="サンプルまたは読込み">
               <h2>サンプルまたは読込み</h2>
               {appConfig.allow_result_import && (
                 <>
                   <button type="button" className="result-import-button" disabled={setupLocked || importing} onClick={() => importInputRef.current?.click()}>
-                    解析済みデータを読み込む
+                    ファイルから読込
                   </button>
                   <input
                     ref={importInputRef}
                     type="file"
-                    aria-label="解析済みデータを読み込む"
+                    aria-label="解析済みデータをファイルから読み込む"
                     accept=".zip,application/zip"
                     className="result-import-input"
                     disabled={setupLocked || importing}
@@ -367,21 +423,7 @@ export default function SmokeApp() {
                     <button
                       type="button"
                       disabled={setupLocked}
-                      onClick={() => {
-                        setIntensity(String(event.intensity));
-                        setDuration(String(event.duration));
-                        setLon(event.lon.toFixed(6));
-                        setLat(event.lat.toFixed(6));
-                        setHalfSize("2000");
-                        setMinimumBlockSizeChoice("auto");
-                        if (appConfig.demo_result_event_ids.includes(event.eventId)) {
-                          if (appConfig.mode === "demo") {
-                            void handleOpenDemoResult(event.eventId);
-                          } else {
-                            setPendingDemoEventId(event.eventId);
-                          }
-                        }
-                      }}
+                      onClick={() => setSampleChoiceEventId(event.eventId)}
                     >
                       <small>{event.year}</small>
                       <strong>{event.city}</strong>
@@ -407,28 +449,46 @@ export default function SmokeApp() {
             </div>
             <div className="smoke-actions">
               {appConfig.allow_run ? (
-                <button className="analysis-start-button" disabled={!area || setupLocked} onClick={() => void handleRun()}>
-                  解析開始
-                </button>
+                <>
+                  <button className="analysis-start-button" disabled={!area || setupLocked} onClick={() => void handleRun()}>
+                    解析開始
+                  </button>
+                  <button className="elevation-preview-button" disabled={!area || setupLocked} onClick={() => void handleElevationPreview()}>
+                    {elevationLoading ? "標高を取得中…" : "標高のみ取得"}
+                  </button>
+                </>
               ) : (
                 <a className="analysis-start-button download-app-link" href={appConfig.download_url}>
                   Windows版をダウンロード
                 </a>
               )}
             </div>
-            {pendingDemoEventId && (
+            {selectedSample && (
               <div className="scenario-result-dialog" role="dialog" aria-modal="true" aria-labelledby="scenario-result-title">
                 <div className="scenario-result-dialog-card">
-                  <h3 id="scenario-result-title">解析済み結果があります</h3>
-                  <p>この豪雨条件の±2000 m解析済み結果を表示しますか？</p>
+                  <h3 id="scenario-result-title">{selectedSample.year} {selectedSample.city}</h3>
+                  <p>{selectedSample.intensity} mm/h × {selectedSample.duration}分をどう使いますか？</p>
                   <div className="scenario-result-dialog-actions">
-                    <button type="button" onClick={() => void handleOpenDemoResult(pendingDemoEventId)}>
-                      解析済み結果を表示
+                    <button
+                      type="button"
+                      onClick={() => {
+                        applySampleCondition(selectedSample);
+                        setSampleChoiceEventId(null);
+                      }}
+                    >
+                      解析条件に反映
                     </button>
-                    <button type="button" onClick={() => setPendingDemoEventId(null)}>
-                      この条件で新しく解析
+                    <button
+                      type="button"
+                      disabled={!selectedSampleResultAvailable || importing}
+                      onClick={() => void handleOpenDemoResult(selectedSample.eventId)}
+                    >
+                      解析済みデータを読み込む
                     </button>
-                    <button type="button" onClick={() => setPendingDemoEventId(null)}>
+                    {!selectedSampleResultAvailable && (
+                      <p className="sample-result-unavailable">このサンプルの解析済みデータは現在ありません。</p>
+                    )}
+                    <button type="button" onClick={() => setSampleChoiceEventId(null)}>
                       キャンセル
                     </button>
                   </div>
@@ -452,10 +512,16 @@ export default function SmokeApp() {
             <div className="smoke-card">
               <h2>2. 実行状態</h2>
               {area ? (
-                <dl>
-                  <dt>範囲</dt><dd>{area.width_m} × {area.height_m} m</dd>
-                  <dt>セル数</dt><dd>{gridCellCount?.toLocaleString()}</dd>
-                </dl>
+                <>
+                  <dl>
+                    <dt>範囲</dt><dd>{area.width_m} × {area.height_m} m</dd>
+                    <dt>セル数</dt><dd>{gridCellCount?.toLocaleString()}</dd>
+                    <dt>概算ピークメモリ</dt><dd>{peakMemoryEstimate}</dd>
+                  </dl>
+                  <p className="memory-estimate-note">
+                    前処理とSFINCS計算を含む目安です。地物数や実行環境により増減します。
+                  </p>
+                </>
               ) : <p className="smoke-error">入力値を確認してください。</p>}
 
               {runId && <p><strong>Run ID:</strong> <code>{runId}</code></p>}
@@ -476,6 +542,13 @@ export default function SmokeApp() {
               {resultError && <pre className="smoke-error">{resultError}</pre>}
               {error && <pre className="smoke-error">{error}</pre>}
             </div>
+            {elevationPreview && (
+              <ElevationPreviewPanel
+                preview={elevationPreview}
+                onRun={() => void handleRun()}
+                onClose={() => setElevationPreview(null)}
+              />
+            )}
           </div>
         </section>
       )}

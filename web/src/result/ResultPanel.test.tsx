@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +10,8 @@ import {
 } from "../api/client";
 import ResultPanel, { strideForZoom } from "./ResultPanel";
 
+const resultMapMockState = vi.hoisted(() => ({ reportViewport: true }));
+
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return { ...actual, getFlowVectors: vi.fn(), inspectResult: vi.fn() };
@@ -19,26 +22,38 @@ vi.mock("./ResultMap", () => ({
     mapLabel,
     imageUrl,
     flowVectorData,
+    flowDisplayMode,
     backgroundOpacity,
     onInspect,
+    onViewportChange,
   }: {
     mapLabel: string;
     imageUrl: string;
     flowVectorData: FlowVectorFeatureCollection | null;
+    flowDisplayMode?: "vectors" | "particles" | null;
     backgroundOpacity: number;
     onInspect: (lon: number, lat: number) => void;
-  }) => (
+    onViewportChange?: (viewport: { west: number; south: number; east: number; north: number }, zoom: number) => void;
+  }) => {
+    useEffect(() => {
+      if (resultMapMockState.reportViewport) {
+        onViewportChange?.({ west: 139.7, south: 35.6, east: 139.8, north: 35.7 }, 18);
+      }
+    }, [onViewportChange]);
+    return (
     <div
       data-testid="result-map"
       data-image-url={imageUrl}
       data-flow-arrow-count={String(flowVectorData?.metadata.arrow_count ?? 0)}
       data-flow-time-index={String(flowVectorData?.features[0]?.properties.time_index ?? "")}
+      data-flow-display-mode={flowDisplayMode ?? "off"}
       data-background-opacity={String(backgroundOpacity)}
     >
       {mapLabel}
       <button type="button" onClick={() => onInspect(139.75, 35.65)}>地点を確認</button>
     </div>
-  ),
+    );
+  },
 }));
 
 const metadata: ResultMetadataResponse = {
@@ -76,6 +91,16 @@ const metadata: ResultMetadataResponse = {
     { label: "0.50–1.00 m", min_m: 0.5, max_m: 1, color: "#C4418B" },
     { label: "1.00 m以上", min_m: 1, max_m: null, color: "#6D1B4A" },
   ],
+  elevation_legend: [
+    { label: "1.00–1.38 m", min_m: 1, max_m: 1.375, color: "#313695" },
+    { label: "1.38–1.75 m", min_m: 1.375, max_m: 1.75, color: "#4575B4" },
+    { label: "1.75–2.12 m", min_m: 1.75, max_m: 2.125, color: "#00B7D4" },
+    { label: "2.12–2.50 m", min_m: 2.125, max_m: 2.5, color: "#1A9850" },
+    { label: "2.50–2.88 m", min_m: 2.5, max_m: 2.875, color: "#FDE725" },
+    { label: "2.88–3.25 m", min_m: 2.875, max_m: 3.25, color: "#FDAE61" },
+    { label: "3.25–3.62 m", min_m: 3.25, max_m: 3.625, color: "#F46D43" },
+    { label: "3.62–4.00 m", min_m: 3.625, max_m: 4, color: "#A50026" },
+  ],
   provider_summary: {
     building_provider: "osm",
     road_provider: "osm",
@@ -104,19 +129,23 @@ const metadata: ResultMetadataResponse = {
     spatial_meteorological_rainfall_modelled: false,
     river_stage_boundary_modelled: false,
     coastal_tide_surge_modelled: false,
+    grade_separated_transport_modelled: false,
     official_forecast: false,
   },
 };
 
 describe("ResultPanel", () => {
   it("keeps vector screen density stable across integer zoom levels", () => {
-    expect(strideForZoom(19)).toBe(4);
-    expect(strideForZoom(18)).toBe(8);
-    expect(strideForZoom(17)).toBe(16);
-    expect(strideForZoom(16)).toBe(32);
+    expect(strideForZoom(19)).toBe(3);
+    expect(strideForZoom(18)).toBe(6);
+    expect(strideForZoom(17)).toBe(12);
+    expect(strideForZoom(16)).toBe(24);
+    expect(strideForZoom(10)).toBe(1536);
+    expect(strideForZoom(8)).toBe(4096);
   });
 
   beforeEach(() => {
+    resultMapMockState.reportViewport = true;
     vi.mocked(inspectResult).mockReset();
     vi.mocked(getFlowVectors).mockReset();
     Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
@@ -127,6 +156,22 @@ describe("ResultPanel", () => {
       configurable: true,
       value: null,
     });
+  });
+
+  it("does not enable flow vectors before the current map zoom is known", () => {
+    resultMapMockState.reportViewport = false;
+
+    render(
+      <ResultPanel
+        runId="run-1"
+        metadata={metadata}
+        rainfallSummary="10 mm/h × 1分"
+        onNewAnalysis={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "流れベクトル" })).toBeDisabled();
+    expect(getFlowVectors).not.toHaveBeenCalled();
   });
 
   it("shows native point values including maximum time", async () => {
@@ -273,6 +318,9 @@ describe("ResultPanel", () => {
     expect(screen.getByText("1.250 m")).toBeVisible();
     expect(screen.getAllByText("osm").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("浸透は考慮していません。")).toBeVisible();
+    expect(
+      screen.getByText("陸橋・トンネル・高速道路下などの立体交差を通る水の流れは考慮していません。"),
+    ).toBeVisible();
 
     fireEvent.click(screen.getByText("解析条件と出典"));
     expect(screen.getByText("Application: 0.1.0")).toBeVisible();
@@ -283,6 +331,30 @@ describe("ResultPanel", () => {
     expect(screen.getByText("Boundary: closed boundary")).toBeVisible();
     expect(screen.getByText(/Roof-rain mass diagnostic:/)).toBeVisible();
     expect(screen.getByText("HydroMT-SFINCS: 2.0.0rc3")).toBeVisible();
+  });
+
+  it("uses saved rainfall metadata instead of the current setup inputs", () => {
+    render(
+      <ResultPanel
+        runId="run-1"
+        metadata={{
+          ...metadata,
+          run_summary: {
+            ...metadata.run_summary,
+            rainfall_source: {
+              kind: "constant",
+              intensity_mm_per_h: "123.5",
+              duration_minutes: "60",
+            },
+          },
+        }}
+        rainfallSummary="150 mm/h × 20分"
+        onNewAnalysis={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("123.5 mm/h × 60分 / 高精度 — 全域1 m")).toBeVisible();
+    expect(screen.queryByText(/150 mm\/h × 20分/)).not.toBeInTheDocument();
   });
 
   it("switches only among actual time indices and exposes grid-resolution controls", () => {
@@ -319,6 +391,16 @@ describe("ResultPanel", () => {
     );
     expect(screen.getByText("実計算格子: 1 m")).toBeVisible();
     expect(screen.getByText("32 m")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "標高" }));
+    expect(screen.getByTestId("result-map")).toHaveTextContent("標高の地図");
+    expect(screen.getByTestId("result-map")).toHaveAttribute(
+      "data-image-url",
+      "/api/v1/runs/run-1/layers/elevation.png",
+    );
+    expect(screen.getByLabelText("標高の凡例")).toBeVisible();
+    expect(screen.getByText("1.00–1.38 m")).toBeVisible();
+    expect(screen.getByText("3.62–4.00 m")).toBeVisible();
   });
 
   it("auto-selects the nearest output with visible flow and shows the separate speed legend", async () => {
@@ -392,13 +474,22 @@ describe("ResultPanel", () => {
     expect(screen.getByText("2.00 m/s以上")).toBeVisible();
     expect(screen.getByText("矢印の向き: 流向 / 色: 流速")).toBeVisible();
     expect(screen.getByText("GeoJSON矢印: 1本")).toBeVisible();
+    expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-display-mode", "vectors");
     expect(vi.mocked(getFlowVectors)).toHaveBeenCalledWith(
       "run-1",
       3,
       expect.any(Object),
-      8,
+      6,
       expect.any(AbortSignal),
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "粒子フロー" }));
+    expect(screen.getByRole("button", { name: "粒子フロー" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-display-mode", "particles");
+    expect(screen.getByText(/粒子の進行方向: 補間したベクトル場/)).toBeVisible();
+    expect(screen.getByText(/寿命: 最低5ベクトル間隔/)).toBeVisible();
+    expect(screen.getByText(/開始位相: 4群/)).toBeVisible();
+    expect(screen.getByText("粒子候補: 1個")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "最大浸水深" }));
     expect(screen.getByRole("button", { name: "流れベクトル" })).toHaveAttribute("aria-pressed", "false");
@@ -419,7 +510,7 @@ describe("ResultPanel", () => {
     const requestFullscreen = region.requestFullscreen as ReturnType<typeof vi.fn>;
 
     expect(region.querySelector('[aria-label="結果レイヤー"]')).not.toBeNull();
-    for (const label of ["最大浸水深", "時刻別の浸水深", "計算格子", "流れベクトル"]) {
+    for (const label of ["最大浸水深", "時刻別の浸水深", "計算格子", "標高", "流れベクトル"]) {
       expect(region.querySelector(`button[aria-pressed]`)).not.toBeNull();
       expect(screen.getByRole("button", { name: label })).toBeVisible();
     }
@@ -427,7 +518,7 @@ describe("ResultPanel", () => {
       region.querySelectorAll('[aria-label="結果レイヤー"] button'),
       (button) => button.textContent?.trim(),
     );
-    expect(layerButtons).toEqual(["最大浸水深", "時刻別の浸水深", "流れベクトル", "計算格子"]);
+    expect(layerButtons).toEqual(["最大浸水深", "時刻別の浸水深", "流れベクトル", "粒子フロー", "計算格子", "標高"]);
 
     fireEvent.click(screen.getByRole("button", { name: "地図を全画面表示" }));
     expect(requestFullscreen).toHaveBeenCalledTimes(1);

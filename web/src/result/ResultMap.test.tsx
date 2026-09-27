@@ -1,11 +1,11 @@
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   FlowVectorFeatureCollection,
   ResultMetadataResponse,
 } from "../api/client";
-import ResultMap from "./ResultMap";
+import ResultMap, { particleSpeedPxPerSecond } from "./ResultMap";
 
 const mocks = vi.hoisted(() => ({
   constructorOptions: [] as Array<Record<string, unknown>>,
@@ -17,6 +17,11 @@ const mocks = vi.hoisted(() => ({
   querySourceFeatures: vi.fn(),
   queryRenderedFeatures: vi.fn(),
   triggerRepaint: vi.fn(),
+  setWorkerUrl: vi.fn(),
+  createLinearGradient: vi.fn(),
+  addColorStop: vi.fn(),
+  arc: vi.fn(),
+  fill: vi.fn(),
 }));
 
 vi.mock("maplibre-gl", () => {
@@ -64,7 +69,7 @@ vi.mock("maplibre-gl", () => {
     }
     getStyle() { return this.style; }
     project(lngLat: [number, number]) {
-      return { x: lngLat[0] * 10, y: lngLat[1] * 10 };
+      return { x: (lngLat[0] - 139.7) * 5000, y: (35.7 - lngLat[1]) * 5000 };
     }
     getBounds() {
       return {
@@ -89,6 +94,7 @@ vi.mock("maplibre-gl", () => {
     Map,
     Marker,
     NavigationControl,
+    setWorkerUrl: mocks.setWorkerUrl,
   };
 });
 
@@ -162,8 +168,9 @@ const flowData: FlowVectorFeatureCollection = {
 
 function options(index: number) {
   return mocks.constructorOptions[index] as {
+    maxZoom?: number;
     style: {
-      sources: Record<string, { type?: string; url?: string; data?: unknown }>;
+      sources: Record<string, { type?: string; url?: string; data?: unknown; maxzoom?: number }>;
       layers: Array<{
         id: string;
         type: string;
@@ -175,6 +182,16 @@ function options(index: number) {
 }
 
 describe("ResultMap", () => {
+  it("maps particle travel speed proportionally to hydraulic velocity", () => {
+    expect(particleSpeedPxPerSecond(0.1)).toBeCloseTo(3.6);
+    expect(particleSpeedPxPerSecond(0.5)).toBeCloseTo(18);
+    expect(particleSpeedPxPerSecond(1)).toBeCloseTo(36);
+    expect(particleSpeedPxPerSecond(2)).toBeCloseTo(72);
+    expect(particleSpeedPxPerSecond(2)).toBe(
+      particleSpeedPxPerSecond(1) * 2,
+    );
+  });
+
   beforeEach(() => {
     mocks.constructorOptions.length = 0;
     mocks.jumpTo.mockClear();
@@ -185,6 +202,27 @@ describe("ResultMap", () => {
     mocks.querySourceFeatures.mockClear();
     mocks.queryRenderedFeatures.mockClear();
     mocks.triggerRepaint.mockClear();
+    mocks.createLinearGradient.mockReset();
+    mocks.addColorStop.mockReset();
+    mocks.arc.mockReset();
+    mocks.fill.mockReset();
+    mocks.createLinearGradient.mockReturnValue({ addColorStop: mocks.addColorStop });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      setTransform: vi.fn(),
+      clearRect: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      arc: mocks.arc,
+      fill: mocks.fill,
+      createLinearGradient: mocks.createLinearGradient,
+      drawImage: vi.fn(),
+      lineCap: "butt",
+      lineWidth: 1,
+      strokeStyle: "#000",
+      fillStyle: "#000",
+    } as unknown as CanvasRenderingContext2D);
   });
 
   it("keeps the red analysis boundary visibly cased above the result raster", () => {
@@ -200,6 +238,10 @@ describe("ResultMap", () => {
     );
 
     const overlay = options(1);
+    expect(mocks.setWorkerUrl).toHaveBeenCalled();
+    expect(options(0).maxZoom).toBe(18);
+    expect(overlay.maxZoom).toBe(18);
+    expect(options(0).style.sources.gsi.maxzoom).toBe(18);
     expect(overlay.style.sources["analysis-boundary"].data).toEqual(
       expect.objectContaining({
         geometry: expect.objectContaining({ type: "LineString" }),
@@ -292,5 +334,75 @@ describe("ResultMap", () => {
     expect(
       overlay.style.layers.find((layer) => layer.id === "flow-vector-halo"),
     ).toBeDefined();
+  });
+
+  it("advects flow particles through an interpolated field for at least five vector spacings", () => {
+    let animationFrame: FrameRequestCallback | null = null;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      animationFrame = callback;
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+
+    const staggeredFlowData: FlowVectorFeatureCollection = {
+      ...flowData,
+      features: Array.from({ length: 4 }, (_, index) => ({
+        ...flowData.features[0],
+        geometry: {
+          type: "MultiLineString",
+          coordinates: [[
+            [139.74 + index * 0.002, 35.64],
+            [139.741 + index * 0.002, 35.64],
+          ]],
+        },
+        properties: {
+          ...flowData.features[0].properties,
+          row: 10 + index,
+          column: 20 + index,
+        },
+      })),
+      metadata: { ...flowData.metadata, arrow_count: 4 },
+    };
+    const view = render(
+      <ResultMap
+        metadata={metadata}
+        imageUrl="/api/result/depth.png?time_index=3"
+        flowVectorData={staggeredFlowData}
+        flowDisplayMode="particles"
+        backgroundOpacity={0.55}
+        mapLabel="結果"
+        onInspect={vi.fn()}
+      />,
+    );
+    const canvas = view.container.querySelector(".result-flow-canvas") as HTMLCanvasElement;
+    Object.defineProperty(canvas, "clientWidth", { configurable: true, value: 800 });
+    Object.defineProperty(canvas, "clientHeight", { configurable: true, value: 600 });
+
+    act(() => animationFrame?.(500));
+
+    expect(canvas).toHaveAttribute("data-flow-particles", "1");
+    expect(view.container.querySelector(".result-flow-svg")).toHaveAttribute(
+      "data-flow-svg-arrows",
+      "0",
+    );
+    expect(mocks.setLayoutProperty).toHaveBeenCalledWith(
+      "flow-vector-lines",
+      "visibility",
+      "none",
+    );
+    expect(canvas).toHaveAttribute("data-flow-particle-min-crossings", "5");
+    expect(canvas).toHaveAttribute("data-flow-particle-phase-groups", "4");
+    const spacing = Number(canvas.dataset.flowParticleSpacingPx);
+    const targetDistance = Number(canvas.dataset.flowParticleTargetDistancePx);
+    expect(targetDistance / spacing).toBeCloseTo(5, 5);
+    expect(mocks.arc).toHaveBeenCalledTimes(2);
+    expect(mocks.fill).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      for (let step = 1; step <= 30; step += 1) {
+        animationFrame?.(500 + step * 50);
+      }
+    });
+    expect(canvas).toHaveAttribute("data-flow-particles", "2");
   });
 });

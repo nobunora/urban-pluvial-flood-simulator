@@ -185,6 +185,13 @@ class ResourceEstimateResponse(BaseModel):
     warnings: list[str]
 
 
+class ElevationPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    analysis_area: AnalysisArea
+    grid_cell_size_m: Literal[1, 2, 4] = 1
+
+
 class ResultDepthLegendItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -192,6 +199,29 @@ class ResultDepthLegendItem(BaseModel):
     min_m: float = Field(ge=0)
     max_m: float | None = Field(default=None, gt=0)
     color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class ResultElevationLegendItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    min_m: float
+    max_m: float
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class ElevationPreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preview_id: UUID
+    bounds: GeoBounds
+    grid_cell_size_m: Literal[1, 2, 4]
+    width_samples: int = Field(gt=0)
+    height_samples: int = Field(gt=0)
+    elevation_legend: list[ResultElevationLegendItem]
+    provider_counts: dict[str, int] = Field(default_factory=dict)
+    nearest_filled_cells: int = Field(ge=0)
+    image_url: str
 
 
 class ResultProviderSummary(BaseModel):
@@ -233,9 +263,13 @@ class ResultMetadataResponse(BaseModel):
     available_time_indices: list[int]
     time_values: list[str]
     flow_vectors_available: bool = False
+    storage_kind: str | None = None
+    chunk_shape: list[int] | None = None
+    cache_schema_revision: int | None = None
     max_depth_summary: dict[str, float]
     grid_level_summary: dict[str, int]
     depth_legend: list[ResultDepthLegendItem] = Field(default_factory=list)
+    elevation_legend: list[ResultElevationLegendItem] = Field(default_factory=list)
     provider_summary: ResultProviderSummary = Field(default_factory=ResultProviderSummary)
     engine_summary: ResultEngineSummary = Field(default_factory=ResultEngineSummary)
     run_summary: ResultRunSummary

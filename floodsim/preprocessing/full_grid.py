@@ -223,6 +223,10 @@ def build_full_1m_grid(
     road_mask = completed["道路マスク"]
     water_mask = _cell_center_uncovered_mask(elevation, height, width)
     land_mask = ~water_mask
+    # Provider polygons can extend over sea or DEM-uncovered cells. Those
+    # cells receive no meteorological rainfall in this model and therefore
+    # must not enter the roof-runoff recipient search or mass balance.
+    building_mask &= land_mask
 
     if progress_callback is not None:
         progress_callback(

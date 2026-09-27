@@ -195,7 +195,8 @@
   background: transparent !important;
 }
 
-.result-flow-svg {
+.result-flow-svg,
+.result-flow-canvas {
   position: absolute;
   inset: 0;
   z-index: 2;
@@ -203,6 +204,10 @@
   height: 100%;
   pointer-events: none;
   overflow: hidden;
+}
+
+.result-flow-canvas {
+  z-index: 2;
 }
 
 .result-legend {

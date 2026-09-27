@@ -33,11 +33,18 @@ from floodsim.preprocessing.full_grid import build_full_1m_grid
 from floodsim.providers.gsi_elevation import GsiElevationProvider
 from floodsim.providers.jma import JmaCatalogProvider
 from floodsim.providers.vectors import acquire_vectors
-from floodsim.results.archive import NORMALIZED_ARRAYS, import_result_archive
+from floodsim.results.archive import (
+    NORMALIZED_ARRAYS,
+    REGULAR_DESCRIPTOR,
+    REGULAR_NETCDF,
+    import_result_archive,
+)
 from floodsim.results.normalize import (
+    finalize_regular_netcdf_result,
     normalize_quadtree_result,
     normalize_regular_result,
 )
+from floodsim.results.regular_netcdf_source import inspect_regular_netcdf_source
 from floodsim.sfincs.model_builder import AdaptiveSfincsModelBuilder, SfincsModelBuilder
 from floodsim.sfincs.output_reader import read_quadtree_result, read_regular_result
 from floodsim.sfincs.runner import (
@@ -509,15 +516,24 @@ class RunCoordinator:
         run_dir = self.store.run_dir(run_id)
         try:
             config, imported_manifest, metadata = import_result_archive(archive_path, run_dir)
+            regular_result = (run_dir / "results" / REGULAR_DESCRIPTOR).is_file()
+            imported_outputs = (
+                {
+                    "result_source": REGULAR_DESCRIPTOR,
+                    "sfincs_map_nc": REGULAR_NETCDF,
+                    "result_metadata": "result_metadata.json",
+                }
+                if regular_result
+                else {
+                    "normalized_arrays": NORMALIZED_ARRAYS,
+                    "result_metadata": "result_metadata.json",
+                }
+            )
             manifest = imported_manifest.model_copy(
                 update={
                     "run_id": run_id,
                     "run_status": RunState.COMPLETE,
-                    "output_files": {
-                        **imported_manifest.output_files,
-                        "normalized_arrays": NORMALIZED_ARRAYS,
-                        "result_metadata": "result_metadata.json",
-                    },
+                    "output_files": imported_outputs,
                 }
             )
             record = RunRecord(
@@ -572,6 +588,20 @@ class RunCoordinator:
             if record.machine.state is not RunState.COMPLETE or record.result_metadata is None:
                 raise ResultNotReady(str(run_id))
             filename = record.manifest.output_files.get("normalized_arrays")
+        if not filename:
+            raise ResultNotReady(str(run_id))
+        path = self.store.run_dir(run_id) / "results" / filename
+        if not path.is_file():
+            raise ResultNotReady(str(run_id))
+        return path
+
+    def result_source_path(self, run_id: UUID) -> Path:
+        """Return a persisted regular NetCDF descriptor for source-backed viewing."""
+        record = self.get(run_id)
+        with record.lock:
+            if record.machine.state is not RunState.COMPLETE or record.result_metadata is None:
+                raise ResultNotReady(str(run_id))
+            filename = record.manifest.output_files.get("result_source")
         if not filename:
             raise ResultNotReady(str(run_id))
         path = self.store.run_dir(run_id) / "results" / filename
@@ -1008,50 +1038,68 @@ class RunCoordinator:
                 )
                 normalizer = self.adaptive_result_normalizer
             else:
-                raw_result = self.result_reader(execution.result_path)
+                source = inspect_regular_netcdf_source(
+                    execution.result_path,
+                    model_dir=execution.result_path.parent,
+                    bounds=record.config.analysis_area.bounds.model_dump(),
+                    block_size_m=grid.dx_m,
+                )
 
-            normalized = normalizer(
-                raw_result,
-                area=record.config.analysis_area,
-                results_dir=run_root / "results",
-                limitations=record.manifest.limitations,
-                provider_summary={
-                    "building_provider": record.manifest.building_provider,
-                    "road_provider": record.manifest.road_provider,
-                    "warnings": list(record.manifest.provider_warnings),
-                },
-                engine_summary={
-                    "sfincs_version": record.manifest.sfincs_version,
-                    "sfincs_build_sha256": record.manifest.sfincs_build_sha256,
-                    "sfincs_engine_source": record.manifest.sfincs_engine_source,
-                    "hydromt_sfincs_version": record.manifest.hydromt_sfincs_version,
-                },
-                run_summary={
-                    "application_version": record.manifest.application_version,
-                    "requested_accuracy_mode": record.manifest.requested_accuracy_mode.value,
-                    "rainfall_source": dict(record.manifest.rainfall_source),
-                    "elevation_provider_counts": dict(record.manifest.elevation_provider_counts),
-                    "elevation_source_summary": dict(record.manifest.elevation_source_summary),
-                    "manning_defaults": dict(record.manifest.manning_defaults),
-                    "boundary_policy": record.manifest.boundary_policy,
-                    "roof_rain_mass_diagnostic": dict(record.manifest.roof_rain_mass_diagnostic),
-                },
-                **(
-                    {"grid_resolution_m": grid.dx_m}
-                    if record.config.requested_accuracy_mode is not AccuracyMode.ADAPTIVE
-                    else {}
-                ),
-            )
+            provider_summary: dict[str, Any] = {
+                "building_provider": record.manifest.building_provider,
+                "road_provider": record.manifest.road_provider,
+                "warnings": list(record.manifest.provider_warnings),
+            }
+            engine_summary: dict[str, Any] = {
+                "sfincs_version": record.manifest.sfincs_version,
+                "sfincs_build_sha256": record.manifest.sfincs_build_sha256,
+                "sfincs_engine_source": record.manifest.sfincs_engine_source,
+                "hydromt_sfincs_version": record.manifest.hydromt_sfincs_version,
+            }
+            run_summary: dict[str, Any] = {
+                "application_version": record.manifest.application_version,
+                "requested_accuracy_mode": record.manifest.requested_accuracy_mode.value,
+                "rainfall_source": dict(record.manifest.rainfall_source),
+                "elevation_provider_counts": dict(record.manifest.elevation_provider_counts),
+                "elevation_source_summary": dict(record.manifest.elevation_source_summary),
+                "manning_defaults": dict(record.manifest.manning_defaults),
+                "boundary_policy": record.manifest.boundary_policy,
+                "roof_rain_mass_diagnostic": dict(record.manifest.roof_rain_mass_diagnostic),
+            }
+            normalizer_args = {
+                "area": record.config.analysis_area,
+                "results_dir": run_root / "results",
+                "limitations": record.manifest.limitations,
+                "provider_summary": provider_summary,
+                "engine_summary": engine_summary,
+                "run_summary": run_summary,
+            }
+            if record.config.requested_accuracy_mode is AccuracyMode.ADAPTIVE:
+                normalized = normalizer(raw_result, **normalizer_args)
+            else:
+                normalized = finalize_regular_netcdf_result(
+                    source,
+                    model_dir=execution.result_path.parent,
+                    results_dir=run_root / "results",
+                    limitations=record.manifest.limitations,
+                    provider_summary=provider_summary,
+                    engine_summary=engine_summary,
+                    run_summary=run_summary,
+                )
             record.result_metadata = normalized.metadata
             self._append_activity(record, "結果読込・正規化完了。")
+            output_files = {
+                "sfincs_map_nc": execution.result_path.name,
+                "model_build_report": build.report_path.name,
+                "result_metadata": normalized.metadata_path.name,
+            }
+            if record.config.requested_accuracy_mode is AccuracyMode.ADAPTIVE:
+                output_files["normalized_arrays"] = normalized.arrays_path.name
+            else:
+                output_files["result_source"] = normalized.descriptor_path.name
             record.manifest = record.manifest.model_copy(
                 update={
-                    "output_files": {
-                        "sfincs_map_nc": execution.result_path.name,
-                        "model_build_report": build.report_path.name,
-                        "normalized_arrays": normalized.arrays_path.name,
-                        "result_metadata": normalized.metadata_path.name,
-                    }
+                    "output_files": output_files
                 }
             )
             self._persist_manifest(record)

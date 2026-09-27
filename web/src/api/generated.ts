@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/elevation-previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Elevation Preview */
+        post: operations["create_elevation_preview_api_v1_elevation_previews_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/estimate": {
         parameters: {
             query?: never;
@@ -299,6 +316,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/layers/elevation.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Elevation Layer */
+        get: operations["elevation_layer_api_v1_runs__run_id__layers_elevation_png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/layers/grid-resolution.png": {
         parameters: {
             query?: never;
@@ -414,6 +448,44 @@ export interface components {
              * @enum {string}
              */
             kind: "constant";
+        };
+        /** ElevationPreviewRequest */
+        ElevationPreviewRequest: {
+            analysis_area: components["schemas"]["AnalysisArea"];
+            /**
+             * Grid Cell Size M
+             * @default 1
+             * @enum {integer}
+             */
+            grid_cell_size_m: 1 | 2 | 4;
+        };
+        /** ElevationPreviewResponse */
+        ElevationPreviewResponse: {
+            bounds: components["schemas"]["GeoBounds"];
+            /** Elevation Legend */
+            elevation_legend: components["schemas"]["ResultElevationLegendItem"][];
+            /**
+             * Grid Cell Size M
+             * @enum {integer}
+             */
+            grid_cell_size_m: 1 | 2 | 4;
+            /** Height Samples */
+            height_samples: number;
+            /** Image Url */
+            image_url: string;
+            /** Nearest Filled Cells */
+            nearest_filled_cells: number;
+            /**
+             * Preview Id
+             * Format: uuid
+             */
+            preview_id: string;
+            /** Provider Counts */
+            provider_counts?: {
+                [key: string]: number;
+            };
+            /** Width Samples */
+            width_samples: number;
         };
         /** EngineSummary */
         EngineSummary: {
@@ -675,6 +747,17 @@ export interface components {
             /** Min M */
             min_m: number;
         };
+        /** ResultElevationLegendItem */
+        ResultElevationLegendItem: {
+            /** Color */
+            color: string;
+            /** Label */
+            label: string;
+            /** Max M */
+            max_m: number;
+            /** Min M */
+            min_m: number;
+        };
         /** ResultEngineSummary */
         ResultEngineSummary: {
             /** Hydromt Sfincs Version */
@@ -705,8 +788,14 @@ export interface components {
             /** Available Time Indices */
             available_time_indices: number[];
             bounds: components["schemas"]["GeoBounds"];
+            /** Cache Schema Revision */
+            cache_schema_revision?: number | null;
+            /** Chunk Shape */
+            chunk_shape?: number[] | null;
             /** Depth Legend */
             depth_legend?: components["schemas"]["ResultDepthLegendItem"][];
+            /** Elevation Legend */
+            elevation_legend?: components["schemas"]["ResultElevationLegendItem"][];
             engine_summary?: components["schemas"]["ResultEngineSummary"];
             /**
              * Flow Vectors Available
@@ -731,6 +820,8 @@ export interface components {
             run_summary: components["schemas"]["ResultRunSummary"];
             /** Schema Version */
             schema_version: string;
+            /** Storage Kind */
+            storage_kind?: string | null;
             /** Time Values */
             time_values: string[];
             /** Units */
@@ -902,6 +993,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResultImportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_elevation_preview_api_v1_elevation_previews_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ElevationPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ElevationPreviewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1332,6 +1456,39 @@ export interface operations {
         parameters: {
             query: {
                 time_index: number;
+                max_px?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    elevation_layer_api_v1_runs__run_id__layers_elevation_png_get: {
+        parameters: {
+            query?: {
                 max_px?: number;
             };
             header?: never;
