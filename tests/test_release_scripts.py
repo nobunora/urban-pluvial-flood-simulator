@@ -20,8 +20,8 @@ def test_demo_events_use_the_published_mixed_extents() -> None:
     }
 
 
-def test_frozen_application_root_is_executable_parent(monkeypatch) -> None:
-    executable = Path("C:/portable/UrbanPluvialFloodSimulator.exe")
+def test_frozen_application_root_is_executable_parent(tmp_path: Path, monkeypatch) -> None:
+    executable = tmp_path / "portable" / "UrbanPluvialFloodSimulator.exe"
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(executable))
 
