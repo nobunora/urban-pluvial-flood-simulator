@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "a5d6dc0e64e53f2b034e2b348e5dade3fc3e81b8",
-    "indexed_at": "2026-09-23T09:30:49Z",
-    "project": "urban-rainfall-hotspots",
-    "nodes": 1570,
-    "edges": 6844,
-    "original_size": 9764864,
-    "compressed_size": 1400991,
+    "commit": "2fcf7c080c75ddf1c739c8ce993b534ab4042f4e",
+    "indexed_at": "2026-09-27T14:55:46Z",
+    "project": "C-VSC-urban-pluvial-flood-simulator-ui-review",
+    "nodes": 6857,
+    "edges": 25991,
+    "original_size": 23855104,
+    "compressed_size": 4019882,
     "compression_level": 9
 }

@@ -102,7 +102,7 @@ def _node_version() -> tuple[int, int, int]:
         parts = value.split(".")
         if len(parts) < 3:
             raise ValueError(value)
-        return tuple(int(part) for part in parts[:3])
+        return (int(parts[0]), int(parts[1]), int(parts[2]))
     except ValueError as exc:
         raise SystemExit(f"Could not parse Node.js version: {result.stdout.strip()}") from exc
 

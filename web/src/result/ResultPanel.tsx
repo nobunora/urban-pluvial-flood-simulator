@@ -21,7 +21,7 @@ type Props = {
   onNewAnalysis: () => void;
 };
 
-type ResultLayer = "max_depth" | "time_depth" | "grid_resolution";
+type ResultLayer = "max_depth" | "time_depth" | "grid_resolution" | "elevation";
 
 const LIMITATION_LABELS: Record<string, string> = {
   infiltration_modelled: "浸透は考慮していません。",
@@ -31,6 +31,7 @@ const LIMITATION_LABELS: Record<string, string> = {
   spatial_meteorological_rainfall_modelled: "気象降雨は解析範囲内で一様として扱います。",
   river_stage_boundary_modelled: "河川水位との連成は行いません。",
   coastal_tide_surge_modelled: "潮位・高潮との連成は行いません。",
+  grade_separated_transport_modelled: "陸橋・トンネル・高速道路下などの立体交差を通る水の流れは考慮していません。",
   official_forecast: "この結果は数値シナリオであり、公的な洪水予報・避難情報ではありません。",
 };
 
@@ -44,9 +45,8 @@ const GRID_LEGEND = [
 ] as const;
 
 export function strideForZoom(zoom: number): number {
-  // Keep the accepted screen-density behavior from d749d5.
-  const stride = Math.round(8 * 2 ** (18 - zoom));
-  return Math.max(1, Math.min(512, stride));
+  const stride = Math.round(6 * 2 ** (18 - zoom));
+  return Math.max(1, Math.min(4096, stride));
 }
 
 function interpolateFlow(a: FlowVectorFeatureCollection, b: FlowVectorFeatureCollection, t: number): FlowVectorFeatureCollection {
@@ -90,6 +90,17 @@ function elapsedLabel(values: string[], index: number): string {
   return values[index] ?? `index ${index}`;
 }
 
+function savedRainfallSummary(
+  metadata: ResultMetadataResponse,
+  fallback: string,
+): string {
+  const rainfall = metadata.run_summary.rainfall_source ?? {};
+  const intensity = Number(rainfall.intensity_mm_per_h);
+  const duration = Number(rainfall.duration_minutes);
+  if (!Number.isFinite(intensity) || !Number.isFinite(duration)) return fallback;
+  return `${intensity} mm/h × ${duration}分`;
+}
+
 export default function ResultPanel({
   runId,
   metadata,
@@ -99,13 +110,15 @@ export default function ResultPanel({
   const [layer, setLayer] = useState<ResultLayer>("max_depth");
   const [timePosition, setTimePosition] = useState(0);
   const [backgroundTransparency, setBackgroundTransparency] = useState(45);
-  const [flowVisible, setFlowVisible] = useState(false);
+  const [flowMode, setFlowMode] = useState<"off" | "vectors" | "particles">("off");
+  const flowVisible = flowMode !== "off";
   const [flowVectorData, setFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
   const [flowLoading, setFlowLoading] = useState(false);
   const [flowError, setFlowError] = useState<string | null>(null);
   const [flowRenderStats, setFlowRenderStats] = useState<FlowRenderStats | null>(null);
   const [flowViewport, setFlowViewport] = useState<FlowViewport>({ west: metadata.bounds.west_deg, south: metadata.bounds.south_deg, east: metadata.bounds.east_deg, north: metadata.bounds.north_deg });
   const [flowStride, setFlowStride] = useState(() => strideForZoom(18));
+  const [flowViewportReady, setFlowViewportReady] = useState(false);
   const [nextFlowVectorData, setNextFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
   const [visualFlowVectorData, setVisualFlowVectorData] = useState<FlowVectorFeatureCollection | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -156,13 +169,14 @@ export default function ResultPanel({
       );
     }
     if (layer === "grid_resolution") return resultLayerUrl(runId, "grid-resolution");
+    if (layer === "elevation") return resultLayerUrl(runId, "elevation");
     return resultLayerUrl(runId, "max-depth");
   }, [layer, runId, selectedTimeIndex]);
 
-  const handleFlowToggle = useCallback(() => {
-    if (flowVisible) {
+  const handleFlowToggle = useCallback((requestedMode: "vectors" | "particles") => {
+    if (flowMode === requestedMode) {
       flowAutoLocateRef.current = false;
-      setFlowVisible(false);
+      setFlowMode("off");
       setFlowVectorData(null);
       setFlowError(null);
       setFlowRenderStats(null);
@@ -171,13 +185,13 @@ export default function ResultPanel({
     flowAutoLocateRef.current = true;
     setLayer("time_depth");
     setTimePosition(Math.max(0, metadata.available_time_indices.length - 1));
-    setFlowVisible(true);
-  }, [flowVisible, metadata.available_time_indices.length]);
+    setFlowMode(requestedMode);
+  }, [flowMode, metadata.available_time_indices.length]);
 
   const showMaximumDepth = useCallback(() => {
     setLayer("max_depth");
     flowAutoLocateRef.current = false;
-    setFlowVisible(false);
+    setFlowMode("off");
     setFlowVectorData(null);
     setFlowError(null);
     setFlowRenderStats(null);
@@ -186,6 +200,7 @@ export default function ResultPanel({
   useEffect(() => {
     if (
       !flowVisible ||
+      !flowViewportReady ||
       !metadata.flow_vectors_available ||
       selectedTimeIndex === null
     ) {
@@ -268,6 +283,7 @@ export default function ResultPanel({
     timePosition,
     flowViewport,
     flowStride,
+    flowViewportReady,
   ]);
 
   useEffect(() => {
@@ -336,6 +352,8 @@ export default function ResultPanel({
       ? "時刻別浸水深の地図"
       : layer === "grid_resolution"
         ? "計算格子解像度の地図"
+        : layer === "elevation"
+          ? "標高の地図"
         : "最大浸水深の地図";
 
   const handleInspect = useCallback(
@@ -360,7 +378,10 @@ export default function ResultPanel({
     [activeTimeIndex, runId],
   );
 
-  const omittedLimitations = Object.entries(metadata.limitations)
+  const omittedLimitations = Object.entries({
+    grade_separated_transport_modelled: false,
+    ...metadata.limitations,
+  })
     .filter(([, implemented]) => !implemented)
     .map(([key]) => LIMITATION_LABELS[key] ?? `${key}: 未実装`);
 
@@ -412,6 +433,7 @@ export default function ResultPanel({
   const handleViewportChange = useCallback((viewport: FlowViewport, zoom: number) => {
     setFlowViewport(viewport);
     setFlowStride(strideForZoom(zoom));
+    setFlowViewportReady(true);
   }, []);
 
   const exportGif = useCallback(async () => {
@@ -466,7 +488,7 @@ export default function ResultPanel({
         <div>
           <p className="result-kicker">RESULT</p>
           <h2 id="result-title">解析結果</h2>
-          <p>{rainfallSummary} / 高精度 — 全域1 m</p>
+          <p>{savedRainfallSummary(metadata, rainfallSummary)} / 高精度 — 全域1 m</p>
         </div>
         <div className="result-heading-actions">
           <a className="result-export-link" href={resultExportUrl(runId)} download>結果をエクスポート</a>
@@ -501,12 +523,21 @@ export default function ResultPanel({
               </button>
               <button
                 type="button"
-                className={flowVisible ? "is-active" : ""}
-                aria-pressed={flowVisible}
-                disabled={!metadata.flow_vectors_available}
-                onClick={handleFlowToggle}
+                className={flowMode === "vectors" ? "is-active" : ""}
+                aria-pressed={flowMode === "vectors"}
+                disabled={!metadata.flow_vectors_available || !flowViewportReady}
+                onClick={() => handleFlowToggle("vectors")}
               >
                 流れベクトル
+              </button>
+              <button
+                type="button"
+                className={flowMode === "particles" ? "is-active" : ""}
+                aria-pressed={flowMode === "particles"}
+                disabled={!metadata.flow_vectors_available || !flowViewportReady}
+                onClick={() => handleFlowToggle("particles")}
+              >
+                粒子フロー
               </button>
               <button
                 type="button"
@@ -515,6 +546,14 @@ export default function ResultPanel({
                 onClick={() => setLayer("grid_resolution")}
               >
                 計算格子
+              </button>
+              <button
+                type="button"
+                className={layer === "elevation" ? "is-active" : ""}
+                aria-pressed={layer === "elevation"}
+                onClick={() => setLayer("elevation")}
+              >
+                標高
               </button>
             </div>
 
@@ -600,6 +639,7 @@ export default function ResultPanel({
               metadata={metadata}
               imageUrl={imageUrl}
               flowVectorData={visualFlowVectorData}
+              flowDisplayMode={flowMode === "off" ? null : flowMode}
               backgroundOpacity={(100 - backgroundTransparency) / 100}
               mapLabel={mapLabel}
               onInspect={handleInspect}
@@ -643,8 +683,8 @@ export default function ResultPanel({
               )}
             </section>
 
-            <section className="result-legend result-legend-sidebar" aria-label={layer === "grid_resolution" ? "計算格子の凡例" : "浸水深の凡例"}>
-              {layer !== "grid_resolution" ? (
+            <section className="result-legend result-legend-sidebar" aria-label={layer === "grid_resolution" ? "計算格子の凡例" : layer === "elevation" ? "標高の凡例" : "浸水深の凡例"}>
+              {layer !== "grid_resolution" && layer !== "elevation" ? (
                 <>
                   <strong>{layer === "max_depth" ? "最大浸水深 (m)" : "浸水深 (m)"}</strong>
                   {metadata.depth_legend?.map((item) => (
@@ -655,7 +695,7 @@ export default function ResultPanel({
                   ))}
 
                 </>
-              ) : (
+              ) : layer === "grid_resolution" ? (
                 <>
                   <strong>格子解像度</strong>
                   {GRID_LEGEND.map(([label, color]) => (
@@ -665,6 +705,16 @@ export default function ResultPanel({
                     </span>
                   ))}
                   <span className="result-vector-note">実計算格子: 1 m</span>
+                </>
+              ) : (
+                <>
+                  <strong>標高 (m)</strong>
+                  {metadata.elevation_legend?.map((item) => (
+                    <span key={item.label}>
+                      <i style={{ backgroundColor: item.color }} aria-hidden="true" />
+                      {item.label}
+                    </span>
+                  ))}
                 </>
               )}
             </section>
@@ -678,22 +728,27 @@ export default function ResultPanel({
                     {label}
                   </span>
                 ))}
-                <span className="result-vector-note">矢印の向き: 流向 / 色: 流速</span>
+                <span className="result-vector-note">
+                  {flowMode === "particles"
+                    ? "粒子の進行方向: 補間したベクトル場 / 移動速度と色: 流速 / 寿命: 最低5ベクトル間隔 / 開始位相: 4群"
+                    : "矢印の向き: 流向 / 色: 流速"}
+                </span>
                 {flowLoading && <span className="result-vector-note">流れベクトルを読み込み中…</span>}
                 {flowError && <span className="result-warning">流れベクトルを読み込めません: {flowError}</span>}
                 {!flowLoading && !flowError && flowVectorData && (
                   <>
                     <span className="result-vector-note">
-                      GeoJSON矢印: {flowVectorData.metadata.arrow_count.toLocaleString()}本
+                      {flowMode === "particles" ? "粒子候補" : "GeoJSON矢印"}: {flowVectorData.metadata.arrow_count.toLocaleString()}
+                      {flowMode === "particles" ? "個" : "本"}
                     </span>
-                    {flowRenderStats && (
+                    {flowMode === "vectors" && flowRenderStats && (
                       <span className="result-vector-note">
                         MapLibre source: {flowRenderStats.sourceFeatureCount.toLocaleString()} /
                         line描画: {flowRenderStats.renderedFeatureCount.toLocaleString()} /
                         SVG描画: {flowRenderStats.svgArrowCount.toLocaleString()}
                       </span>
                     )}
-                    {flowRenderStats &&
+                    {flowMode === "vectors" && flowRenderStats &&
                       flowVectorData.metadata.arrow_count > 0 &&
                       flowRenderStats.renderedFeatureCount === 0 &&
                       flowRenderStats.svgArrowCount === 0 && (

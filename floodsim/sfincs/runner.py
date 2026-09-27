@@ -17,6 +17,17 @@ from platformdirs import user_data_path
 
 SFINCS_VERSION = "2.4.0"
 SFINCS_DISPLAY_VERSION = "2.4.0 Galibier"
+WINDOWS_ENGINE_DLLS = (
+    "hdf.dll",
+    "hdf5_hl.dll",
+    "hdf5.dll",
+    "libcurl.dll",
+    "libifcoremd.dll",
+    "libiomp5md.dll",
+    "libmmd.dll",
+    "netcdf.dll",
+    "zlib1.dll",
+)
 _PROGRESS_RE = re.compile(
     r"(?P<percent>\d+(?:\.\d+)?)%\s+complete,\s+"
     r"(?P<remaining>[-+]?\d+(?:\.\d+)?|Inf|inf|-)\s+s\s+remaining"
@@ -102,6 +113,17 @@ def _managed_engine_candidate() -> Path:
     return Path(root) / "engines" / "sfincs" / SFINCS_VERSION / f"{system}-{machine}" / name
 
 
+def _validate_engine_bundle(executable: Path) -> None:
+    """Fail before execution when a Windows SFINCS bundle lacks sidecar DLLs."""
+    if platform.system().lower() != "windows":
+        return
+    missing = [name for name in WINDOWS_ENGINE_DLLS if not (executable.parent / name).is_file()]
+    if missing:
+        raise SfincsEngineUnavailable(
+            "SFINCS executable is missing required sibling DLLs: " + ", ".join(missing)
+        )
+
+
 def resolve_sfincs_executable() -> ResolvedEngine:
     """Resolve a permitted local engine without downloading or redistributing it."""
     override = os.environ.get("SFINCS_BIN")
@@ -109,10 +131,12 @@ def resolve_sfincs_executable() -> ResolvedEngine:
         executable = Path(override).expanduser().resolve()
         if not executable.is_file():
             raise SfincsEngineUnavailable("SFINCS_BIN does not identify a readable file")
+        _validate_engine_bundle(executable)
         return ResolvedEngine(executable, "SFINCS_BIN", sha256_file(executable))
 
     managed = _managed_engine_candidate()
     if managed.is_file():
+        _validate_engine_bundle(managed)
         return ResolvedEngine(managed.resolve(), "managed-local", sha256_file(managed))
 
     raise SfincsEngineUnavailable(

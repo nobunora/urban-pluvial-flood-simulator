@@ -21,6 +21,7 @@ class Limitations(BaseModel):
     spatial_meteorological_rainfall_modelled: bool = False
     river_stage_boundary_modelled: bool = False
     coastal_tide_surge_modelled: bool = False
+    grade_separated_transport_modelled: bool = False
     official_forecast: bool = False
 
 

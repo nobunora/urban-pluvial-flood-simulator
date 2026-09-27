@@ -99,6 +99,34 @@ def test_gsi_coverage_failure_is_typed_and_not_zero(monkeypatch):
         )
 
 
+def test_gsi_marks_boundary_connected_nodata_as_coastal_water(monkeypatch):
+    import floodsim.providers.gsi_elevation as gsi
+
+    monkeypatch.setattr(
+        gsi,
+        "provider_mosaic",
+        lambda *args, **kwargs: (np.zeros((1, 1), dtype=np.float32), object()),
+    )
+
+    def coastal_reproject(_mosaic, _transform, _area, _grid_m):
+        values = np.full((3, 5), 2.0, dtype=np.float32)
+        values[:, 0] = np.nan
+        return values
+
+    monkeypatch.setattr(gsi, "reproject_provider", coastal_reproject)
+    product = GsiElevationProvider(session=object()).acquire(
+        rectangle(),
+        grid_m=10.0,
+        providers=(("DEM1A", "dem1a_png", 17),),
+    )
+
+    assert product.uncovered_boundary_mask is not None
+    assert np.all(product.uncovered_boundary_mask[:, 0])
+    assert np.isfinite(product.z).all()
+    assert product.provenance.source_details["boundary_uncovered_cells"] == 3
+    assert product.provenance.source_details["inland_missing_fraction_before_nearest_fill"] == 0.0
+
+
 def test_retry_policy_retries_without_sleep_and_converts_error():
     session = Session([Response(503), Response(503), Response(503)])
     with pytest.raises(ProviderRequestError):
@@ -207,6 +235,33 @@ def test_osm_rectangular_parsing_and_provenance(tmp_path):
     assert result.provenance.source_details["map_zoom_dependent"] is False
     assert result.provenance.source_details["geometry_simplification"] == "none"
     json.dumps(result.provenance.to_dict(), ensure_ascii=False)
+
+
+def test_osm_retries_an_alternate_overpass_endpoint_after_504(tmp_path):
+    payload = {"elements": [{
+        "type": "way",
+        "id": 1,
+        "tags": {"building": "yes"},
+        "geometry": [
+            {"lon": 139.76690, "lat": 35.68090},
+            {"lon": 139.76690, "lat": 35.68110},
+            {"lon": 139.76710, "lat": 35.68110},
+            {"lon": 139.76710, "lat": 35.68090},
+            {"lon": 139.76690, "lat": 35.68090},
+        ],
+    }]}
+    primary = "https://primary.example/api/interpreter"
+    alternate = "https://alternate.example/api/interpreter"
+    session = Session([Response(504), Response(504), Response(504), Response(payload=payload)])
+
+    result = OsmProvider(
+        session=session,
+        sleeper=lambda _: None,
+        endpoints=(primary, alternate),
+    ).acquire(rectangle(), cache_dir=tmp_path)
+
+    assert result.provenance.source_details["endpoint"] == alternate
+    assert [call[1] for call in session.calls] == [primary, primary, primary, alternate]
 
 
 def test_osm_relation_assembles_split_outer_members(tmp_path):

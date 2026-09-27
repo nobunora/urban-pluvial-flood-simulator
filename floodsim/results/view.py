@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -72,6 +73,17 @@ GRID_RESOLUTION_COLORS: dict[int, tuple[int, int, int, int]] = {
     32: (208, 200, 173, 210),
 }
 
+ELEVATION_COLORS: tuple[tuple[int, int, int, int], ...] = (
+    (49, 54, 149, 220),
+    (69, 117, 180, 220),
+    (0, 183, 212, 220),
+    (26, 152, 80, 220),
+    (253, 231, 37, 220),
+    (253, 174, 97, 220),
+    (244, 109, 67, 220),
+    (165, 0, 38, 220),
+)
+
 
 @dataclass(frozen=True)
 class NormalizedArrays:
@@ -83,6 +95,7 @@ class NormalizedArrays:
     grid_resolution_m: np.ndarray | float
     velocity_u_mps: np.ndarray | None = None
     velocity_v_mps: np.ndarray | None = None
+    velocity_grid_stride: int = 1
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -120,6 +133,36 @@ def depth_legend_metadata() -> list[dict[str, Any]]:
     return [band.to_metadata() for band in DEPTH_BANDS]
 
 
+def elevation_legend_metadata(
+    minimum_m: float,
+    maximum_m: float,
+) -> list[dict[str, Any]]:
+    if not np.isfinite(minimum_m) or not np.isfinite(maximum_m):
+        raise ResultViewError("terrain elevation range is not finite")
+    if maximum_m < minimum_m:
+        raise ResultViewError("terrain elevation range is invalid")
+    edges = np.linspace(minimum_m, maximum_m, len(ELEVATION_COLORS) + 1)
+    if maximum_m == minimum_m:
+        edges = np.full(len(ELEVATION_COLORS) + 1, minimum_m, dtype=np.float64)
+    return [
+        {
+            "label": f"{edges[index]:.2f}–{edges[index + 1]:.2f} m",
+            "min_m": float(edges[index]),
+            "max_m": float(edges[index + 1]),
+            "color": "#{:02X}{:02X}{:02X}".format(*color[:3]),
+        }
+        for index, color in enumerate(ELEVATION_COLORS)
+    ]
+
+
+def terrain_elevation_range(arrays: ResultArrays) -> tuple[float, float]:
+    values = np.asarray(arrays.terrain_elevation_m, dtype=np.float64)
+    visible = np.asarray(arrays.active_mask, dtype=bool) & np.isfinite(values)
+    if not np.any(visible):
+        raise ResultViewError("terrain elevation has no finite active values")
+    return float(np.min(values[visible])), float(np.max(values[visible]))
+
+
 def load_normalized_arrays(path: str | Path) -> ResultArrays:
     source = Path(path)
     if not source.is_file():
@@ -154,6 +197,9 @@ def load_normalized_arrays(path: str | Path) -> ResultArrays:
                 if has_v
                 else None
             )
+            velocity_grid_stride = int(
+                np.asarray(archive["velocity_grid_stride"]).item()
+            ) if "velocity_grid_stride" in archive.files else 1
 
             if storage_kind == "quadtree_faces":
                 resolution = np.asarray(archive["face_resolution_m"], dtype=np.int16)
@@ -235,10 +281,18 @@ def load_normalized_arrays(path: str | Path) -> ResultArrays:
         or active.shape != max_depth.shape
     ):
         raise ResultViewError("normalized result grid shapes are inconsistent")
-    if velocity_u is not None and (
-        velocity_u.shape != depth.shape
-        or velocity_v is None
-        or velocity_v.shape != depth.shape
+    sampled_shape = (
+        depth.shape[0],
+        math.ceil(depth.shape[1] / velocity_grid_stride),
+        math.ceil(depth.shape[2] / velocity_grid_stride),
+    )
+    if velocity_grid_stride < 1 or (
+        velocity_u is not None
+        and (
+            velocity_u.shape != sampled_shape
+            or velocity_v is None
+            or velocity_v.shape != sampled_shape
+        )
     ):
         raise ResultViewError("normalized velocity grid/time shape is inconsistent")
 
@@ -258,6 +312,7 @@ def load_normalized_arrays(path: str | Path) -> ResultArrays:
         grid_resolution_m=regular_resolution,
         velocity_u_mps=velocity_u,
         velocity_v_mps=velocity_v,
+        velocity_grid_stride=velocity_grid_stride,
     )
 
 
@@ -411,6 +466,68 @@ def render_grid_resolution_png(
         rgba = np.zeros((*arrays.shape, 4), dtype=np.uint8)
         for level, color in GRID_RESOLUTION_COLORS.items():
             rgba[arrays.active_mask & np.isclose(values, float(level))] = color
+    return _png_bytes(rgba, max_px=max_px, categorical=True)
+
+
+def render_terrain_elevation_png(
+    arrays: ResultArrays,
+    *,
+    max_px: int = MAX_RENDER_PX,
+) -> bytes:
+    minimum_m, maximum_m = terrain_elevation_range(arrays)
+
+    def color_index(elevation: float) -> int:
+        if maximum_m == minimum_m:
+            return 0
+        normalized = (elevation - minimum_m) / (maximum_m - minimum_m)
+        return min(len(ELEVATION_COLORS) - 1, max(0, int(normalized * len(ELEVATION_COLORS))))
+
+    if isinstance(arrays, AdaptiveNormalizedArrays):
+        rgba = np.zeros((*arrays.shape, 4), dtype=np.uint8)
+        for index, elevation in enumerate(arrays.terrain_elevation_m):
+            if not arrays.active_mask[index] or not np.isfinite(elevation):
+                continue
+            row0, row1, col0, col1 = _adaptive_face_bounds(arrays, index)
+            rgba[row0:row1, col0:col1] = ELEVATION_COLORS[color_index(float(elevation))]
+        return _png_bytes(rgba, max_px=max_px, categorical=True)
+    return render_elevation_values_png(
+        arrays.terrain_elevation_m,
+        arrays.active_mask,
+        max_px=max_px,
+    )
+
+
+def render_elevation_values_png(
+    terrain_elevation_m: np.ndarray,
+    active_mask: np.ndarray,
+    *,
+    max_px: int = MAX_RENDER_PX,
+) -> bytes:
+    values = np.asarray(terrain_elevation_m, dtype=np.float32)
+    active = np.asarray(active_mask, dtype=bool)
+    if values.ndim != 2 or active.shape != values.shape:
+        raise ResultViewError("elevation preview arrays must be matching 2D grids")
+    visible = active & np.isfinite(values)
+    if not np.any(visible):
+        raise ResultViewError("terrain elevation has no finite active values")
+    minimum_m = float(np.min(values[visible]))
+    maximum_m = float(np.max(values[visible]))
+    rgba = np.zeros((*values.shape, 4), dtype=np.uint8)
+    if maximum_m == minimum_m:
+        rgba[visible] = ELEVATION_COLORS[0]
+    else:
+        normalized = np.where(
+            visible,
+            (values - minimum_m) / (maximum_m - minimum_m),
+            0.0,
+        )
+        indices = np.clip(
+            (normalized * len(ELEVATION_COLORS)).astype(np.int16),
+            0,
+            len(ELEVATION_COLORS) - 1,
+        )
+        for index, color in enumerate(ELEVATION_COLORS):
+            rgba[visible & (indices == index)] = color
     return _png_bytes(rgba, max_px=max_px, categorical=True)
 
 

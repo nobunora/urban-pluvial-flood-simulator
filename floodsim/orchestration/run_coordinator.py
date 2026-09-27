@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import inspect
+import json
 import shutil
 import threading
 import time
 import traceback
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,11 +33,18 @@ from floodsim.preprocessing.full_grid import build_full_1m_grid
 from floodsim.providers.gsi_elevation import GsiElevationProvider
 from floodsim.providers.jma import JmaCatalogProvider
 from floodsim.providers.vectors import acquire_vectors
-from floodsim.results.archive import NORMALIZED_ARRAYS, import_result_archive
+from floodsim.results.archive import (
+    NORMALIZED_ARRAYS,
+    REGULAR_DESCRIPTOR,
+    REGULAR_NETCDF,
+    import_result_archive,
+)
 from floodsim.results.normalize import (
+    finalize_regular_netcdf_result,
     normalize_quadtree_result,
     normalize_regular_result,
 )
+from floodsim.results.regular_netcdf_source import inspect_regular_netcdf_source
 from floodsim.sfincs.model_builder import AdaptiveSfincsModelBuilder, SfincsModelBuilder
 from floodsim.sfincs.output_reader import read_quadtree_result, read_regular_result
 from floodsim.sfincs.runner import (
@@ -74,14 +82,6 @@ class ResultNotReady(RunCoordinatorError):
 
 DEFAULT_PLATEAU_REVIEW_BUDGET_S = 20.0
 DEFAULT_OSM_REVIEW_BUDGET_S = 30.0
-CLIENT_LEASE_TIMEOUT_S = 60.0
-# Expensive HydroMT/GEOS/NetCDF preprocessing can hold the CPython GIL long
-# enough to delay otherwise healthy status requests. A single 60 s miss must
-# therefore not be treated as proof that the browser disappeared.
-CLIENT_LEASE_MISSED_HEARTBEATS = 3
-CLIENT_LEASE_CHECK_INTERVAL_S = 5.0
-
-
 STAGE_LABELS = {
     RunState.CREATED: "実行待機",
     RunState.VALIDATING: "入力を確認中",
@@ -145,9 +145,6 @@ class RunRecord:
     stage_started_monotonic: float = field(default_factory=time.monotonic)
     major_phase_started_monotonic: float = field(default_factory=time.monotonic)
     lock: threading.RLock = field(default_factory=threading.RLock)
-    client_lease_enabled: bool = False
-    last_client_heartbeat_monotonic: float | None = None
-    client_lease_expiry_observations: int = 0
     last_activity_monotonic: float = field(default_factory=time.monotonic)
 
 
@@ -207,58 +204,25 @@ class RunCoordinator:
         self._records: dict[UUID, RunRecord] = {}
         self._active_run_id: UUID | None = None
         self._lock = threading.RLock()
-        self._lease_watchdog = threading.Thread(
-            target=self._watch_client_leases,
-            name="floodsim-client-lease",
-            daemon=True,
+    @staticmethod
+    def _adaptive_policy_for_max_block_size(
+        policy: AdaptiveGridPolicy,
+        maximum_block_size_m: int,
+    ) -> AdaptiveGridPolicy:
+        """Limit the largest Adaptive block while retaining protected 1 m cells."""
+        active_levels = tuple(
+            level for level in policy.active_levels_m if level <= maximum_block_size_m
         )
-        self._lease_watchdog.start()
-
-    def enable_client_lease(self, run_id: UUID) -> None:
-        """Require a live browser client for a non-terminal run."""
-        record = self.get(run_id)
-        with record.lock:
-            record.client_lease_enabled = True
-            record.last_client_heartbeat_monotonic = time.monotonic()
-            record.client_lease_expiry_observations = 0
-
-    def client_heartbeat(self, run_id: UUID) -> None:
-        """Renew the browser lease used to stop abandoned calculations."""
-        record = self.get(run_id)
-        with record.lock:
-            if record.machine.state in {RunState.COMPLETE, RunState.FAILED, RunState.CANCELLED}:
-                return
-            record.last_client_heartbeat_monotonic = time.monotonic()
-            record.client_lease_expiry_observations = 0
-
-    def _watch_client_leases(self) -> None:
-        while True:
-            time.sleep(CLIENT_LEASE_CHECK_INTERVAL_S)
-            now = time.monotonic()
-            with self._lock:
-                records = list(self._records.values())
-            for record in records:
-                with record.lock:
-                    expired = (
-                        record.client_lease_enabled
-                        and record.last_client_heartbeat_monotonic is not None
-                        and now - record.last_client_heartbeat_monotonic > CLIENT_LEASE_TIMEOUT_S
-                        and record.machine.state
-                        not in {RunState.COMPLETE, RunState.FAILED, RunState.CANCELLED}
-                    )
-                    if expired:
-                        record.client_lease_expiry_observations += 1
-                        expiry_observations = record.client_lease_expiry_observations
-                    else:
-                        record.client_lease_expiry_observations = 0
-                        expiry_observations = 0
-                if expiry_observations >= CLIENT_LEASE_MISSED_HEARTBEATS:
-                    self._append_activity(
-                        record,
-                        "ブラウザ接続が60秒以上確認できない状態が継続したため、"
-                        "解析を自動停止します。",
-                    )
-                    self.cancel(record.run_id)
+        if not active_levels or active_levels[-1] != maximum_block_size_m:
+            raise ValueError("adaptive_max_block_size_m is not enabled by the grid policy")
+        return replace(
+            policy,
+            active_levels_m=active_levels,
+            target_mid_max_resolution_m=min(
+                policy.target_mid_max_resolution_m,
+                maximum_block_size_m,
+            ),
+        )
 
     def _manifest_payload(self, record: RunRecord) -> dict[str, Any]:
         return record.manifest.model_dump(mode="json")
@@ -397,21 +361,16 @@ class RunCoordinator:
             record, fraction, detail
         )
         signature = inspect.signature(self.grid_builder)
-        accepts_progress = (
-            "progress_callback" in signature.parameters
-            or any(
-                parameter.kind is inspect.Parameter.VAR_KEYWORD
-                for parameter in signature.parameters.values()
-            )
+        accepts_kwargs = any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
         )
-        if accepts_progress:
-            return self.grid_builder(
-                area,
-                elevation,
-                vectors,
-                progress_callback=callback,
-            )
-        return self.grid_builder(area, elevation, vectors)
+        kwargs: dict[str, Any] = {}
+        if "progress_callback" in signature.parameters or accepts_kwargs:
+            kwargs["progress_callback"] = callback
+        if "grid_m" in signature.parameters or accepts_kwargs:
+            kwargs["grid_m"] = float(record.config.grid_cell_size_m)
+        return self.grid_builder(area, elevation, vectors, **kwargs)
 
     def _mark_cancelled(self, record: RunRecord, message: str) -> None:
         now = time.monotonic()
@@ -475,7 +434,80 @@ class RunCoordinator:
         with self._lock:
             record = self._records.get(run_id)
         if record is None:
+            record = self._restore_persisted_record(run_id)
+        if record is None:
             raise RunNotFound(str(run_id))
+        return record
+
+    def _restore_persisted_record(self, run_id: UUID) -> RunRecord | None:
+        """Restore a terminal run, or make an interrupted worker explicit.
+
+        The executor and provider calls live in this process, so a process
+        restart cannot safely resume an in-flight acquisition.  Its manifest
+        is still useful: retain it and surface a terminal, actionable state
+        instead of reporting that the run ID does not exist.
+        """
+        manifest_payload = self.store.read_manifest(run_id)
+        config_path = self.store.run_dir(run_id) / "run_config.json"
+        if manifest_payload is None or not config_path.is_file():
+            return None
+        try:
+            manifest = RunManifest.model_validate(manifest_payload)
+            config = RunConfig.model_validate(json.loads(config_path.read_text(encoding="utf-8")))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+
+        state = manifest.run_status
+        failure_code = manifest.failure_code
+        failure_message = manifest.failure_message
+        activity_lines = ["[APP] 保存済みの実行情報を復元しました。"]
+        if state not in {RunState.COMPLETE, RunState.FAILED, RunState.CANCELLED}:
+            failure_code = "RUN_INTERRUPTED"
+            failure_message = (
+                "ローカル解析サーバーの再起動により、実行中の処理は停止しました。"
+                "条件を確認して新しい解析を開始してください。"
+            )
+            state = RunState.FAILED
+            manifest = manifest.model_copy(
+                update={
+                    "run_status": state,
+                    "failing_stage": manifest.run_status.value,
+                    "failure_code": failure_code,
+                    "failure_message": failure_message,
+                }
+            )
+            self.store.write_manifest(run_id, manifest.model_dump(mode="json"))
+            activity_lines.append(f"[APP] {failure_message}")
+
+        result_metadata: dict[str, Any] | None = None
+        if state is RunState.COMPLETE:
+            metadata_name = manifest.output_files.get("result_metadata")
+            if metadata_name:
+                metadata_path = self.store.run_dir(run_id) / "results" / metadata_name
+                try:
+                    loaded_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded_metadata, dict):
+                        result_metadata = loaded_metadata
+                except (OSError, json.JSONDecodeError):
+                    pass
+
+        record = RunRecord(
+            run_id=run_id,
+            config=config,
+            manifest=manifest,
+            machine=RunStateMachine(state),
+            failure_code=failure_code,
+            failure_message=failure_message,
+            result_metadata=result_metadata,
+            progress_fraction=1.0 if state is RunState.COMPLETE else None,
+            progress_detail=("保存済みの解析結果を復元しました。" if state is RunState.COMPLETE else None),
+            activity_lines=activity_lines,
+        )
+        with self._lock:
+            existing = self._records.get(run_id)
+            if existing is not None:
+                return existing
+            self._records[run_id] = record
         return record
 
     def import_result(self, archive_path: Path) -> RunRecord:
@@ -484,15 +516,24 @@ class RunCoordinator:
         run_dir = self.store.run_dir(run_id)
         try:
             config, imported_manifest, metadata = import_result_archive(archive_path, run_dir)
+            regular_result = (run_dir / "results" / REGULAR_DESCRIPTOR).is_file()
+            imported_outputs = (
+                {
+                    "result_source": REGULAR_DESCRIPTOR,
+                    "sfincs_map_nc": REGULAR_NETCDF,
+                    "result_metadata": "result_metadata.json",
+                }
+                if regular_result
+                else {
+                    "normalized_arrays": NORMALIZED_ARRAYS,
+                    "result_metadata": "result_metadata.json",
+                }
+            )
             manifest = imported_manifest.model_copy(
                 update={
                     "run_id": run_id,
                     "run_status": RunState.COMPLETE,
-                    "output_files": {
-                        **imported_manifest.output_files,
-                        "normalized_arrays": NORMALIZED_ARRAYS,
-                        "result_metadata": "result_metadata.json",
-                    },
+                    "output_files": imported_outputs,
                 }
             )
             record = RunRecord(
@@ -547,6 +588,20 @@ class RunCoordinator:
             if record.machine.state is not RunState.COMPLETE or record.result_metadata is None:
                 raise ResultNotReady(str(run_id))
             filename = record.manifest.output_files.get("normalized_arrays")
+        if not filename:
+            raise ResultNotReady(str(run_id))
+        path = self.store.run_dir(run_id) / "results" / filename
+        if not path.is_file():
+            raise ResultNotReady(str(run_id))
+        return path
+
+    def result_source_path(self, run_id: UUID) -> Path:
+        """Return a persisted regular NetCDF descriptor for source-backed viewing."""
+        record = self.get(run_id)
+        with record.lock:
+            if record.machine.state is not RunState.COMPLETE or record.result_metadata is None:
+                raise ResultNotReady(str(run_id))
+            filename = record.manifest.output_files.get("result_source")
         if not filename:
             raise ResultNotReady(str(run_id))
         path = self.store.run_dir(run_id) / "results" / filename
@@ -640,7 +695,7 @@ class RunCoordinator:
             mode_label = (
                 "Adaptive"
                 if record.config.requested_accuracy_mode is AccuracyMode.ADAPTIVE
-                else "Full 1 m"
+                else f"均一 {record.config.grid_cell_size_m} m"
             )
             self._set_state(
                 record,
@@ -649,7 +704,8 @@ class RunCoordinator:
             )
             self._check_cancel(record)
 
-            cache_entry = self.prepared_cache.load(record.config.analysis_area)
+            grid_m = float(record.config.grid_cell_size_m)
+            cache_entry = self.prepared_cache.load(record.config.analysis_area, grid_m)
             cache_hit = cache_entry is not None
             self._finish_major_phase(record, "準備")
 
@@ -669,7 +725,7 @@ class RunCoordinator:
             else:
                 elevation = self.elevation_provider.acquire(
                     record.config.analysis_area,
-                    grid_m=1.0,
+                    grid_m=grid_m,
                     cache_dir=run_root.parent.parent / "cache",
                 )
                 runtime_diagnostic["elevation"] = self._array_summary(elevation.z)
@@ -730,7 +786,7 @@ class RunCoordinator:
             self._set_state(
                 record,
                 RunState.PREPROCESSING_TERRAIN,
-                "準備済み1 m地形を再利用しています。" if cache_hit else "1 m地形配列を検証しています。",
+                f"準備済み{grid_m:g} m地形を再利用しています。" if cache_hit else f"{grid_m:g} m地形配列を検証しています。",
             )
             self._check_cancel(record)
             self._set_state(
@@ -742,7 +798,7 @@ class RunCoordinator:
             self._set_state(
                 record,
                 RunState.BUILDING_GRID,
-                "準備済みFull 1 m格子を再利用しています。" if cache_hit else "Full 1 m格子・建物マスク・粗度を構築しています。",
+                f"準備済み均一{grid_m:g} m格子を再利用しています。" if cache_hit else f"均一{grid_m:g} m格子・建物マスク・粗度を構築しています。",
             )
 
             if cache_hit:
@@ -760,7 +816,7 @@ class RunCoordinator:
                 cache_metadata = {
                     "elevation_provider_counts": dict(elevation_details.get("provider_counts", {})),
                     "elevation_source_summary": {
-                        "grid_m": 1.0,
+                        "grid_m": grid_m,
                         "source_names": list(elevation.source_names),
                         "nearest_filled_cells": elevation.nearest_filled,
                     },
@@ -779,7 +835,7 @@ class RunCoordinator:
                 }
                 self._append_activity(
                     record,
-                    f"Full 1 m格子構築完了: {grid.width_cells} × {grid.height_cells} cells / "
+                    f"均一{grid.dx_m:g} m格子構築完了: {grid.width_cells} × {grid.height_cells} cells / "
                     f"building_cells={int(np.count_nonzero(grid.building_mask))}",
                 )
                 self._append_activity(record, f"prepared grid cache saved: {saved_entry.key}")
@@ -788,15 +844,19 @@ class RunCoordinator:
             elevation_summary.update(
                 {
                     "prepared_cache_hit": cache_hit,
-                    "prepared_cache_key": self.prepared_cache.key_for(record.config.analysis_area),
+                    "prepared_cache_key": self.prepared_cache.key_for(record.config.analysis_area, grid_m),
                 }
             )
             adaptive_grid = None
-            final_grid_level_counts = {"1m": grid.cell_count}
+            final_grid_level_counts = {f"{grid.dx_m:g}m": grid.cell_count}
             if record.config.requested_accuracy_mode is AccuracyMode.ADAPTIVE:
-                prepared_grid_key = self.prepared_cache.key_for(record.config.analysis_area)
+                adaptive_policy = self._adaptive_policy_for_max_block_size(
+                    self.adaptive_grid_policy,
+                    record.config.adaptive_max_block_size_m,
+                )
+                prepared_grid_key = self.prepared_cache.key_for(record.config.analysis_area, grid_m)
                 cached_adaptive = (
-                    self.adaptive_grid_cache.load(prepared_grid_key, self.adaptive_grid_policy)
+                    self.adaptive_grid_cache.load(prepared_grid_key, adaptive_policy)
                     if self.adaptive_grid_builder is build_adaptive_grid
                     else None
                 )
@@ -817,7 +877,7 @@ class RunCoordinator:
                     )
                     adaptive_kwargs: dict[str, Any] = {}
                     adaptive_inputs = {
-                        "policy": self.adaptive_grid_policy,
+                        "policy": adaptive_policy,
                         "hard_boundary_zone": grid.adaptive_hard_boundary_zone,
                         "existing_resolution_ceiling_m": grid.adaptive_resolution_ceiling_m,
                         "native_structure_mask": grid.native_structure_mask,
@@ -831,7 +891,7 @@ class RunCoordinator:
                     adaptive_grid = self.adaptive_grid_builder(grid, **adaptive_kwargs)
                     if self.adaptive_grid_builder is build_adaptive_grid:
                         adaptive_cache_key = self.adaptive_grid_cache.save(
-                            prepared_grid_key, self.adaptive_grid_policy, adaptive_grid
+                            prepared_grid_key, adaptive_policy, adaptive_grid
                         )
                         runtime_diagnostic["adaptive_grid_cache"] = {"hit": False, "key": adaptive_cache_key}
                         self._append_activity(record, f"Adaptive格子分類 cache saved: {adaptive_cache_key}")
@@ -897,7 +957,7 @@ class RunCoordinator:
                 self._set_state(
                     record,
                     RunState.BUILDING_MODEL,
-                    "HydroMT-SFINCSでregular 1 mモデルを構築しています。",
+                    f"HydroMT-SFINCSで均一{grid.dx_m:g} mモデルを構築しています。",
                 )
                 build = self.model_builder.build(run_root / "model", grid, rainfall)
             self._append_activity(record, "SFINCSモデル構築完了。")
@@ -978,45 +1038,68 @@ class RunCoordinator:
                 )
                 normalizer = self.adaptive_result_normalizer
             else:
-                raw_result = self.result_reader(execution.result_path)
+                source = inspect_regular_netcdf_source(
+                    execution.result_path,
+                    model_dir=execution.result_path.parent,
+                    bounds=record.config.analysis_area.bounds.model_dump(),
+                    block_size_m=grid.dx_m,
+                )
 
-            normalized = normalizer(
-                raw_result,
-                area=record.config.analysis_area,
-                results_dir=run_root / "results",
-                limitations=record.manifest.limitations,
-                provider_summary={
-                    "building_provider": record.manifest.building_provider,
-                    "road_provider": record.manifest.road_provider,
-                    "warnings": list(record.manifest.provider_warnings),
-                },
-                engine_summary={
-                    "sfincs_version": record.manifest.sfincs_version,
-                    "sfincs_build_sha256": record.manifest.sfincs_build_sha256,
-                    "sfincs_engine_source": record.manifest.sfincs_engine_source,
-                    "hydromt_sfincs_version": record.manifest.hydromt_sfincs_version,
-                },
-                run_summary={
-                    "application_version": record.manifest.application_version,
-                    "requested_accuracy_mode": record.manifest.requested_accuracy_mode.value,
-                    "rainfall_source": dict(record.manifest.rainfall_source),
-                    "elevation_provider_counts": dict(record.manifest.elevation_provider_counts),
-                    "elevation_source_summary": dict(record.manifest.elevation_source_summary),
-                    "manning_defaults": dict(record.manifest.manning_defaults),
-                    "boundary_policy": record.manifest.boundary_policy,
-                    "roof_rain_mass_diagnostic": dict(record.manifest.roof_rain_mass_diagnostic),
-                },
-            )
+            provider_summary: dict[str, Any] = {
+                "building_provider": record.manifest.building_provider,
+                "road_provider": record.manifest.road_provider,
+                "warnings": list(record.manifest.provider_warnings),
+            }
+            engine_summary: dict[str, Any] = {
+                "sfincs_version": record.manifest.sfincs_version,
+                "sfincs_build_sha256": record.manifest.sfincs_build_sha256,
+                "sfincs_engine_source": record.manifest.sfincs_engine_source,
+                "hydromt_sfincs_version": record.manifest.hydromt_sfincs_version,
+            }
+            run_summary: dict[str, Any] = {
+                "application_version": record.manifest.application_version,
+                "requested_accuracy_mode": record.manifest.requested_accuracy_mode.value,
+                "rainfall_source": dict(record.manifest.rainfall_source),
+                "elevation_provider_counts": dict(record.manifest.elevation_provider_counts),
+                "elevation_source_summary": dict(record.manifest.elevation_source_summary),
+                "manning_defaults": dict(record.manifest.manning_defaults),
+                "boundary_policy": record.manifest.boundary_policy,
+                "roof_rain_mass_diagnostic": dict(record.manifest.roof_rain_mass_diagnostic),
+            }
+            normalizer_args = {
+                "area": record.config.analysis_area,
+                "results_dir": run_root / "results",
+                "limitations": record.manifest.limitations,
+                "provider_summary": provider_summary,
+                "engine_summary": engine_summary,
+                "run_summary": run_summary,
+            }
+            if record.config.requested_accuracy_mode is AccuracyMode.ADAPTIVE:
+                normalized = normalizer(raw_result, **normalizer_args)
+            else:
+                normalized = finalize_regular_netcdf_result(
+                    source,
+                    model_dir=execution.result_path.parent,
+                    results_dir=run_root / "results",
+                    limitations=record.manifest.limitations,
+                    provider_summary=provider_summary,
+                    engine_summary=engine_summary,
+                    run_summary=run_summary,
+                )
             record.result_metadata = normalized.metadata
             self._append_activity(record, "結果読込・正規化完了。")
+            output_files = {
+                "sfincs_map_nc": execution.result_path.name,
+                "model_build_report": build.report_path.name,
+                "result_metadata": normalized.metadata_path.name,
+            }
+            if record.config.requested_accuracy_mode is AccuracyMode.ADAPTIVE:
+                output_files["normalized_arrays"] = normalized.arrays_path.name
+            else:
+                output_files["result_source"] = normalized.descriptor_path.name
             record.manifest = record.manifest.model_copy(
                 update={
-                    "output_files": {
-                        "sfincs_map_nc": execution.result_path.name,
-                        "model_build_report": build.report_path.name,
-                        "normalized_arrays": normalized.arrays_path.name,
-                        "result_metadata": normalized.metadata_path.name,
-                    }
+                    "output_files": output_files
                 }
             )
             self._persist_manifest(record)

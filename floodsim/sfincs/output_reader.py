@@ -9,10 +9,69 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+# The result viewer samples flow arrows before rendering them.  Retaining more
+# than this many source vectors per frame only makes a completed large run
+# consume memory without adding visible detail.
+MAX_FLOW_VECTOR_CELLS_PER_FRAME = 1_000_000
+
 
 class SfincsResultError(RuntimeError):
     code = "RESULT_INVALID"
     retryable = False
+
+
+@dataclass(frozen=True)
+class RegularResultDescriptor:
+    """Small, immutable description of a regular SFINCS output source."""
+
+    path: Path
+    time_values: tuple[str, ...]
+    height: int
+    width: int
+    chunk_shape: tuple[int, int, int] | None
+    flow_vectors_available: bool
+
+
+def inspect_regular_result(path: str | Path) -> RegularResultDescriptor:
+    """Validate regular output metadata without decoding a time-by-grid array."""
+    result_path = Path(path)
+    if not result_path.is_file():
+        raise SfincsResultError("SFINCS result file is missing")
+    try:
+        with xr.open_dataset(result_path) as dataset:
+            _require_dims(dataset, "h", ("time", "n", "m"))
+            _require_dims(dataset, "hmax", ("timemax", "n", "m"))
+            _require_dims(dataset, "zb", ("n", "m"))
+            _require_dims(dataset, "msk", ("n", "m"))
+            has_u = "u" in dataset.data_vars
+            has_v = "v" in dataset.data_vars
+            if has_u != has_v:
+                raise SfincsResultError("SFINCS velocity output must contain both u and v")
+            if has_u:
+                _require_dims(dataset, "u", ("time", "n", "m"))
+                _require_dims(dataset, "v", ("time", "n", "m"))
+            height = int(dataset.sizes["n"])
+            width = int(dataset.sizes["m"])
+            if height <= 0 or width <= 0 or int(dataset.sizes["time"]) <= 0:
+                raise SfincsResultError("SFINCS result has invalid dimensions")
+            chunks = dataset["h"].encoding.get("chunksizes")
+            chunk_shape = (
+                (int(chunks[0]), int(chunks[1]), int(chunks[2]))
+                if chunks and len(chunks) == 3
+                else None
+            )
+            return RegularResultDescriptor(
+                path=result_path,
+                time_values=tuple(str(value) for value in dataset["time"].values),
+                height=height,
+                width=width,
+                chunk_shape=chunk_shape,
+                flow_vectors_available=has_u,
+            )
+    except SfincsResultError:
+        raise
+    except (OSError, ValueError, KeyError) as exc:
+        raise SfincsResultError("SFINCS NetCDF result is unreadable") from exc
 
 
 @dataclass(frozen=True)
@@ -24,6 +83,7 @@ class SfincsRegularResult:
     time_values: tuple[str, ...]
     velocity_u_mps: np.ndarray | None = None
     velocity_v_mps: np.ndarray | None = None
+    velocity_grid_stride: int = 1
     hmax_reconstructed_cells: int = 0
     negative_depth_clipped_values: int = 0
     negative_max_depth_clipped_cells: int = 0
@@ -74,8 +134,6 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
                 raise SfincsResultError("SFINCS result grid shapes are inconsistent")
             if terrain.shape != active.shape:
                 raise SfincsResultError("SFINCS terrain shape is inconsistent")
-            if np.any(~np.isfinite(depth[:, active])):
-                raise SfincsResultError("active SFINCS depth cells contain non-finite values")
             if np.any(~np.isfinite(terrain[active])):
                 raise SfincsResultError("active SFINCS terrain cells contain non-finite values")
 
@@ -88,14 +146,23 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
                     "active SFINCS maximum depth contains negative finite values"
                 )
 
-            active_depth_values = depth[:, active]
-            min_raw_active_depth = (
-                float(np.min(active_depth_values)) if active_depth_values.size else 0.0
-            )
-            negative_depth_clipped_values = int(
-                np.count_nonzero(active_depth_values < 0.0)
-            )
-            depth[:, active] = np.maximum(active_depth_values, 0.0)
+            min_raw_active_depth = 0.0
+            negative_depth_clipped_values = 0
+            for frame in depth:
+                active_depth_values = frame[active]
+                if active_depth_values.size:
+                    if np.any(~np.isfinite(active_depth_values)):
+                        raise SfincsResultError(
+                            "active SFINCS depth cells contain non-finite values"
+                        )
+                    min_raw_active_depth = min(
+                        min_raw_active_depth,
+                        float(np.min(active_depth_values)),
+                    )
+                    negative_depth_clipped_values += int(
+                        np.count_nonzero(active_depth_values < 0.0)
+                    )
+                    frame[active] = np.maximum(active_depth_values, 0.0)
 
             finite_hmax = np.isfinite(hmax_values)
             has_hmax = np.any(finite_hmax, axis=0)
@@ -124,20 +191,47 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
                 raise SfincsResultError("SFINCS velocity output must contain both u and v")
             velocity_u: np.ndarray | None = None
             velocity_v: np.ndarray | None = None
+            velocity_grid_stride = 1
             if has_u and has_v:
                 _require_dims(dataset, "u", ("time", "n", "m"))
                 _require_dims(dataset, "v", ("time", "n", "m"))
-                velocity_u = np.asarray(dataset["u"].values, dtype=np.float32)
-                velocity_v = np.asarray(dataset["v"].values, dtype=np.float32)
-                if velocity_u.shape != depth.shape or velocity_v.shape != depth.shape:
+                height, width = active.shape
+                velocity_grid_stride = max(
+                    1,
+                    math.ceil(
+                        math.sqrt((height * width) / MAX_FLOW_VECTOR_CELLS_PER_FRAME)
+                    ),
+                )
+                velocity_u = np.asarray(
+                    dataset["u"].isel(
+                        n=slice(0, None, velocity_grid_stride),
+                        m=slice(0, None, velocity_grid_stride),
+                    ).values,
+                    dtype=np.float32,
+                )
+                velocity_v = np.asarray(
+                    dataset["v"].isel(
+                        n=slice(0, None, velocity_grid_stride),
+                        m=slice(0, None, velocity_grid_stride),
+                    ).values,
+                    dtype=np.float32,
+                )
+                sampled_depth = depth[
+                    :, ::velocity_grid_stride, ::velocity_grid_stride
+                ]
+                sampled_active = active[::velocity_grid_stride, ::velocity_grid_stride]
+                if (
+                    velocity_u.shape != sampled_depth.shape
+                    or velocity_v.shape != sampled_depth.shape
+                ):
                     raise SfincsResultError("SFINCS velocity grid/time shape is inconsistent")
-                wet = active[None, :, :] & (depth > 0.0)
+                wet = sampled_active[None, :, :] & (sampled_depth > 0.0)
                 if np.any(~np.isfinite(velocity_u[wet])) or np.any(~np.isfinite(velocity_v[wet])):
                     raise SfincsResultError("wet SFINCS velocity cells contain non-finite values")
                 velocity_u = np.where(wet, velocity_u, 0.0).astype(np.float32, copy=False)
                 velocity_v = np.where(wet, velocity_v, 0.0).astype(np.float32, copy=False)
-                velocity_u[:, ~active] = np.nan
-                velocity_v[:, ~active] = np.nan
+                velocity_u[:, ~sampled_active] = np.nan
+                velocity_v[:, ~sampled_active] = np.nan
 
             negative_max_depth_clipped_cells = 0
             depth[:, ~active] = np.nan
@@ -158,6 +252,7 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
         time_values=time_values,
         velocity_u_mps=velocity_u,
         velocity_v_mps=velocity_v,
+        velocity_grid_stride=velocity_grid_stride,
         hmax_reconstructed_cells=reconstructed_cells,
         negative_depth_clipped_values=negative_depth_clipped_values,
         negative_max_depth_clipped_cells=negative_max_depth_clipped_cells,

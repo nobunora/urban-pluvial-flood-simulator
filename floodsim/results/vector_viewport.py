@@ -1,4 +1,4 @@
-"""Viewport/stride flow-vector sampling on the canonical 1 m result grid."""
+"""Viewport flow-vector sampling at a display-space target density."""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ def flow_vectors_viewport_geojson(
     stride: int,
     min_speed_mps: float = _MIN_SPEED_MPS,
 ) -> dict[str, Any]:
-    """Return stable canonical-1m samples for one viewport and integer stride."""
+    """Return viewport samples at ``stride`` metres, independent of grid size."""
     if stride < 1:
         raise ResultViewError("stride must be a positive integer")
     if time_index < 0 or time_index >= arrays.depth_time_m.shape[0]:
@@ -101,27 +101,116 @@ def flow_vectors_viewport_geojson(
         face_lookup = None
     cell_width_m = area.width_m / float(arrays.shape[1])
     cell_height_m = area.height_m / float(arrays.shape[0])
-    arrow_length_m = 0.8 * float(stride) * min(cell_width_m, cell_height_m)
+    cell_spacing_m = min(cell_width_m, cell_height_m)
+    stride_cells = max(1, round(float(stride) / cell_spacing_m))
+    arrow_length_m = 0.8 * float(stride)
     features: list[dict[str, Any]] = []
 
-    for row in range(row0, row1, stride):
-        for col in range(col0, col1, stride):
-            face = int(face_lookup[row, col]) if face_lookup is not None else -1
+    # Align bins to the result grid so panning does not make arrows jump between
+    # unrelated samples. Each bin selects the visible wet cell nearest its
+    # centre instead of testing only the bin anchor. This keeps positions even
+    # while ensuring that a dry anchor cannot hide flow elsewhere in the bin.
+    first_bin_row = (row0 // stride_cells) * stride_cells
+    first_bin_col = (col0 // stride_cells) * stride_cells
+    for bin_row in range(first_bin_row, row1, stride_cells):
+        for bin_col in range(first_bin_col, col1, stride_cells):
+            sample_row0 = max(row0, bin_row)
+            sample_row1 = min(row1, bin_row + stride_cells)
+            sample_col0 = max(col0, bin_col)
+            sample_col1 = min(col1, bin_col + stride_cells)
+            if sample_row0 >= sample_row1 or sample_col0 >= sample_col1:
+                continue
+
             if adaptive:
                 assert isinstance(arrays, AdaptiveNormalizedArrays)
-                if face < 0 or not bool(arrays.active_mask[face]):
+                assert face_lookup is not None
+                candidate_faces = np.unique(
+                    face_lookup[sample_row0:sample_row1, sample_col0:sample_col1]
+                )
+                candidate_faces = candidate_faces[candidate_faces >= 0]
+                if candidate_faces.size == 0:
                     continue
-                depth = float(arrays.depth_time_m[time_index, face])
-                u = float(arrays.velocity_u_mps[time_index, face])
-                v = float(arrays.velocity_v_mps[time_index, face])
+                depths = arrays.depth_time_m[time_index, candidate_faces]
+                us = arrays.velocity_u_mps[time_index, candidate_faces]
+                vs = arrays.velocity_v_mps[time_index, candidate_faces]
+                speeds = np.hypot(us, vs)
+                valid = (
+                    arrays.active_mask[candidate_faces]
+                    & np.isfinite(depths)
+                    & (depths >= DISPLAY_DRY_THRESHOLD_M)
+                    & np.isfinite(speeds)
+                    & (speeds >= min_speed_mps)
+                )
+                if not np.any(valid):
+                    continue
+                center_row = (sample_row0 + sample_row1 - 1) / 2.0
+                center_col = (sample_col0 + sample_col1 - 1) / 2.0
+                face_rows = (
+                    arrays.face_row_index[candidate_faces]
+                    * arrays.face_resolution_m[candidate_faces]
+                    + arrays.face_resolution_m[candidate_faces] / 2.0
+                )
+                face_cols = (
+                    arrays.face_col_index[candidate_faces]
+                    * arrays.face_resolution_m[candidate_faces]
+                    + arrays.face_resolution_m[candidate_faces] / 2.0
+                )
+                distances = np.square(face_rows - center_row) + np.square(
+                    face_cols - center_col
+                )
+                best = int(np.argmin(np.where(valid, distances, np.inf)))
+                face = int(candidate_faces[best])
+                depth = float(depths[best])
+                u = float(us[best])
+                v = float(vs[best])
                 grid_resolution = float(arrays.face_resolution_m[face])
+                row = int(arrays.face_row_index[face]) * int(grid_resolution)
+                col = int(arrays.face_col_index[face]) * int(grid_resolution)
+                row += int(grid_resolution) // 2
+                col += int(grid_resolution) // 2
             else:
                 assert isinstance(arrays, NormalizedArrays)
-                if not bool(arrays.active_mask[row, col]):
+                rows = np.arange(sample_row0, sample_row1)
+                cols = np.arange(sample_col0, sample_col1)
+                velocity_rows = np.minimum(
+                    arrays.velocity_u_mps.shape[1] - 1,
+                    rows // arrays.velocity_grid_stride,
+                )
+                velocity_cols = np.minimum(
+                    arrays.velocity_u_mps.shape[2] - 1,
+                    cols // arrays.velocity_grid_stride,
+                )
+                depths = arrays.depth_time_m[
+                    time_index, sample_row0:sample_row1, sample_col0:sample_col1
+                ]
+                us = arrays.velocity_u_mps[time_index][np.ix_(velocity_rows, velocity_cols)]
+                vs = arrays.velocity_v_mps[time_index][np.ix_(velocity_rows, velocity_cols)]
+                speeds = np.hypot(us, vs)
+                valid = (
+                    arrays.active_mask[
+                        sample_row0:sample_row1, sample_col0:sample_col1
+                    ]
+                    & np.isfinite(depths)
+                    & (depths >= DISPLAY_DRY_THRESHOLD_M)
+                    & np.isfinite(speeds)
+                    & (speeds >= min_speed_mps)
+                )
+                if not np.any(valid):
                     continue
-                depth = float(arrays.depth_time_m[time_index, row, col])
-                u = float(arrays.velocity_u_mps[time_index, row, col])
-                v = float(arrays.velocity_v_mps[time_index, row, col])
+                local_rows, local_cols = np.indices(valid.shape)
+                center_row = (valid.shape[0] - 1) / 2.0
+                center_col = (valid.shape[1] - 1) / 2.0
+                distances = np.square(local_rows - center_row) + np.square(
+                    local_cols - center_col
+                )
+                best_row, best_col = np.unravel_index(
+                    int(np.argmin(np.where(valid, distances, np.inf))), valid.shape
+                )
+                row = sample_row0 + int(best_row)
+                col = sample_col0 + int(best_col)
+                depth = float(depths[best_row, best_col])
+                u = float(us[best_row, best_col])
+                v = float(vs[best_row, best_col])
                 grid_resolution = (
                     float(arrays.grid_resolution_m)
                     if np.ndim(arrays.grid_resolution_m) == 0
@@ -184,11 +273,12 @@ def flow_vectors_viewport_geojson(
         "metadata": {
             "speed_unit": "m/s",
             "min_speed_mps": float(min_speed_mps),
-            "sample_stride_cells": stride,
+            "sample_stride_cells": stride_cells,
+            "target_spacing_m": float(stride),
             "arrow_length_m": arrow_length_m,
             "arrow_count": len(features),
-            "sampling_method": "canonical-full-1m-grid-global-stride",
-            "canonical_grid_spacing_m": min(cell_width_m, cell_height_m),
+            "sampling_method": "nearest-wet-cell-to-spacing-bin-center",
+            "canonical_grid_spacing_m": cell_spacing_m,
             "stride_anchor_row": 0,
             "stride_anchor_column": 0,
             "viewport": {"west": west, "south": south, "east": east, "north": north},

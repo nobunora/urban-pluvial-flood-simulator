@@ -38,12 +38,17 @@ from floodsim.preprocessing.roof_rainfall import (
 from floodsim.providers.common import ProviderProvenance
 from floodsim.providers.gsi_elevation import ElevationProduct
 from floodsim.results.normalize import normalize_regular_result
+from floodsim.sfincs import output_reader
 from floodsim.sfincs.model_builder import (
     ModelBuildResult,
     SfincsModelBuilder,
     derive_output_interval_seconds,
 )
-from floodsim.sfincs.output_reader import SfincsResultError, read_regular_result
+from floodsim.sfincs.output_reader import (
+    SfincsResultError,
+    inspect_regular_result,
+    read_regular_result,
+)
 from floodsim.sfincs.runner import (
     ResolvedEngine,
     SfincsProgress,
@@ -76,8 +81,8 @@ def _provenance(provider_id: str, area: AnalysisArea, **details: object) -> Prov
     )
 
 
-def _elevation(area: AnalysisArea) -> ElevationProduct:
-    size = int(area.width_m)
+def _elevation(area: AnalysisArea, grid_m: float = 1.0) -> ElevationProduct:
+    size = int(area.width_m / grid_m)
     z = np.zeros((size + 1, size + 1), dtype=np.float32)
     return ElevationProduct(
         z=z,
@@ -189,6 +194,69 @@ def test_full_grid_sets_building_boundary_and_manning() -> None:
     assert np.any(np.isclose(grid.manning_n, ROAD_MANNING))
     assert np.any(np.isclose(grid.manning_n, GENERAL_MANNING))
     assert grid.roof_allocation.relative_mass_error <= 1e-9
+
+
+def test_full_grid_turns_coastline_into_outflow_boundary() -> None:
+    area = _area()
+    elevation = _elevation(area)
+    elevation.uncovered_boundary_mask = np.zeros((5, 5), dtype=bool)
+    elevation.uncovered_boundary_mask[:, :2] = True
+
+    grid = build_full_1m_grid(area, elevation, _vectors(area, with_building=False))
+
+    assert np.all(grid.sfincs_mask[:, 0] == 0)
+    assert np.all(grid.sfincs_mask[:, 1] == 3)
+    assert grid.roof_allocation.meteorological_area_m2 == pytest.approx(12.0)
+    assert grid.roof_allocation.hydraulic_weighted_area_m2 == pytest.approx(12.0)
+
+
+def test_full_grid_excludes_buildings_outside_the_active_land_domain() -> None:
+    area = _area()
+    elevation = _elevation(area)
+    elevation.uncovered_boundary_mask = np.zeros((5, 5), dtype=bool)
+    elevation.uncovered_boundary_mask[:, :2] = True
+    vectors = _vectors(area, with_building=False)
+    vectors.buildings = [
+        np.asarray(box(-2.0, -2.0, -1.05, 2.0).exterior.coords, dtype=float),
+    ]
+
+    grid = build_full_1m_grid(area, elevation, vectors)
+
+    assert not np.any(grid.building_mask[:, 0])
+    assert grid.roof_allocation.redistributed_roof_cells == 0
+    assert grid.roof_allocation.meteorological_area_m2 == pytest.approx(12.0)
+    assert grid.roof_allocation.hydraulic_weighted_area_m2 == pytest.approx(12.0)
+
+
+def test_uniform_four_metre_grid_uses_four_metre_cells_end_to_end(tmp_path: Path) -> None:
+    area = _area(8)
+    grid = build_full_1m_grid(
+        area,
+        _elevation(area, grid_m=4.0),
+        _vectors(area, with_building=False),
+        grid_m=4.0,
+    )
+
+    assert grid.elevation_m.shape == (2, 2)
+    assert grid.dx_m == pytest.approx(4.0)
+    assert grid.dy_m == pytest.approx(4.0)
+    assert grid.cell_count == 4
+
+    result = SfincsModelBuilder().build(
+        tmp_path / "uniform-4m",
+        grid,
+        resolve_rainfall(
+            RunConfig(
+                analysis_area=area,
+                requested_accuracy_mode=AccuracyMode.UNIFORM,
+                grid_cell_size_m=4,
+                rainfall=ConstantRainfall(intensity_mm_per_h=60, duration_minutes=1),
+            )
+        ),
+    )
+
+    assert result.report["grid_resolution_m"] == pytest.approx(4.0)
+    assert result.report["cell_counts"] == {"4m": 4}
 
 
 @pytest.mark.parametrize("host_debug", ["release", "1"])
@@ -373,6 +441,19 @@ def test_output_reader_and_normalizer_expose_max_depth(tmp_path: Path) -> None:
     assert normalized.arrays_path.is_file()
 
 
+def test_regular_result_inspection_keeps_native_time_axis_without_decoding_grid(
+    tmp_path: Path,
+) -> None:
+    result_path = tmp_path / "sfincs_map.nc"
+    _write_synthetic_result(result_path)
+
+    descriptor = inspect_regular_result(result_path)
+
+    assert descriptor.path == result_path
+    assert descriptor.time_values == ("0", "60")
+    assert (descriptor.height, descriptor.width) == (2, 2)
+
+
 def test_output_reader_accepts_single_and_multiple_timemax_frames(
     tmp_path: Path,
 ) -> None:
@@ -420,6 +501,41 @@ def test_output_reader_persists_paired_velocity_and_keeps_old_results_compatible
     with np.load(normalized.arrays_path, allow_pickle=False) as archive:
         assert "velocity_u_mps" in archive.files
         assert "velocity_v_mps" in archive.files
+
+
+def test_output_reader_downsamples_large_velocity_grids_for_display(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "downsampled_velocity.nc"
+    values = np.ones((2, 5, 5), dtype=np.float32)
+    xr.Dataset(
+        {
+            "h": (("time", "n", "m"), values),
+            "hmax": (("timemax", "n", "m"), values[:1]),
+            "zs": (("time", "n", "m"), values),
+            "zb": (("n", "m"), np.zeros((5, 5), dtype=np.float32)),
+            "msk": (("n", "m"), np.ones((5, 5), dtype=np.int16)),
+            "u": (("time", "n", "m"), values),
+            "v": (("time", "n", "m"), values),
+        },
+        coords={"time": [0, 60], "timemax": [60]},
+    ).to_netcdf(path)
+    monkeypatch.setattr(output_reader, "MAX_FLOW_VECTOR_CELLS_PER_FRAME", 4)
+
+    result = read_regular_result(path)
+
+    assert result.velocity_grid_stride == 3
+    assert result.velocity_u_mps is not None
+    assert result.velocity_u_mps.shape == (2, 2, 2)
+    normalized = normalize_regular_result(
+        result,
+        area=_area(5),
+        results_dir=tmp_path / "normalized_downsampled_velocity",
+        limitations=Limitations(),
+    )
+    with np.load(normalized.arrays_path, allow_pickle=False) as archive:
+        assert int(archive["velocity_grid_stride"].item()) == 3
 
 
 def test_output_reader_rejects_one_sided_velocity_output(tmp_path: Path) -> None:
@@ -544,8 +660,8 @@ def test_sfincs_process_environment_requests_all_logical_cpus(
 
 
 class _FakeElevationProvider:
-    def acquire(self, area: AnalysisArea, **_: object) -> ElevationProduct:
-        return _elevation(area)
+    def acquire(self, area: AnalysisArea, **kwargs: object) -> ElevationProduct:
+        return _elevation(area, float(kwargs.get("grid_m", 1.0)))
 
 
 class _BlockingElevationProvider:
@@ -754,6 +870,49 @@ def test_phase3_api_accepts_run_and_exposes_result(
     metadata = client.get(f"/api/v1/runs/{run_id}/result-metadata")
     assert metadata.status_code == 200
     assert metadata.json()["max_depth_summary"]["global_max_depth_m"] == pytest.approx(0.05)
+
+
+def test_run_continues_without_browser_heartbeat_lease(tmp_path: Path) -> None:
+    coordinator = _test_coordinator(tmp_path)
+    record = coordinator.create_run(_config())
+    assert record.future is not None
+
+    # No status request is made here. Browser observation is intentionally
+    # decoupled from the worker, so only the explicit cancel endpoint can
+    # request cancellation.
+    record.future.result(timeout=10)
+
+    assert record.machine.state is RunState.COMPLETE
+    assert not hasattr(coordinator, "enable_client_lease")
+    assert not hasattr(coordinator, "client_heartbeat")
+
+
+def test_api_marks_persisted_inflight_run_as_interrupted_after_restart(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    original = _test_coordinator(tmp_path)
+    elevation_provider = _BlockingElevationProvider()
+    original.elevation_provider = elevation_provider
+    record = original.create_run(_config())
+    assert record.future is not None
+    assert elevation_provider.entered.wait(timeout=5)
+
+    restarted = _test_coordinator(tmp_path)
+    monkeypatch.setattr(routes_runs, "coordinator", restarted)
+    response = TestClient(app).get(f"/api/v1/runs/{record.run_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["state"] == "FAILED"
+    assert payload["failure_code"] == "RUN_INTERRUPTED"
+    assert "再起動" in payload["failure_message"]
+    manifest = restarted.store.read_manifest(record.run_id)
+    assert manifest is not None
+    assert manifest["run_status"] == "FAILED"
+    original.cancel(record.run_id)
+    elevation_provider.release.set()
+    record.future.result(timeout=10)
 
 
 def test_run_mutation_requires_json_content_type(

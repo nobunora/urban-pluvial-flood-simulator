@@ -4,6 +4,7 @@
       "AccuracyMode": {
         "enum": [
           "full_1m",
+          "uniform",
           "adaptive"
         ],
         "title": "AccuracyMode",
@@ -140,6 +141,96 @@
           "intensity_mm_per_h"
         ],
         "title": "ConstantRainfall",
+        "type": "object"
+      },
+      "ElevationPreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_area": {
+            "$ref": "#/components/schemas/AnalysisArea"
+          },
+          "grid_cell_size_m": {
+            "default": 1,
+            "enum": [
+              1,
+              2,
+              4
+            ],
+            "title": "Grid Cell Size M",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "analysis_area"
+        ],
+        "title": "ElevationPreviewRequest",
+        "type": "object"
+      },
+      "ElevationPreviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "bounds": {
+            "$ref": "#/components/schemas/GeoBounds"
+          },
+          "elevation_legend": {
+            "items": {
+              "$ref": "#/components/schemas/ResultElevationLegendItem"
+            },
+            "title": "Elevation Legend",
+            "type": "array"
+          },
+          "grid_cell_size_m": {
+            "enum": [
+              1,
+              2,
+              4
+            ],
+            "title": "Grid Cell Size M",
+            "type": "integer"
+          },
+          "height_samples": {
+            "exclusiveMinimum": 0.0,
+            "title": "Height Samples",
+            "type": "integer"
+          },
+          "image_url": {
+            "title": "Image Url",
+            "type": "string"
+          },
+          "nearest_filled_cells": {
+            "minimum": 0.0,
+            "title": "Nearest Filled Cells",
+            "type": "integer"
+          },
+          "preview_id": {
+            "format": "uuid",
+            "title": "Preview Id",
+            "type": "string"
+          },
+          "provider_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Provider Counts",
+            "type": "object"
+          },
+          "width_samples": {
+            "exclusiveMinimum": 0.0,
+            "title": "Width Samples",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "preview_id",
+          "bounds",
+          "grid_cell_size_m",
+          "width_samples",
+          "height_samples",
+          "elevation_legend",
+          "nearest_filled_cells",
+          "image_url"
+        ],
+        "title": "ElevationPreviewResponse",
         "type": "object"
       },
       "EngineSummary": {
@@ -815,6 +906,7 @@
           "accuracy_mode": {
             "enum": [
               "full_1m",
+              "uniform",
               "adaptive"
             ],
             "title": "Accuracy Mode",
@@ -822,6 +914,16 @@
           },
           "analysis_area": {
             "$ref": "#/components/schemas/AnalysisArea"
+          },
+          "grid_cell_size_m": {
+            "default": 1,
+            "enum": [
+              1,
+              2,
+              4
+            ],
+            "title": "Grid Cell Size M",
+            "type": "integer"
           }
         },
         "required": [
@@ -935,6 +1037,36 @@
         "title": "ResultDepthLegendItem",
         "type": "object"
       },
+      "ResultElevationLegendItem": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "pattern": "^#[0-9A-Fa-f]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "max_m": {
+            "title": "Max M",
+            "type": "number"
+          },
+          "min_m": {
+            "title": "Min M",
+            "type": "number"
+          }
+        },
+        "required": [
+          "label",
+          "min_m",
+          "max_m",
+          "color"
+        ],
+        "title": "ResultElevationLegendItem",
+        "type": "object"
+      },
       "ResultEngineSummary": {
         "additionalProperties": false,
         "properties": {
@@ -1020,11 +1152,43 @@
           "bounds": {
             "$ref": "#/components/schemas/GeoBounds"
           },
+          "cache_schema_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Schema Revision"
+          },
+          "chunk_shape": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Shape"
+          },
           "depth_legend": {
             "items": {
               "$ref": "#/components/schemas/ResultDepthLegendItem"
             },
             "title": "Depth Legend",
+            "type": "array"
+          },
+          "elevation_legend": {
+            "items": {
+              "$ref": "#/components/schemas/ResultElevationLegendItem"
+            },
+            "title": "Elevation Legend",
             "type": "array"
           },
           "engine_summary": {
@@ -1069,6 +1233,17 @@
           "schema_version": {
             "title": "Schema Version",
             "type": "string"
+          },
+          "storage_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Kind"
           },
           "time_values": {
             "items": {
@@ -1174,6 +1349,7 @@
           "requested_accuracy_mode": {
             "enum": [
               "full_1m",
+              "uniform",
               "adaptive"
             ],
             "title": "Requested Accuracy Mode",
@@ -1205,8 +1381,28 @@
       "RunConfig": {
         "additionalProperties": false,
         "properties": {
+          "adaptive_max_block_size_m": {
+            "default": 4,
+            "enum": [
+              1,
+              2,
+              4
+            ],
+            "title": "Adaptive Max Block Size M",
+            "type": "integer"
+          },
           "analysis_area": {
             "$ref": "#/components/schemas/AnalysisArea"
+          },
+          "grid_cell_size_m": {
+            "default": 1,
+            "enum": [
+              1,
+              2,
+              4
+            ],
+            "title": "Grid Cell Size M",
+            "type": "integer"
           },
           "rainfall": {
             "discriminator": {
@@ -1423,7 +1619,7 @@
   },
   "info": {
     "title": "Urban Pluvial Flood Simulator",
-    "version": "0.1.15"
+    "version": "0.1.17"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1485,6 +1681,47 @@
           }
         },
         "summary": "Open Demo Result",
+        "tags": [
+          "results"
+        ]
+      }
+    },
+    "/api/v1/elevation-previews": {
+      "post": {
+        "operationId": "create_elevation_preview_api_v1_elevation_previews_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ElevationPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ElevationPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Elevation Preview",
         "tags": [
           "results"
         ]
@@ -2145,6 +2382,57 @@
           }
         },
         "summary": "Time Depth Layer",
+        "tags": [
+          "results"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/layers/elevation.png": {
+      "get": {
+        "operationId": "elevation_layer_api_v1_runs__run_id__layers_elevation_png_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_px",
+            "required": false,
+            "schema": {
+              "default": 4096,
+              "title": "Max Px",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Elevation Layer",
         "tags": [
           "results"
         ]
