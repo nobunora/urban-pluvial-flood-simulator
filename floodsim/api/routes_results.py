@@ -33,6 +33,7 @@ from floodsim.results.elevation_preview import ElevationPreviewStore
 from floodsim.results.regular_netcdf_source import (
     RegularNetcdfSourceError,
     load_regular_netcdf_descriptor,
+    read_regular_point_depth_series,
     regular_window_arrays,
 )
 from floodsim.results.vector_viewport import flow_vectors_viewport_geojson
@@ -461,6 +462,17 @@ def inspect_result(
         )
         if source_arrays is not None:
             assert record.result_metadata is not None
+            source = load_regular_netcdf_descriptor(coordinator.result_source_path(run_id))
+            if payload["has_data"]:
+                depth_series = read_regular_point_depth_series(
+                    source,
+                    model_dir=coordinator.store.run_dir(run_id) / "model",
+                    row=int(payload["row"]),
+                    column=int(payload["column"]),
+                )
+                max_time_index = int(np.nanargmax(depth_series))
+                payload["max_time_index"] = max_time_index
+                payload["max_time_value"] = source.time_values[max_time_index]
             payload["time_index"] = time_index
             payload["time_value"] = (
                 record.result_metadata["time_values"][time_index]

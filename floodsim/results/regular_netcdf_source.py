@@ -198,6 +198,27 @@ def read_regular_window(
         raise RegularNetcdfSourceError("NetCDF viewport read failed") from exc
 
 
+def read_regular_point_depth_series(
+    descriptor: RegularNetcdfSource,
+    *,
+    model_dir: str | Path,
+    row: int,
+    column: int,
+) -> np.ndarray:
+    """Read every retained depth at one native cell without decoding the grid."""
+    if row < 0 or row >= descriptor.height or column < 0 or column >= descriptor.width:
+        raise RegularNetcdfSourceError("result point is outside available output")
+    path = validate_source_identity(descriptor, model_dir=model_dir)
+    try:
+        with xr.open_dataset(path) as dataset:
+            return np.asarray(
+                dataset["h"].isel(n=row, m=column).values,
+                dtype=np.float32,
+            )
+    except (OSError, ValueError, KeyError) as exc:
+        raise RegularNetcdfSourceError("NetCDF point-series read failed") from exc
+
+
 def regular_window_arrays(
     descriptor: RegularNetcdfSource,
     *,

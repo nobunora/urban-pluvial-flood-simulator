@@ -162,6 +162,23 @@ def _rasterize_local(
     return np.flipud(north_to_south).astype(bool)
 
 
+def _inset_polygon_shapes(
+    shapes: list[tuple[Polygon, int]],
+    *,
+    inset_m: float,
+) -> list[tuple[object, int]]:
+    """Inset polygons and omit geometry too narrow to remain an obstacle."""
+    inset_shapes: list[tuple[object, int]] = []
+    for polygon, value in shapes:
+        try:
+            inset = polygon.buffer(-inset_m)
+        except (GEOSException, TypeError, ValueError):
+            continue
+        if not inset.is_empty and inset.area > 0:
+            inset_shapes.append((inset, value))
+    return inset_shapes
+
+
 def build_full_1m_grid(
     area: AnalysisArea,
     elevation: ElevationProduct,
@@ -180,14 +197,15 @@ def build_full_1m_grid(
 
     def build_building_mask() -> np.ndarray:
         shapes = _polygon_shapes(list(vectors.buildings))
+        building_shapes = _inset_polygon_shapes(shapes, inset_m=0.5)
         return _rasterize_local(
-            shapes,
+            building_shapes,
             width=width,
             height=height,
             width_m=area.width_m,
             height_m=area.height_m,
             grid_m=grid_m,
-            all_touched=True,
+            all_touched=False,
         )
 
     def build_road_mask() -> np.ndarray:

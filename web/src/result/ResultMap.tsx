@@ -52,15 +52,17 @@ const FLOW_SOURCE_ID = "flow-vector-source";
 const FLOW_HALO_LAYER_ID = "flow-vector-halo";
 const FLOW_LINE_LAYER_ID = "flow-vector-lines";
 const FLOW_ARROW_LENGTH_PX = 18;
-const PARTICLE_TRAIL_LENGTH_PX = 25;
-const PARTICLE_MIN_VECTOR_CROSSINGS = 5;
+const PARTICLE_TRAIL_LENGTH_PX = 75;
+const PARTICLE_MIN_VECTOR_CROSSINGS = 15;
 const PARTICLE_TRAIL_SAMPLE_PX = 3;
 const PARTICLE_MAX_NEIGHBORS = 8;
+const PARTICLES_PER_VECTOR = 2;
 const PARTICLE_PHASE_GROUPS = 4;
 const PARTICLE_SPEED_SCALE_PX_PER_METER = 36;
 const PARTICLE_MIN_SPEED_PX_PER_SECOND = 1.5;
 const PARTICLE_MAX_SPEED_PX_PER_SECOND = 96;
-const RESULT_MAX_ZOOM = 18;
+const GSI_SOURCE_MAX_ZOOM = 18;
+const RESULT_MAX_ZOOM = 21;
 
 type ScreenPoint = { x: number; y: number };
 
@@ -79,11 +81,12 @@ type ProjectedFlowField = {
 };
 
 type FlowParticle = ScreenPoint & {
+  sourceIndex: number;
+  copyIndex: number;
   travelledPx: number;
   targetDistancePx: number;
   trail: ScreenPoint[];
   generation: number;
-  activationDelaySeconds: number;
 };
 
 function flowColor(speedMps: number): string {
@@ -428,7 +431,7 @@ export default function ResultMap({
             type: "raster",
             tiles: ["https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png"],
             tileSize: 256,
-            maxzoom: RESULT_MAX_ZOOM,
+            maxzoom: GSI_SOURCE_MAX_ZOOM,
             attribution: "国土地理院",
           },
         },
@@ -750,63 +753,58 @@ export default function ResultMap({
     const resetParticle = (
       particle: FlowParticle,
       index: number,
-      staggerInitialStart = false,
+      staggerInitialLifetime = false,
     ) => {
       if (field.nodes.length === 0) return;
       particle.generation += 1;
-      const seedIndex = (index + Math.imul(particle.generation, 97)) % field.nodes.length;
+      const seedIndex = particle.sourceIndex % field.nodes.length;
       const seed = field.nodes[seedIndex];
       const sourceFeature = flowVectorData.features[seedIndex % flowVectorData.features.length];
       const phase = particlePhase(
-        sourceFeature?.properties.row ?? seedIndex,
+        (sourceFeature?.properties.row ?? seedIndex) + particle.copyIndex * 1009,
         (sourceFeature?.properties.column ?? seedIndex) + particle.generation,
       );
       const offset = (phase - 0.5) * field.spacingPx;
       particle.x = seed.x + seed.dx * offset;
       particle.y = seed.y + seed.dy * offset;
-      particle.travelledPx = 0;
       particle.targetDistancePx = field.spacingPx * PARTICLE_MIN_VECTOR_CROSSINGS;
-      particle.trail = [{ x: particle.x, y: particle.y }];
-      const estimatedLifetimeSeconds = particle.targetDistancePx / seed.speedPxPerSecond;
-      particle.activationDelaySeconds = staggerInitialStart
-        ? (index % PARTICLE_PHASE_GROUPS) * estimatedLifetimeSeconds / PARTICLE_PHASE_GROUPS
+      particle.travelledPx = staggerInitialLifetime
+        ? particle.targetDistancePx * (index % PARTICLE_PHASE_GROUPS) / PARTICLE_PHASE_GROUPS
         : 0;
+      particle.trail = [{ x: particle.x, y: particle.y }];
     };
-    let particles: FlowParticle[] = field.nodes.map((node, index) => {
-      const particle: FlowParticle = {
-        x: node.x,
-        y: node.y,
-        travelledPx: 0,
-        targetDistancePx: field.spacingPx * PARTICLE_MIN_VECTOR_CROSSINGS,
-        trail: [{ x: node.x, y: node.y }],
-        generation: -1,
-        activationDelaySeconds: 0,
-      };
-      resetParticle(particle, index, true);
-      return particle;
-    });
-    const rebuildField = () => {
-      field = buildField();
-      particles = field.nodes.map((node, index) => {
+    const createParticles = () => field.nodes.flatMap((node, sourceIndex) => (
+      Array.from({ length: PARTICLES_PER_VECTOR }, (_, copyIndex) => {
+        const particleIndex = sourceIndex * PARTICLES_PER_VECTOR + copyIndex;
         const particle: FlowParticle = {
+          sourceIndex,
+          copyIndex,
           x: node.x,
           y: node.y,
           travelledPx: 0,
           targetDistancePx: field.spacingPx * PARTICLE_MIN_VECTOR_CROSSINGS,
           trail: [{ x: node.x, y: node.y }],
           generation: -1,
-          activationDelaySeconds: 0,
         };
-        resetParticle(particle, index, true);
+        resetParticle(particle, particleIndex, true);
         return particle;
-      });
+      })
+    ));
+    let particles: FlowParticle[] = createParticles();
+    const rebuildField = () => {
+      field = buildField();
+      particles = createParticles();
       canvas.dataset.flowParticleSpacingPx = field.spacingPx.toFixed(1);
       canvas.dataset.flowParticleTargetDistancePx = (
         field.spacingPx * PARTICLE_MIN_VECTOR_CROSSINGS
       ).toFixed(1);
     };
     canvas.dataset.flowParticleMinCrossings = String(PARTICLE_MIN_VECTOR_CROSSINGS);
+    canvas.dataset.flowParticlesPerVector = String(PARTICLES_PER_VECTOR);
     canvas.dataset.flowParticlePhaseGroups = String(PARTICLE_PHASE_GROUPS);
+    canvas.dataset.flowParticleSeedPolicy = "fixed-source";
+    canvas.dataset.flowParticlePhaseMode = "lifetime-offset";
+    canvas.dataset.flowParticleTrailLengthPx = String(PARTICLE_TRAIL_LENGTH_PX);
     canvas.dataset.flowParticleSpacingPx = field.spacingPx.toFixed(1);
     canvas.dataset.flowParticleTargetDistancePx = (
       field.spacingPx * PARTICLE_MIN_VECTOR_CROSSINGS
@@ -838,13 +836,6 @@ export default function ResultMap({
 
       let rendered = 0;
       particles.forEach((particle, index) => {
-        if (particle.activationDelaySeconds > 0) {
-          particle.activationDelaySeconds = Math.max(
-            0,
-            particle.activationDelaySeconds - elapsedSeconds,
-          );
-          if (particle.activationDelaySeconds > 0) return;
-        }
         let flow = sampleProjectedFlow(field, particle.x, particle.y);
         if (!flow) {
           resetParticle(particle, index);
@@ -863,7 +854,8 @@ export default function ResultMap({
           || particle.y > height + 6;
         if (outsideViewport || particle.travelledPx >= particle.targetDistancePx) {
           resetParticle(particle, index);
-          return;
+          flow = sampleProjectedFlow(field, particle.x, particle.y);
+          if (!flow) return;
         }
 
         const particleColor = flowColor(flow.speedMps);
