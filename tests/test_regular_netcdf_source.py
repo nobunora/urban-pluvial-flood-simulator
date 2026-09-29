@@ -7,6 +7,7 @@ import xarray as xr
 from floodsim.results.regular_netcdf_source import (
     RegularNetcdfSourceError,
     inspect_regular_netcdf_source,
+    read_regular_point_depth_series,
     scan_regular_diagnostics,
     validate_source_identity,
 )
@@ -48,6 +49,12 @@ def test_descriptor_is_relative_and_diagnostics_are_chunk_bounded(tmp_path: Path
     assert source.time_values == ("0", "60")
     assert source.to_json()["schema_version"] == "regular-netcdf-source-v1"
     assert scan_regular_diagnostics(source, model_dir=model)["global_max_depth_m"] == pytest.approx(0.3)
+    assert read_regular_point_depth_series(
+        source,
+        model_dir=model,
+        row=0,
+        column=1,
+    ).tolist() == pytest.approx([0.2, 0.3])
 
 
 def test_descriptor_rejects_source_outside_model_and_identity_change(tmp_path: Path) -> None:

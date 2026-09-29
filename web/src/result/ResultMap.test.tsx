@@ -239,8 +239,8 @@ describe("ResultMap", () => {
 
     const overlay = options(1);
     expect(mocks.setWorkerUrl).toHaveBeenCalled();
-    expect(options(0).maxZoom).toBe(18);
-    expect(overlay.maxZoom).toBe(18);
+    expect(options(0).maxZoom).toBe(21);
+    expect(overlay.maxZoom).toBe(21);
     expect(options(0).style.sources.gsi.maxzoom).toBe(18);
     expect(overlay.style.sources["analysis-boundary"].data).toEqual(
       expect.objectContaining({
@@ -336,7 +336,7 @@ describe("ResultMap", () => {
     ).toBeDefined();
   });
 
-  it("advects flow particles through an interpolated field for at least five vector spacings", () => {
+  it("renders two continuously visible particles per vector with staggered lifetimes", () => {
     let animationFrame: FrameRequestCallback | null = null;
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
       animationFrame = callback;
@@ -380,7 +380,7 @@ describe("ResultMap", () => {
 
     act(() => animationFrame?.(500));
 
-    expect(canvas).toHaveAttribute("data-flow-particles", "1");
+    expect(canvas).toHaveAttribute("data-flow-particles", "8");
     expect(view.container.querySelector(".result-flow-svg")).toHaveAttribute(
       "data-flow-svg-arrows",
       "0",
@@ -390,19 +390,85 @@ describe("ResultMap", () => {
       "visibility",
       "none",
     );
-    expect(canvas).toHaveAttribute("data-flow-particle-min-crossings", "5");
+    expect(canvas).toHaveAttribute("data-flow-particle-min-crossings", "15");
+    expect(canvas).toHaveAttribute("data-flow-particles-per-vector", "2");
     expect(canvas).toHaveAttribute("data-flow-particle-phase-groups", "4");
+    expect(canvas).toHaveAttribute("data-flow-particle-seed-policy", "fixed-source");
+    expect(canvas).toHaveAttribute("data-flow-particle-phase-mode", "lifetime-offset");
+    expect(canvas).toHaveAttribute("data-flow-particle-trail-length-px", "75");
     const spacing = Number(canvas.dataset.flowParticleSpacingPx);
     const targetDistance = Number(canvas.dataset.flowParticleTargetDistancePx);
-    expect(targetDistance / spacing).toBeCloseTo(5, 5);
-    expect(mocks.arc).toHaveBeenCalledTimes(2);
-    expect(mocks.fill).toHaveBeenCalledTimes(2);
+    expect(targetDistance / spacing).toBeCloseTo(15, 5);
+    expect(mocks.arc).toHaveBeenCalledTimes(16);
+    expect(mocks.fill).toHaveBeenCalledTimes(16);
 
     act(() => {
       for (let step = 1; step <= 30; step += 1) {
         animationFrame?.(500 + step * 50);
       }
     });
-    expect(canvas).toHaveAttribute("data-flow-particles", "2");
+    expect(canvas).toHaveAttribute("data-flow-particles", "8");
+  });
+
+  it("keeps fast and slow flow particles visible across unequal lifetimes", () => {
+    let animationFrame: FrameRequestCallback | null = null;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      animationFrame = callback;
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+
+    const speeds = [0.05, 0.2, 1, 2];
+    const mixedSpeedFlowData: FlowVectorFeatureCollection = {
+      ...flowData,
+      features: speeds.map((speed, index) => ({
+        ...flowData.features[0],
+        geometry: {
+          type: "MultiLineString",
+          coordinates: [[
+            [139.74 + index * 0.002, 35.64],
+            [139.741 + index * 0.002, 35.64],
+          ]],
+        },
+        properties: {
+          ...flowData.features[0].properties,
+          speed_mps: speed,
+          u_mps: speed,
+          row: 10 + index,
+          column: 20 + index,
+        },
+      })),
+      metadata: { ...flowData.metadata, arrow_count: speeds.length },
+    };
+    const view = render(
+      <ResultMap
+        metadata={metadata}
+        imageUrl="/api/result/depth.png?time_index=3"
+        flowVectorData={mixedSpeedFlowData}
+        flowDisplayMode="particles"
+        backgroundOpacity={0.55}
+        mapLabel="結果"
+        onInspect={vi.fn()}
+      />,
+    );
+    const canvas = view.container.querySelector(".result-flow-canvas") as HTMLCanvasElement;
+    Object.defineProperty(canvas, "clientWidth", { configurable: true, value: 800 });
+    Object.defineProperty(canvas, "clientHeight", { configurable: true, value: 600 });
+
+    act(() => {
+      for (let step = 0; step <= 50; step += 1) {
+        animationFrame?.(step * 50);
+      }
+    });
+    expect(canvas).toHaveAttribute("data-flow-particles", "8");
+
+    act(() => {
+      for (let step = 51; step <= 250; step += 1) {
+        animationFrame?.(step * 50);
+        expect(canvas).toHaveAttribute("data-flow-particles", "8");
+      }
+    });
+    expect(canvas).toHaveAttribute("data-flow-particle-seed-policy", "fixed-source");
+    expect(canvas).toHaveAttribute("data-flow-particle-phase-mode", "lifetime-offset");
   });
 });
