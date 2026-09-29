@@ -96,7 +96,7 @@ def _elevation(area: AnalysisArea, grid_m: float = 1.0) -> ElevationProduct:
 
 
 def _vectors(area: AnalysisArea, *, with_building: bool = True) -> SimpleNamespace:
-    building = np.asarray(box(-0.4, -0.4, 0.4, 0.4).exterior.coords, dtype=float)
+    building = np.asarray(box(-1.1, -1.1, 1.1, 1.1).exterior.coords, dtype=float)
     road = np.asarray([[-1.5, -1.5], [1.5, -1.5]], dtype=float)
     return SimpleNamespace(
         buildings=[building] if with_building else [],
@@ -143,7 +143,7 @@ def test_full_grid_skips_malformed_vector_features() -> None:
     assert np.any(grid.building_mask)
 
 
-def test_full_grid_blocks_tiny_building_touching_single_cell() -> None:
+def test_full_grid_one_metre_inset_drops_tiny_roof() -> None:
     area = _area()
     tiny = np.asarray(box(0.10, 0.10, 0.20, 0.20).exterior.coords, dtype=float)
     vectors = _vectors(area, with_building=False)
@@ -151,8 +151,34 @@ def test_full_grid_blocks_tiny_building_touching_single_cell() -> None:
 
     grid = build_full_1m_grid(area, _elevation(area), vectors)
 
-    assert np.count_nonzero(grid.building_mask) >= 1
-    assert np.all(grid.sfincs_mask[grid.building_mask] == 0)
+    assert not np.any(grid.building_mask)
+    assert grid.sfincs_mask[2, 2] == 1
+
+
+def test_full_grid_one_metre_inset_keeps_roof_edge_cells_active() -> None:
+    area = _area()
+    boundary_only = np.asarray(box(-0.5, -0.5, 0.5, 0.5).exterior.coords, dtype=float)
+    vectors = _vectors(area, with_building=False)
+    vectors.buildings = [boundary_only]
+
+    grid = build_full_1m_grid(area, _elevation(area), vectors)
+
+    assert not np.any(grid.building_mask)
+    assert np.all(grid.sfincs_mask[1:3, 1:3] == 1)
+
+
+@pytest.mark.parametrize("grid_m", [1.0, 2.0, 4.0])
+def test_all_uniform_grids_drop_buildings_removed_by_half_metre_inset(
+    grid_m: float,
+) -> None:
+    area = _area(size=8)
+    tiny = np.asarray(box(0.10, 0.10, 0.20, 0.20).exterior.coords, dtype=float)
+    vectors = _vectors(area, with_building=False)
+    vectors.buildings = [tiny]
+
+    grid = build_full_1m_grid(area, _elevation(area, grid_m), vectors, grid_m=grid_m)
+
+    assert not np.any(grid.building_mask)
 
 
 def test_full_grid_reports_remaining_preprocessing_and_roof_work() -> None:

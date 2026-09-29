@@ -136,6 +136,8 @@ const metadata: ResultMetadataResponse = {
 
 describe("ResultPanel", () => {
   it("keeps vector screen density stable across integer zoom levels", () => {
+    expect(strideForZoom(21)).toBe(1);
+    expect(strideForZoom(20)).toBe(2);
     expect(strideForZoom(19)).toBe(3);
     expect(strideForZoom(18)).toBe(6);
     expect(strideForZoom(17)).toBe(12);
@@ -185,7 +187,7 @@ describe("ResultPanel", () => {
       time_value: null,
       depth_m: null,
       max_depth_m: 0.42,
-      max_time_index: 3,
+      max_time_index: 0,
       max_time_value: "2026-01-01T00:30:00",
       terrain_elevation_m: 12.3,
       grid_resolution_m: 1,
@@ -209,22 +211,58 @@ describe("ResultPanel", () => {
     expect(screen.getByText("1.000 m")).toBeVisible();
   });
 
+  it("formats numeric NetCDF time values as elapsed seconds", () => {
+    render(
+      <ResultPanel
+        runId="run-1"
+        metadata={{
+          ...metadata,
+          available_time_indices: [0, 1],
+          time_values: ["0", "60"],
+        }}
+        rainfallSummary="10 mm/h × 1分"
+        onNewAnalysis={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "時刻別の浸水深" }));
+    fireEvent.click(screen.getByRole("button", { name: "次の時刻" }));
+
+    expect(screen.getByText("現在: 00:01")).toBeVisible();
+  });
+
   it("passes the selected actual output index to native inspection on the time layer", async () => {
-    vi.mocked(inspectResult).mockResolvedValue({
+    vi.mocked(inspectResult)
+      .mockResolvedValueOnce({
       lon_deg: 139.75,
       lat_deg: 35.65,
       has_data: true,
       row: 10,
       column: 20,
-      time_index: 3,
-      time_value: "2026-01-01T00:30:00",
-      depth_m: 0.12,
+      time_index: 0,
+      time_value: "2026-01-01T00:00:00",
+      depth_m: 0.02,
       max_depth_m: 0.42,
       max_time_index: 3,
       max_time_value: "2026-01-01T00:30:00",
       terrain_elevation_m: 12.3,
       grid_resolution_m: 1,
-    });
+      })
+      .mockResolvedValueOnce({
+        lon_deg: 139.75,
+        lat_deg: 35.65,
+        has_data: true,
+        row: 10,
+        column: 20,
+        time_index: 3,
+        time_value: "2026-01-01T00:30:00",
+        depth_m: 0.12,
+        max_depth_m: 0.42,
+        max_time_index: 3,
+        max_time_value: "2026-01-01T00:30:00",
+        terrain_elevation_m: 12.3,
+        grid_resolution_m: 1,
+      });
 
     render(
       <ResultPanel
@@ -236,12 +274,13 @@ describe("ResultPanel", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "時刻別の浸水深" }));
-    fireEvent.click(screen.getByRole("button", { name: "次の時刻" }));
     fireEvent.click(screen.getByRole("button", { name: "地点を確認" }));
 
+    expect(await screen.findByText("0.020 m")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "次の時刻" }));
     expect(await screen.findByText("0.120 m")).toBeVisible();
     expect(screen.getByText("現在水深")).toBeVisible();
-    expect(vi.mocked(inspectResult).mock.calls[0]?.slice(0, 4)).toEqual([
+    expect(vi.mocked(inspectResult).mock.calls[1]?.slice(0, 4)).toEqual([
       "run-1",
       139.75,
       35.65,

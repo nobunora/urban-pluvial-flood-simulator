@@ -77,17 +77,32 @@ function metres(value: number | null | undefined): string {
 }
 
 function elapsedLabel(values: string[], index: number): string {
-  const current = Date.parse(values[index] ?? "");
-  const start = Date.parse(values[0] ?? "");
+  const currentValue = values[index] ?? "";
+  const startValue = values[0] ?? "";
+  const numericTime = /^-?\d+(?:\.\d+)?$/;
+  if (numericTime.test(currentValue) && numericTime.test(startValue)) {
+    return durationLabel(Math.max(0, Number(currentValue) - Number(startValue)) / 60);
+  }
+  const current = Date.parse(currentValue);
+  const start = Date.parse(startValue);
   if (Number.isFinite(current) && Number.isFinite(start)) {
-    const elapsedMinutes = Math.max(0, Math.round((current - start) / 60_000));
-    const days = Math.floor(elapsedMinutes / 1440);
-    const hours = Math.floor((elapsedMinutes % 1440) / 60);
-    const minutes = elapsedMinutes % 60;
-    if (days > 0) return `${days}日 ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
-    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    return durationLabel(Math.max(0, (current - start) / 60_000));
   }
   return values[index] ?? `index ${index}`;
+}
+
+function durationLabel(elapsedMinutes: number): string {
+  const roundedMinutes = Math.round(elapsedMinutes);
+  const days = Math.floor(roundedMinutes / 1440);
+  const hours = Math.floor((roundedMinutes % 1440) / 60);
+  const minutes = roundedMinutes % 60;
+  if (days > 0) return `${days}日 ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function elapsedValueLabel(values: string[], value: string | null | undefined, fallbackIndex: number): string {
+  const valueIndex = value == null ? -1 : values.indexOf(value);
+  return elapsedLabel(values, valueIndex >= 0 ? valueIndex : fallbackIndex);
 }
 
 function savedRainfallSummary(
@@ -131,7 +146,7 @@ export default function ResultPanel({
   const [inspection, setInspection] = useState<PointInspectionResponse | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionError, setInspectionError] = useState<string | null>(null);
-  const inspectionController = useRef<AbortController | null>(null);
+  const [inspectionPoint, setInspectionPoint] = useState<{ lon: number; lat: number } | null>(null);
   const depthFrameCacheRef = useRef<Map<number, string>>(new Map());
   const focusRegionRef = useRef<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -356,27 +371,35 @@ export default function ResultPanel({
           ? "標高の地図"
         : "最大浸水深の地図";
 
-  const handleInspect = useCallback(
-    (lon: number, lat: number) => {
-      inspectionController.current?.abort();
-      const controller = new AbortController();
-      inspectionController.current = controller;
-      setInspectionLoading(true);
-      setInspectionError(null);
+  const handleInspect = useCallback((lon: number, lat: number) => {
+    setInspectionPoint({ lon, lat });
+  }, []);
 
-      void inspectResult(runId, lon, lat, activeTimeIndex, controller.signal)
-        .then((next) => {
-          if (!controller.signal.aborted) setInspection(next);
-        })
-        .catch((cause: unknown) => {
-          if (!controller.signal.aborted) setInspectionError(String(cause));
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setInspectionLoading(false);
-        });
-    },
-    [activeTimeIndex, runId],
-  );
+  useEffect(() => {
+    if (inspectionPoint === null) return;
+    const controller = new AbortController();
+    setInspectionLoading(true);
+    setInspectionError(null);
+
+    void inspectResult(
+      runId,
+      inspectionPoint.lon,
+      inspectionPoint.lat,
+      activeTimeIndex,
+      controller.signal,
+    )
+      .then((next) => {
+        if (!controller.signal.aborted) setInspection(next);
+      })
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) setInspectionError(String(cause));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setInspectionLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [activeTimeIndex, inspectionPoint, runId]);
 
   const omittedLimitations = Object.entries({
     grade_separated_transport_modelled: false,
@@ -670,12 +693,16 @@ export default function ResultPanel({
                   <dd>
                     {inspection.max_time_index == null
                       ? "—"
-                      : elapsedLabel(metadata.time_values, inspection.max_time_index)}
+                      : elapsedValueLabel(
+                          metadata.time_values,
+                          inspection.max_time_value,
+                          inspection.max_time_index,
+                        )}
                   </dd>
                   {layer === "time_depth" && (
                     <>
                       <dt>現在水深</dt><dd>{metres(inspection.depth_m)}</dd>
-                      <dt>時刻</dt><dd>{inspection.time_value ?? elapsedLabel(metadata.time_values, selectedTimeIndex ?? 0)}</dd>
+                      <dt>時刻</dt><dd>{elapsedValueLabel(metadata.time_values, inspection.time_value, selectedTimeIndex ?? 0)}</dd>
                     </>
                   )}
                   <dt>格子</dt><dd>{metres(inspection.grid_resolution_m)}</dd>
