@@ -143,6 +143,7 @@ export default function ResultPanel({
   const gifCancelRef = useRef(false);
   const captureRef = useRef<(() => Promise<HTMLCanvasElement>) | null>(null);
   const flowAutoLocateRef = useRef(false);
+  const initialFlowTimeRunIdRef = useRef<string | null>(null);
   const [inspection, setInspection] = useState<PointInspectionResponse | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionError, setInspectionError] = useState<string | null>(null);
@@ -197,11 +198,15 @@ export default function ResultPanel({
       setFlowRenderStats(null);
       return;
     }
-    flowAutoLocateRef.current = true;
+    const selectInitialFlowTime = initialFlowTimeRunIdRef.current !== runId;
+    initialFlowTimeRunIdRef.current = runId;
+    flowAutoLocateRef.current = selectInitialFlowTime;
     setLayer("time_depth");
-    setTimePosition(Math.max(0, metadata.available_time_indices.length - 1));
+    if (selectInitialFlowTime) {
+      setTimePosition(Math.max(0, metadata.available_time_indices.length - 1));
+    }
     setFlowMode(requestedMode);
-  }, [flowMode, metadata.available_time_indices.length]);
+  }, [flowMode, metadata.available_time_indices.length, runId]);
 
   const showMaximumDepth = useCallback(() => {
     setLayer("max_depth");

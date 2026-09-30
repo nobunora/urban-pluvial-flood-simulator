@@ -522,13 +522,21 @@ describe("ResultPanel", () => {
       expect.any(AbortSignal),
     );
 
+    fireEvent.change(screen.getByRole("slider", { name: "結果時刻" }), { target: { value: "0" } });
+    expect(await screen.findByText("現在: 00:00")).toBeVisible();
+
     fireEvent.click(screen.getByRole("button", { name: "粒子フロー" }));
     expect(screen.getByRole("button", { name: "粒子フロー" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-display-mode", "particles");
+    expect(screen.getByText("現在: 00:00")).toBeVisible();
     expect(screen.getByText(/粒子の進行方向: 補間したベクトル場/)).toBeVisible();
     expect(screen.getByText(/寿命: 最低5ベクトル間隔/)).toBeVisible();
     expect(screen.getByText(/開始位相: 4群/)).toBeVisible();
-    expect(screen.getByText("粒子候補: 1個")).toBeVisible();
+    expect(screen.getByText("粒子候補: 0個")).toBeVisible();
+    expect(screen.getByText("この時刻には表示可能な流れがありません。")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "流れベクトル" }));
+    expect(screen.getByText("現在: 00:00")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "最大浸水深" }));
     expect(screen.getByRole("button", { name: "流れベクトル" })).toHaveAttribute("aria-pressed", "false");

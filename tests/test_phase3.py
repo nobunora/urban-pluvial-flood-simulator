@@ -216,7 +216,7 @@ def test_full_grid_sets_building_boundary_and_manning() -> None:
     boundary = np.zeros((4, 4), dtype=bool)
     boundary[[0, -1], :] = True
     boundary[:, [0, -1]] = True
-    assert np.all(grid.sfincs_mask[boundary & ~grid.building_mask] == 3)
+    assert np.all(grid.sfincs_mask[boundary & ~grid.building_mask] == 1)
     assert np.any(np.isclose(grid.manning_n, ROAD_MANNING))
     assert np.any(np.isclose(grid.manning_n, GENERAL_MANNING))
     assert grid.roof_allocation.relative_mass_error <= 1e-9
@@ -231,7 +231,8 @@ def test_full_grid_turns_coastline_into_outflow_boundary() -> None:
     grid = build_full_1m_grid(area, elevation, _vectors(area, with_building=False))
 
     assert np.all(grid.sfincs_mask[:, 0] == 0)
-    assert np.all(grid.sfincs_mask[:, 1] == 3)
+    assert np.all(grid.sfincs_mask[[0, -1], 1] == 1)
+    assert np.all(grid.sfincs_mask[1:-1, 1] == 3)
     assert grid.roof_allocation.meteorological_area_m2 == pytest.approx(12.0)
     assert grid.roof_allocation.hydraulic_weighted_area_m2 == pytest.approx(12.0)
 

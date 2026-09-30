@@ -258,10 +258,6 @@ def build_full_1m_grid(
 
     sfincs_mask = np.zeros((height, width), dtype=np.uint8)
     sfincs_mask[land_mask] = 1
-    sfincs_mask[0, land_mask[0, :]] = 3
-    sfincs_mask[-1, land_mask[-1, :]] = 3
-    sfincs_mask[land_mask[:, 0], 0] = 3
-    sfincs_mask[land_mask[:, -1], -1] = 3
     adjacent_water = np.zeros((height, width), dtype=bool)
     adjacent_water[1:, :] |= water_mask[:-1, :]
     adjacent_water[:-1, :] |= water_mask[1:, :]
@@ -269,6 +265,14 @@ def build_full_1m_grid(
     adjacent_water[:, :-1] |= water_mask[:, 1:]
     sfincs_mask[land_mask & adjacent_water] = 3
     sfincs_mask[building_mask] = 0
+
+    # The rectangular analysis limit is closed: retaining active msk=1 cells
+    # preserves rainfall on the outer strip while avoiding an msk=3/6 face
+    # that exchanges water with the unmodelled exterior.
+    rectangular_boundary = np.zeros((height, width), dtype=bool)
+    rectangular_boundary[[0, -1], :] = True
+    rectangular_boundary[:, [0, -1]] = True
+    sfincs_mask[rectangular_boundary & land_mask & ~building_mask] = 1
 
     if progress_callback is not None:
         progress_callback(0.60, "粗度・SFINCS建物マスク完了 / 屋根雨水配分を開始")
