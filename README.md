@@ -290,7 +290,7 @@ be built from an activated canonical environment with:
 
 ```powershell
 .\scripts\build_windows_release.ps1 `
-  -Version v0.1.18 `
+  -Version v0.1.19 `
   -DemoResultsDir C:\path\to\demo-results `
   -SfincsSourceDir C:\path\to\SFINCS
 ```

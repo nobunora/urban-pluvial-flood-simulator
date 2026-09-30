@@ -2,6 +2,8 @@
 
 ## この記事でやること
 
+Windows版のダウンロードは、[最新版リリース](https://github.com/nobunora/urban-pluvial-flood-simulator/releases/latest)から行えます。
+
 国土地理院が公開している**1m級の数値標高モデル（DEM1A）**と基盤地図情報を使い、都市部に強い雨が降ったときに、水がどこへ流れ、どこに溜まるかを2次元で計算します。
 
 今回のモデルは、単純に「地面の低い方向へ水を流す」だけではありません。
@@ -692,15 +694,17 @@ print(
 参考値は、
 
 ```text
-一般地表 : n = 0.030
-道路     : n = 0.020
+一般地表     : n = 0.050
+道路         : n = 0.030
+建物外周 1 m : n = 0.060
 ```
 
 です。
 
 ```python:prepare_inputs.py
-manning = np.full(z.shape, 0.030, dtype=np.float32)
-manning[road_mask] = 0.020
+manning = np.full(z.shape, 0.050, dtype=np.float32)
+manning[road_mask] = 0.030
+# 建物外周1 mは n = 0.060
 ```
 
 参考実装では基盤地図情報の道路縁をそのまま1ピクセルだけRasterizeせず、一定幅bufferして簡易的な道路領域へ変換しています。

@@ -23,7 +23,7 @@ from floodsim.preprocessing.roof_rainfall import (
 from floodsim.providers.common import local_crs
 from floodsim.providers.gsi_elevation import ElevationProduct
 
-GENERAL_MANNING = 0.030
+GENERAL_MANNING = 0.050
 ROAD_MANNING = 0.030
 BUILDING_PERIMETER_MANNING = 0.060
 OUTFLOW_MASK = np.uint8(3)
