@@ -509,8 +509,8 @@ describe("ResultPanel", () => {
     });
     expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-time-index", "3");
     expect(screen.getByLabelText("流速の凡例")).toBeVisible();
-    expect(screen.getByText("0.001–0.10 m/s")).toBeVisible();
-    expect(screen.getByText("2.00 m/s以上")).toBeVisible();
+    expect(screen.getByLabelText("流速の凡例")).toHaveTextContent("0.001");
+    expect(screen.getByLabelText("流速の凡例")).toHaveTextContent("m/s");
     expect(screen.getByText("矢印の向き: 流向 / 色: 流速")).toBeVisible();
     expect(screen.getByText("GeoJSON矢印: 1本")).toBeVisible();
     expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-display-mode", "vectors");
@@ -527,6 +527,7 @@ describe("ResultPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "粒子フロー" }));
     expect(screen.getByRole("button", { name: "粒子フロー" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("現在: 00:00")).toBeVisible();
     expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-display-mode", "particles");
     expect(screen.getByText("現在: 00:00")).toBeVisible();
     expect(screen.getByText(/粒子の進行方向: 補間したベクトル場/)).toBeVisible();

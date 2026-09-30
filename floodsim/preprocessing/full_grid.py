@@ -24,7 +24,9 @@ from floodsim.providers.common import local_crs
 from floodsim.providers.gsi_elevation import ElevationProduct
 
 GENERAL_MANNING = 0.030
-ROAD_MANNING = 0.020
+ROAD_MANNING = 0.030
+OUTFLOW_MASK = np.uint8(3)
+NEUMANN_MASK = np.uint8(6)
 
 
 @dataclass(frozen=True)
@@ -263,7 +265,7 @@ def build_full_1m_grid(
     adjacent_water[:-1, :] |= water_mask[1:, :]
     adjacent_water[:, 1:] |= water_mask[:, :-1]
     adjacent_water[:, :-1] |= water_mask[:, 1:]
-    sfincs_mask[land_mask & adjacent_water] = 3
+    sfincs_mask[land_mask & adjacent_water] = OUTFLOW_MASK
     sfincs_mask[building_mask] = 0
 
     # The rectangular analysis limit is closed: retaining active msk=1 cells
@@ -317,7 +319,7 @@ def build_full_1m_grid(
         crs_wkt=crs.to_wkt(),
         # Reuse the authoritative Full 1 m SFINCS mask as the immutable
         # Adaptive boundary-zone source. This simultaneously preserves
-        # building boundaries (0/1) and the analysis-domain edge (1/3)
+        # building boundaries (0/1) and the analysis-domain edge (1/6)
         # without inventing a second boundary definition.
         adaptive_hard_boundary_zone=sfincs_mask.astype(np.int32, copy=True),
     )

@@ -269,6 +269,7 @@ def scan_regular_diagnostics(source: RegularNetcdfSource, *, model_dir: str | Pa
     finite_hmax_cells = 0
     reconstructed_cells = 0
     global_max = 0.0
+    minimum_visible_depth = np.inf
     terrain_min = np.inf
     terrain_max = -np.inf
     try:
@@ -307,6 +308,9 @@ def scan_regular_diagnostics(source: RegularNetcdfSource, *, model_dir: str | Pa
                             maximum[missing] = np.maximum(maximum[missing], np.max(depth[:, missing], axis=0))
                     if np.any(active):
                         global_max = max(global_max, float(np.nanmax(np.where(active, maximum, np.nan))))
+                    visible = maximum[active & np.isfinite(maximum) & (maximum >= 0.01)]
+                    if visible.size:
+                        minimum_visible_depth = min(minimum_visible_depth, float(np.min(visible)))
     except RegularNetcdfSourceError:
         raise
     except (OSError, ValueError, KeyError) as exc:
@@ -316,6 +320,7 @@ def scan_regular_diagnostics(source: RegularNetcdfSource, *, model_dir: str | Pa
         "finite_hmax_cells": finite_hmax_cells,
         "hmax_reconstructed_cells": reconstructed_cells,
         "global_max_depth_m": global_max,
+        "min_visible_depth_m": 0.01 if not np.isfinite(minimum_visible_depth) else minimum_visible_depth,
         "terrain_min_elevation_m": terrain_min,
         "terrain_max_elevation_m": terrain_max,
     }

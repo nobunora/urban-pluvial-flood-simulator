@@ -129,8 +129,35 @@ class AdaptiveNormalizedArrays:
 ResultArrays = NormalizedArrays | AdaptiveNormalizedArrays
 
 
-def depth_legend_metadata() -> list[dict[str, Any]]:
-    return [band.to_metadata() for band in DEPTH_BANDS]
+def depth_display_range(arrays: ResultArrays) -> tuple[float, float]:
+    """Return one stable colour range for every depth frame of a result."""
+    values = np.asarray(arrays.max_depth_m, dtype=np.float64)
+    visible = np.asarray(arrays.active_mask, dtype=bool) & np.isfinite(values)
+    visible &= values >= DISPLAY_DRY_THRESHOLD_M
+    if not np.any(visible):
+        return DISPLAY_DRY_THRESHOLD_M, DISPLAY_DRY_THRESHOLD_M
+    minimum_m = float(np.min(values[visible]))
+    maximum_m = float(np.max(values[visible]))
+    return minimum_m, maximum_m
+
+
+def depth_legend_metadata(
+    minimum_m: float = DISPLAY_DRY_THRESHOLD_M,
+    maximum_m: float = 1.0,
+) -> list[dict[str, Any]]:
+    """Build the depth legend from the actual analysis-wide range."""
+    if not np.isfinite(minimum_m) or not np.isfinite(maximum_m) or maximum_m < minimum_m:
+        raise ResultViewError("depth range is invalid")
+    edges = np.linspace(minimum_m, maximum_m, len(DEPTH_BANDS) + 1)
+    return [
+        {
+            "label": f"{edges[index]:.3f}–{edges[index + 1]:.3f} m",
+            "min_m": float(edges[index]),
+            "max_m": float(edges[index + 1]),
+            "color": "#{:02X}{:02X}{:02X}".format(*band.rgba[:3]),
+        }
+        for index, band in enumerate(DEPTH_BANDS)
+    ]
 
 
 def elevation_legend_metadata(
@@ -342,14 +369,22 @@ def _png_bytes(rgba: np.ndarray, *, max_px: int, categorical: bool) -> bytes:
     return buffer.getvalue()
 
 
-def _depth_rgba(values: np.ndarray, active_mask: np.ndarray) -> np.ndarray:
+def _depth_rgba(
+    values: np.ndarray,
+    active_mask: np.ndarray,
+    *,
+    minimum_m: float,
+    maximum_m: float,
+) -> np.ndarray:
     rgba = np.zeros((*values.shape, 4), dtype=np.uint8)
     visible = active_mask & np.isfinite(values) & (values >= DISPLAY_DRY_THRESHOLD_M)
-    for band in DEPTH_BANDS:
-        mask = visible & (values >= band.minimum_m)
-        if band.maximum_m is not None:
-            mask &= values < band.maximum_m
-        rgba[mask] = band.rgba
+    if maximum_m <= minimum_m:
+        rgba[visible] = DEPTH_BANDS[-1].rgba
+        return rgba
+    normalized = np.clip((values - minimum_m) / (maximum_m - minimum_m), 0.0, 1.0)
+    indices = np.minimum((normalized * len(DEPTH_BANDS)).astype(np.int16), len(DEPTH_BANDS) - 1)
+    for index, band in enumerate(DEPTH_BANDS):
+        rgba[visible & (indices == index)] = band.rgba
     return rgba
 
 
@@ -369,6 +404,9 @@ def _adaptive_face_bounds(
 def _adaptive_depth_rgba(
     arrays: AdaptiveNormalizedArrays,
     values: np.ndarray,
+    *,
+    minimum_m: float,
+    maximum_m: float,
 ) -> np.ndarray:
     if values.shape != arrays.max_depth_m.shape:
         raise ResultViewError("Adaptive face depth shape is inconsistent")
@@ -379,15 +417,11 @@ def _adaptive_depth_rgba(
         depth = float(value)
         if depth < DISPLAY_DRY_THRESHOLD_M:
             continue
-        band_color: tuple[int, int, int, int] | None = None
-        for band in DEPTH_BANDS:
-            if depth < band.minimum_m:
-                continue
-            if band.maximum_m is None or depth < band.maximum_m:
-                band_color = band.rgba
-                break
-        if band_color is None:
-            continue
+        if maximum_m <= minimum_m:
+            band_color = DEPTH_BANDS[-1].rgba
+        else:
+            index = min(int(np.clip((depth - minimum_m) / (maximum_m - minimum_m), 0.0, 1.0) * len(DEPTH_BANDS)), len(DEPTH_BANDS) - 1)
+            band_color = DEPTH_BANDS[index].rgba
         row0, row1, col0, col1 = _adaptive_face_bounds(arrays, index)
         if row1 > row0 and col1 > col0:
             rgba[row0:row1, col0:col1] = band_color
@@ -423,10 +457,11 @@ def _adaptive_resolution_rgba(arrays: AdaptiveNormalizedArrays) -> np.ndarray:
 
 
 def render_max_depth_png(arrays: ResultArrays, *, max_px: int = MAX_RENDER_PX) -> bytes:
+    minimum_m, maximum_m = depth_display_range(arrays)
     rgba = (
-        _adaptive_depth_rgba(arrays, arrays.max_depth_m)
+        _adaptive_depth_rgba(arrays, arrays.max_depth_m, minimum_m=minimum_m, maximum_m=maximum_m)
         if isinstance(arrays, AdaptiveNormalizedArrays)
-        else _depth_rgba(arrays.max_depth_m, arrays.active_mask)
+        else _depth_rgba(arrays.max_depth_m, arrays.active_mask, minimum_m=minimum_m, maximum_m=maximum_m)
     )
     return _png_bytes(rgba, max_px=max_px, categorical=True)
 
@@ -440,10 +475,11 @@ def render_time_depth_png(
     if time_index < 0 or time_index >= arrays.depth_time_m.shape[0]:
         raise ResultTimeIndexInvalid(f"time_index {time_index} is outside available output")
     values = arrays.depth_time_m[time_index]
+    minimum_m, maximum_m = depth_display_range(arrays)
     rgba = (
-        _adaptive_depth_rgba(arrays, values)
+        _adaptive_depth_rgba(arrays, values, minimum_m=minimum_m, maximum_m=maximum_m)
         if isinstance(arrays, AdaptiveNormalizedArrays)
-        else _depth_rgba(values, arrays.active_mask)
+        else _depth_rgba(values, arrays.active_mask, minimum_m=minimum_m, maximum_m=maximum_m)
     )
     return _png_bytes(rgba, max_px=max_px, categorical=True)
 

@@ -219,6 +219,7 @@ def test_full_grid_sets_building_boundary_and_manning() -> None:
     assert np.all(grid.sfincs_mask[boundary & ~grid.building_mask] == 1)
     assert np.any(np.isclose(grid.manning_n, ROAD_MANNING))
     assert np.any(np.isclose(grid.manning_n, GENERAL_MANNING))
+    assert ROAD_MANNING == pytest.approx(0.030)
     assert grid.roof_allocation.relative_mass_error <= 1e-9
 
 
@@ -357,13 +358,21 @@ def test_full_builder_uses_explicit_performance_settings(
     assert float(settings["dtmaxout"]) == pytest.approx(600.0)
     assert int(float(settings["storecumprcp"])) == 0
     assert int(float(settings["storevel"])) == 1
-    assert float(settings["alpha"]) == pytest.approx(0.75)
+    assert float(settings["alpha"]) == pytest.approx(0.70)
+    assert float(settings["huthresh"]) == pytest.approx(0.005)
+    assert settings["bndfile"] == "sfincs.bnd"
+    assert settings["bzsfile"] == "sfincs.bzs"
+    assert (result.model_dir / "sfincs.bnd").is_file()
+    assert (result.model_dir / "sfincs.bzs").is_file()
 
     assert result.report["output_interval_seconds"] == 60
     assert result.report["maximum_output_interval_seconds"] == pytest.approx(600.0)
     assert result.report["cumulative_precipitation_output"] is False
     assert result.report["velocity_output"]["storevel"] == 1
-    assert result.report["numerics"]["alpha"] == pytest.approx(0.75)
+    assert result.report["numerics"]["alpha"] == pytest.approx(0.70)
+    assert result.report["numerics"]["huthresh_m"] == pytest.approx(0.005)
+    assert result.report["neumann_boundary_cells"] > 0
+    assert result.report["neumann_boundary_compatibility_boundary_file"] is True
 
 
 def test_full_builder_can_reduce_saved_frame_frequency_without_changing_solver(
@@ -637,7 +646,7 @@ def test_output_reader_excludes_sfincs_boundary_control_cells(tmp_path: Path) ->
     with xr.open_dataset(path) as dataset:
         rewritten = dataset.load()
 
-    rewritten["msk"].values[0, 0] = 3
+    rewritten["msk"].values[0, 0] = 6
     rewritten["h"].values[:, 0, 0] = -5.0
     rewritten["hmax"].values[:, 0, 0] = -5.0
     rewritten.to_netcdf(path, mode="w")

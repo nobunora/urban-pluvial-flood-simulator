@@ -63,14 +63,7 @@ function interpolateFlow(a: FlowVectorFeatureCollection, b: FlowVectorFeatureCol
   return { ...a, features, metadata: { ...a.metadata, arrow_count: features.length, sampling_method: "canonical-1m-viewport-stride-interpolated" } };
 }
 
-const FLOW_SPEED_LEGEND = [
-  ["0.001–0.10 m/s", "#2DC4B2"],
-  ["0.10–0.30 m/s", "#3BB2D0"],
-  ["0.30–0.50 m/s", "#3F51B5"],
-  ["0.50–1.00 m/s", "#8E44AD"],
-  ["1.00–2.00 m/s", "#E74C3C"],
-  ["2.00 m/s以上", "#7F0000"],
-] as const;
+const FLOW_COLORS = ["#2DC4B2", "#3BB2D0", "#3F51B5", "#8E44AD", "#E74C3C", "#7F0000"] as const;
 
 function metres(value: number | null | undefined): string {
   return value == null ? "—" : `${value.toFixed(3)} m`;
@@ -417,6 +410,17 @@ export default function ResultPanel({
   const engine = metadata.engine_summary;
   const runSummary = metadata.run_summary;
   const globalMax = metadata.max_depth_summary.global_max_depth_m;
+  const flowSpeedRange = useMemo<readonly [number, number]>(() => {
+    const minimum = flowVectorData?.metadata.display_min_speed_mps ?? 0.001;
+    const candidateMaximum = flowVectorData?.metadata.display_max_speed_mps ?? 2;
+    return [minimum, candidateMaximum > minimum ? candidateMaximum : Math.max(minimum, 2)];
+  }, [flowVectorData]);
+  const flowLegend = useMemo(() => FLOW_COLORS.map((color, index) => {
+    const [minimum, maximum] = flowSpeedRange;
+    const edge0 = minimum + (maximum - minimum) * index / FLOW_COLORS.length;
+    const edge1 = minimum + (maximum - minimum) * (index + 1) / FLOW_COLORS.length;
+    return [`${edge0.toFixed(3)}–${edge1.toFixed(3)} m/s`, color] as const;
+  }), [flowSpeedRange]);
   const maxTimePosition = Math.max(0, metadata.available_time_indices.length - 1);
 
   useEffect(() => {
@@ -667,6 +671,7 @@ export default function ResultPanel({
               metadata={metadata}
               imageUrl={imageUrl}
               flowVectorData={visualFlowVectorData}
+              flowSpeedRange={flowSpeedRange}
               flowDisplayMode={flowMode === "off" ? null : flowMode}
               backgroundOpacity={(100 - backgroundTransparency) / 100}
               mapLabel={mapLabel}
@@ -754,8 +759,8 @@ export default function ResultPanel({
             {flowVisible && metadata.flow_vectors_available && (
               <section className="result-legend result-legend-sidebar result-flow-legend" aria-label="流速の凡例">
                 <strong>流速 (m/s)</strong>
-                {FLOW_SPEED_LEGEND.map(([label, color]) => (
-                  <span key={label}>
+                {flowLegend.map(([label, color]) => (
+                  <span key={`${label}-${color}`}>
                     <i style={{ backgroundColor: color }} aria-hidden="true" />
                     {label}
                   </span>

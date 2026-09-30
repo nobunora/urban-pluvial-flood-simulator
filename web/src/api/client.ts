@@ -200,6 +200,8 @@ export type FlowVectorFeatureCollection = {
   metadata: {
     speed_unit: string;
     min_speed_mps: number;
+    display_min_speed_mps?: number;
+    display_max_speed_mps?: number;
     sample_stride_cells: number;
     arrow_length_m: number;
     arrow_count: number;

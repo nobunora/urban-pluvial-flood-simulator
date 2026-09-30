@@ -22,6 +22,16 @@ from floodsim.results.view import (
 _MIN_SPEED_MPS = 0.001
 
 
+def _result_speed_range(arrays: ResultArrays, time_index: int) -> tuple[float, float]:
+    """Range from every stored velocity sample, not only the visible arrows."""
+    assert arrays.velocity_u_mps is not None and arrays.velocity_v_mps is not None
+    speed = np.hypot(arrays.velocity_u_mps[time_index], arrays.velocity_v_mps[time_index])
+    valid = np.isfinite(speed) & (speed >= _MIN_SPEED_MPS)
+    if not np.any(valid):
+        return _MIN_SPEED_MPS, _MIN_SPEED_MPS
+    return float(np.min(speed[valid])), float(np.max(speed[valid]))
+
+
 def _viewport_cell_bounds(
     arrays: ResultArrays,
     *,
@@ -86,6 +96,7 @@ def flow_vectors_viewport_geojson(
         raise ResultTimeIndexInvalid(f"time_index {time_index} is outside available output")
     if arrays.velocity_u_mps is None or arrays.velocity_v_mps is None:
         raise ResultArtifactMissing("flow-vector output is not available for this run")
+    speed_min_mps, speed_max_mps = _result_speed_range(arrays, time_index)
 
     row0, row1, col0, col1 = _viewport_cell_bounds(
         arrays, area=area, west=west, south=south, east=east, north=north
@@ -273,6 +284,8 @@ def flow_vectors_viewport_geojson(
         "metadata": {
             "speed_unit": "m/s",
             "min_speed_mps": float(min_speed_mps),
+            "display_min_speed_mps": speed_min_mps,
+            "display_max_speed_mps": speed_max_mps,
             "sample_stride_cells": stride_cells,
             "target_spacing_m": float(stride),
             "arrow_length_m": arrow_length_m,

@@ -34,6 +34,7 @@ type Props = {
   metadata: Pick<ResultMetadataResponse, "bounds">;
   imageUrl: string;
   flowVectorData: FlowVectorFeatureCollection | null;
+  flowSpeedRange?: readonly [number, number];
   flowDisplayMode?: "vectors" | "particles" | null;
   backgroundOpacity: number;
   mapLabel: string;
@@ -89,13 +90,11 @@ type FlowParticle = ScreenPoint & {
   generation: number;
 };
 
-function flowColor(speedMps: number): string {
-  if (speedMps >= 2.0) return "#7F0000";
-  if (speedMps >= 1.0) return "#E74C3C";
-  if (speedMps >= 0.5) return "#8E44AD";
-  if (speedMps >= 0.3) return "#3F51B5";
-  if (speedMps >= 0.1) return "#3BB2D0";
-  return "#2DC4B2";
+function flowColor(speedMps: number, range: readonly [number, number]): string {
+  const colors = ["#2DC4B2", "#3BB2D0", "#3F51B5", "#8E44AD", "#E74C3C", "#7F0000"];
+  const [minimum, maximum] = range;
+  if (maximum <= minimum) return colors[colors.length - 1];
+  return colors[Math.min(colors.length - 1, Math.floor(Math.max(0, Math.min(1, (speedMps - minimum) / (maximum - minimum))) * colors.length))];
 }
 
 export function particleSpeedPxPerSecond(speedMps: number): number {
@@ -388,6 +387,7 @@ export default function ResultMap({
   metadata,
   imageUrl,
   flowVectorData,
+  flowSpeedRange = [0.001, 1] as const,
   flowDisplayMode = flowVectorData ? "vectors" : null,
   backgroundOpacity,
   mapLabel,
@@ -642,7 +642,7 @@ export default function ResultMap({
         const line = document.createElementNS(namespace, "path");
         line.setAttribute("d", d);
         line.setAttribute("fill", "none");
-        line.setAttribute("stroke", flowColor(feature.properties.speed_mps));
+        line.setAttribute("stroke", flowColor(feature.properties.speed_mps, flowSpeedRange));
         line.setAttribute("stroke-width", "4");
         line.setAttribute("stroke-linecap", "round");
         line.setAttribute("stroke-linejoin", "round");
@@ -858,7 +858,7 @@ export default function ResultMap({
           if (!flow) return;
         }
 
-        const particleColor = flowColor(flow.speedMps);
+        const particleColor = flowColor(flow.speedMps, flowSpeedRange);
         drawFadingTrail(context, particle.trail, particleColor);
 
         // The particle itself is a zero-length point; only its fading history
