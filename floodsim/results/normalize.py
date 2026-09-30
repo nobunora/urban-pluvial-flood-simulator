@@ -15,7 +15,13 @@ from floodsim.results.regular_netcdf_source import (
     RegularNetcdfSource,
     scan_regular_diagnostics,
 )
-from floodsim.results.view import depth_legend_metadata, elevation_legend_metadata
+from floodsim.results.view import (
+    AdaptiveNormalizedArrays,
+    NormalizedArrays,
+    depth_display_range,
+    depth_legend_metadata,
+    elevation_legend_metadata,
+)
 from floodsim.sfincs.output_reader import SfincsQuadtreeResult, SfincsRegularResult
 from floodsim.storage.run_store import atomic_write_json
 
@@ -62,7 +68,9 @@ def finalize_regular_netcdf_result(
         "cache_schema_revision": 1,
         "max_depth_summary": diagnostics,
         "grid_level_summary": {f"{source.block_size_m:g}m": diagnostics["active_cells"]},
-        "depth_legend": depth_legend_metadata(),
+        "depth_legend": depth_legend_metadata(
+            diagnostics["min_visible_depth_m"], diagnostics["global_max_depth_m"]
+        ),
         "elevation_legend": elevation_legend_metadata(
             diagnostics["terrain_min_elevation_m"],
             diagnostics["terrain_max_elevation_m"],
@@ -136,7 +144,14 @@ def normalize_regular_result(
         "grid_level_summary": {
             f"{grid_resolution_m:g}m": int(np.count_nonzero(result.active_mask)),
         },
-        "depth_legend": depth_legend_metadata(),
+        "depth_legend": depth_legend_metadata(*depth_display_range(NormalizedArrays(
+            depth_time_m=result.depth_time_m,
+            max_depth_m=result.max_depth_m,
+            terrain_elevation_m=result.terrain_elevation_m,
+            active_mask=result.active_mask,
+            time_values=result.time_values,
+            grid_resolution_m=grid_resolution_m,
+        ))),
         "elevation_legend": elevation_legend_metadata(
             float(np.min(result.terrain_elevation_m[result.active_mask])),
             float(np.max(result.terrain_elevation_m[result.active_mask])),
@@ -231,7 +246,19 @@ def normalize_quadtree_result(
             "excluded_boundary_cells": result.excluded_boundary_cells,
         },
         "grid_level_summary": level_summary,
-        "depth_legend": depth_legend_metadata(),
+        "depth_legend": depth_legend_metadata(*depth_display_range(AdaptiveNormalizedArrays(
+            depth_time_m=result.depth_time_m,
+            max_depth_m=result.max_depth_m,
+            terrain_elevation_m=result.terrain_elevation_m,
+            active_mask=result.active_mask,
+            time_values=result.time_values,
+            face_resolution_m=layout.resolution_m,
+            face_row_index=layout.row_index,
+            face_col_index=layout.col_index,
+            face_source_overlap_area_m2=layout.source_overlap_area_m2,
+            source_height_cells=layout.source_height_cells,
+            source_width_cells=layout.source_width_cells,
+        ))),
         "elevation_legend": elevation_legend_metadata(
             float(np.min(result.terrain_elevation_m[result.active_mask])),
             float(np.max(result.terrain_elevation_m[result.active_mask])),

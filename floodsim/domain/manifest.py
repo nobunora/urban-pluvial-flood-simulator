@@ -49,7 +49,10 @@ class RunManifest(BaseModel):
     manning_defaults: dict[str, float] = Field(
         default_factory=lambda: {"general": 0.030, "road": 0.020}
     )
-    boundary_policy: str = "outer eligible cells use SFINCS outflow mask msk=3"
+    boundary_policy: str = (
+        "rectangular outer eligible cells use SFINCS Neumann mask msk=6; "
+        "land cells adjacent to uncovered DEM use outflow mask msk=3"
+    )
     roof_rain_mass_diagnostic: dict[str, float | int] = Field(default_factory=dict)
     limitations: Limitations = Limitations()
     run_status: RunState

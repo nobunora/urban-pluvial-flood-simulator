@@ -126,7 +126,7 @@ def read_regular_result(path: str | Path) -> SfincsRegularResult:
             mask_values = np.asarray(dataset["msk"].values)
 
             active = mask_values == 1
-            boundary = (mask_values == 2) | (mask_values == 3)
+            boundary = (mask_values == 2) | (mask_values == 3) | (mask_values == 6)
 
             if hmax_values.shape[0] < 1:
                 raise SfincsResultError("SFINCS hmax contains no output frame")
@@ -400,7 +400,7 @@ def read_quadtree_result(
                 raise SfincsResultError("SFINCS quadtree face order/mask changed from the model layout")
 
             active = mask_values == 1
-            boundary = (mask_values == 2) | (mask_values == 3)
+            boundary = (mask_values == 2) | (mask_values == 3) | (mask_values == 6)
             # SFINCS quadtree h uses the wet-cell writer. Dry active faces are
             # written as NetCDF FILL_VALUE and decoded by xarray as NaN.
             # Preserve the distinction in diagnostics, but normalize those dry

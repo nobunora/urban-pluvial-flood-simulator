@@ -101,7 +101,8 @@ def test_max_depth_png_is_north_up_and_transparent_for_dry_no_data() -> None:
     assert rgba[0, 0, 3] == 0  # inactive cell
     assert tuple(rgba[0, 1]) == DEPTH_BANDS[-1].rgba
     assert rgba[1, 0, 3] == 0  # active but < 0.01 m
-    assert tuple(rgba[1, 1]) == DEPTH_BANDS[1].rgba
+    # The minimum visible depth now maps to the first colour of the result-wide range.
+    assert tuple(rgba[1, 1]) == DEPTH_BANDS[0].rgba
 
 
 def test_depth_png_downscale_preserves_only_declared_band_colors() -> None:

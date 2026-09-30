@@ -126,6 +126,32 @@ def _configure_precipitation(
     model.config.set("dtwnd", min(1800.0, interval))
 
 
+def _configure_neumann_boundary_compatibility(
+    model: Any,
+    root: Path,
+    grid: FullGridProduct,
+    duration_seconds: float,
+) -> bool:
+    """Provide the boundary time series required by the Windows engine for msk=6.
+
+    The series is not applied to Neumann cells; SFINCS copies their adjacent
+    regular-cell water level. It initializes the boundary update path that the
+    released Windows executable otherwise skips and subsequently dereferences.
+    """
+    if not np.any(grid.sfincs_mask == 6):
+        return False
+    model.config.set("bndfile", "sfincs.bnd")
+    model.config.set("bzsfile", "sfincs.bzs")
+    center_x = grid.x0_m + grid.width_cells * grid.dx_m / 2.0
+    center_y = grid.y0_m + grid.height_cells * grid.dy_m / 2.0
+    (root / "sfincs.bnd").write_text(f"{center_x:.6f} {center_y:.6f}\n", encoding="utf-8")
+    (root / "sfincs.bzs").write_text(
+        f"0.0 0.0\n{duration_seconds:.6f} 0.0\n",
+        encoding="utf-8",
+    )
+    return True
+
+
 def derive_output_interval_seconds(duration_seconds: float) -> int:
     """Return a whole-minute output interval bounded by the v0.1 contract."""
     if duration_seconds <= 0:
@@ -216,11 +242,18 @@ class SfincsModelBuilder:
             model.config.set("dthisout", output_interval)
             model.config.set("outputformat", "net")
             model.config.set("coriolis", 0)
-            model.config.set("alpha", 0.75)
+            model.config.set("alpha", 0.70)
+            model.config.set("huthresh", 0.005)
             model.config.set("storecumprcp", 0)
             model.config.set("storevel", 1)
 
             _configure_precipitation(model, _precipitation(rainfall, grid), rainfall)
+            neumann_boundary_compatibility = _configure_neumann_boundary_compatibility(
+                model,
+                root,
+                grid,
+                duration_seconds,
+            )
             model.write()
         except ModelBuildError:
             raise
@@ -238,7 +271,9 @@ class SfincsModelBuilder:
             "active_cells": int(np.count_nonzero(grid.sfincs_mask)),
             "blocked_building_cells": int(np.count_nonzero(grid.building_mask)),
             "outflow_boundary_cells": int(np.count_nonzero(grid.sfincs_mask == 3)),
-            "roughness": {"general": 0.030, "road": 0.020},
+            "neumann_boundary_cells": int(np.count_nonzero(grid.sfincs_mask == 6)),
+            "neumann_boundary_compatibility_boundary_file": neumann_boundary_compatibility,
+            "roughness": {"general": 0.030, "road": 0.030},
             "rainfall_volume_before_weight_area_m2": grid.roof_allocation.meteorological_area_m2,
             "rainfall_volume_after_weight_area_m2": grid.roof_allocation.hydraulic_weighted_area_m2,
             "roof_rain_relative_mass_error": grid.roof_allocation.relative_mass_error,
@@ -246,7 +281,7 @@ class SfincsModelBuilder:
             "maximum_output_interval_seconds": duration_seconds,
             "cumulative_precipitation_output": False,
             "velocity_output": {"storevel": 1, "variables": ["u", "v"]},
-            "numerics": {"alpha": 0.75},
+            "numerics": {"alpha": 0.70, "huthresh_m": 0.005},
             "unsupported_physics": {
                 "infiltration": False,
                 "sewer_drainage": False,
@@ -654,7 +689,7 @@ class AdaptiveSfincsModelBuilder:
             "active_cells": int(static_metadata["active_cells"]),
             "outflow_boundary_cells": int(static_metadata["outflow_boundary_cells"]),
             "blocked_building_source_cells": int(np.count_nonzero(grid.building_mask)),
-            "roughness": {"general": 0.030, "road": 0.020},
+            "roughness": {"general": 0.030, "road": 0.030},
             "build_phase_timings_seconds": phase_timings,
             "static_model_cache": {
                 "cache_hit": static_cache_hit,
