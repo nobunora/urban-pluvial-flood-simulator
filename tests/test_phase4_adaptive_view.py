@@ -97,7 +97,7 @@ def test_adaptive_png_rendering_expands_only_selected_face_field() -> None:
     assert maximum.shape == (4, 4, 4)
     # Internal southern face row becomes the bottom PNG half.
     assert tuple(maximum[3, 0]) == DEPTH_BANDS[1].rgba
-    assert tuple(maximum[3, 3]) == DEPTH_BANDS[-1].rgba
+    assert tuple(maximum[3, 3]) == DEPTH_BANDS[5].rgba
     # Inactive north-west face remains transparent.
     assert maximum[0, 0, 3] == 0
     assert tuple(resolution[3, 0]) == (20, 27, 36, 245)

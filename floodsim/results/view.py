@@ -53,15 +53,16 @@ class DepthBand:
         }
 
 
-# Labels are fixed by docs/specs/v0.1-ui-implementation-spec.md.
-# The initial colors are centralized here so server-rendered PNG and metadata stay identical.
+# Fixed thresholds keep shallow flooding legible even when a small area is deep.
+# Colors are centralized so server-rendered PNG and metadata stay identical.
 DEPTH_BANDS: tuple[DepthBand, ...] = (
-    DepthBand("0.01–0.05 m", 0.01, 0.05, (198, 232, 255, 210)),
+    DepthBand("0.00–0.05 m", 0.00, 0.05, (198, 232, 255, 210)),
     DepthBand("0.05–0.10 m", 0.05, 0.10, (91, 177, 255, 215)),
-    DepthBand("0.10–0.30 m", 0.10, 0.30, (64, 110, 222, 220)),
-    DepthBand("0.30–0.50 m", 0.30, 0.50, (126, 82, 196, 225)),
-    DepthBand("0.50–1.00 m", 0.50, 1.00, (196, 65, 139, 230)),
-    DepthBand("1.00 m以上", 1.00, None, (109, 27, 74, 235)),
+    DepthBand("0.10–0.20 m", 0.10, 0.20, (64, 110, 222, 220)),
+    DepthBand("0.20–0.40 m", 0.20, 0.40, (126, 82, 196, 225)),
+    DepthBand("0.40–0.80 m", 0.40, 0.80, (196, 65, 139, 230)),
+    DepthBand("0.80–1.60 m", 0.80, 1.60, (109, 27, 74, 235)),
+    DepthBand("1.60 m以上", 1.60, None, (73, 18, 52, 240)),
 )
 
 GRID_RESOLUTION_COLORS: dict[int, tuple[int, int, int, int]] = {
@@ -145,19 +146,10 @@ def depth_legend_metadata(
     minimum_m: float = DISPLAY_DRY_THRESHOLD_M,
     maximum_m: float = 1.0,
 ) -> list[dict[str, Any]]:
-    """Build the depth legend from the actual analysis-wide range."""
+    """Return the fixed depth legend used by all result layers."""
     if not np.isfinite(minimum_m) or not np.isfinite(maximum_m) or maximum_m < minimum_m:
         raise ResultViewError("depth range is invalid")
-    edges = np.linspace(minimum_m, maximum_m, len(DEPTH_BANDS) + 1)
-    return [
-        {
-            "label": f"{edges[index]:.3f}–{edges[index + 1]:.3f} m",
-            "min_m": float(edges[index]),
-            "max_m": float(edges[index + 1]),
-            "color": "#{:02X}{:02X}{:02X}".format(*band.rgba[:3]),
-        }
-        for index, band in enumerate(DEPTH_BANDS)
-    ]
+    return [band.to_metadata() for band in DEPTH_BANDS]
 
 
 def elevation_legend_metadata(
@@ -378,13 +370,10 @@ def _depth_rgba(
 ) -> np.ndarray:
     rgba = np.zeros((*values.shape, 4), dtype=np.uint8)
     visible = active_mask & np.isfinite(values) & (values >= DISPLAY_DRY_THRESHOLD_M)
-    if maximum_m <= minimum_m:
-        rgba[visible] = DEPTH_BANDS[-1].rgba
-        return rgba
-    normalized = np.clip((values - minimum_m) / (maximum_m - minimum_m), 0.0, 1.0)
-    indices = np.minimum((normalized * len(DEPTH_BANDS)).astype(np.int16), len(DEPTH_BANDS) - 1)
+    del minimum_m, maximum_m
     for index, band in enumerate(DEPTH_BANDS):
-        rgba[visible & (indices == index)] = band.rgba
+        upper_bound = np.ones(values.shape, dtype=bool) if band.maximum_m is None else values < band.maximum_m
+        rgba[visible & (values >= band.minimum_m) & upper_bound] = band.rgba
     return rgba
 
 
@@ -411,18 +400,18 @@ def _adaptive_depth_rgba(
     if values.shape != arrays.max_depth_m.shape:
         raise ResultViewError("Adaptive face depth shape is inconsistent")
     rgba = np.zeros((*arrays.shape, 4), dtype=np.uint8)
-    for index, value in enumerate(values):
-        if not arrays.active_mask[index] or not np.isfinite(value):
+    del minimum_m, maximum_m
+    for face_index, value in enumerate(values):
+        if not arrays.active_mask[face_index] or not np.isfinite(value):
             continue
         depth = float(value)
         if depth < DISPLAY_DRY_THRESHOLD_M:
             continue
-        if maximum_m <= minimum_m:
-            band_color = DEPTH_BANDS[-1].rgba
-        else:
-            index = min(int(np.clip((depth - minimum_m) / (maximum_m - minimum_m), 0.0, 1.0) * len(DEPTH_BANDS)), len(DEPTH_BANDS) - 1)
-            band_color = DEPTH_BANDS[index].rgba
-        row0, row1, col0, col1 = _adaptive_face_bounds(arrays, index)
+        band_color = next(
+            band.rgba for band in DEPTH_BANDS
+            if band.maximum_m is None or depth < band.maximum_m
+        )
+        row0, row1, col0, col1 = _adaptive_face_bounds(arrays, face_index)
         if row1 > row0 and col1 > col0:
             rgba[row0:row1, col0:col1] = band_color
     return rgba

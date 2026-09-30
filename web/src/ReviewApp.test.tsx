@@ -82,7 +82,7 @@ const metadata: ResultMetadataResponse = {
   max_depth_summary: { global_max_depth_m: 1.25 },
   grid_level_summary: { "1m": 250000 },
   depth_legend: [
-    { label: "0.01–0.05 m", min_m: 0.01, max_m: 0.05, color: "#C6E8FF" },
+    { label: "0.00–0.05 m", min_m: 0, max_m: 0.05, color: "#C6E8FF" },
   ],
   provider_summary: {
     building_provider: "osm",

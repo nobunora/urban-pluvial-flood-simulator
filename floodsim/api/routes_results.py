@@ -42,6 +42,7 @@ from floodsim.results.view import (
     ResultArrays,
     ResultTimeIndexInvalid,
     ResultViewError,
+    depth_legend_metadata,
     elevation_legend_metadata,
     inspect_native_point,
     load_normalized_arrays,
@@ -164,6 +165,9 @@ def result_metadata(run_id: UUID) -> ResultMetadataResponse:
         metadata = coordinator.result_metadata(run_id)
     except (RunNotFound, ResultNotReady) as exc:
         raise _map_result_error(exc) from exc
+    # Depth bands are a presentation contract. Override legacy persisted metadata
+    # so imported and already-completed runs use the current fixed thresholds.
+    metadata["depth_legend"] = depth_legend_metadata()
     if not metadata.get("elevation_legend"):
         arrays = _arrays_for_run(run_id)
         minimum_m, maximum_m = terrain_elevation_range(arrays)

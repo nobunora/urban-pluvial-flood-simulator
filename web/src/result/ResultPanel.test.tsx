@@ -84,12 +84,13 @@ const metadata: ResultMetadataResponse = {
     "1m": 1200000,
   },
   depth_legend: [
-    { label: "0.01–0.05 m", min_m: 0.01, max_m: 0.05, color: "#C6E8FF" },
+    { label: "0.00–0.05 m", min_m: 0, max_m: 0.05, color: "#C6E8FF" },
     { label: "0.05–0.10 m", min_m: 0.05, max_m: 0.1, color: "#5BB1FF" },
-    { label: "0.10–0.30 m", min_m: 0.1, max_m: 0.3, color: "#406EDE" },
-    { label: "0.30–0.50 m", min_m: 0.3, max_m: 0.5, color: "#7E52C4" },
-    { label: "0.50–1.00 m", min_m: 0.5, max_m: 1, color: "#C4418B" },
-    { label: "1.00 m以上", min_m: 1, max_m: null, color: "#6D1B4A" },
+    { label: "0.10–0.20 m", min_m: 0.1, max_m: 0.2, color: "#406EDE" },
+    { label: "0.20–0.40 m", min_m: 0.2, max_m: 0.4, color: "#7E52C4" },
+    { label: "0.40–0.80 m", min_m: 0.4, max_m: 0.8, color: "#C4418B" },
+    { label: "0.80–1.60 m", min_m: 0.8, max_m: 1.6, color: "#6D1B4A" },
+    { label: "1.60 m以上", min_m: 1.6, max_m: null, color: "#491234" },
   ],
   elevation_legend: [
     { label: "1.00–1.38 m", min_m: 1, max_m: 1.375, color: "#313695" },
@@ -343,12 +344,13 @@ describe("ResultPanel", () => {
     expect(legend.closest(".result-sidebar")).not.toBeNull();
 
     for (const label of [
-      "0.01–0.05 m",
+      "0.00–0.05 m",
       "0.05–0.10 m",
-      "0.10–0.30 m",
-      "0.30–0.50 m",
-      "0.50–1.00 m",
-      "1.00 m以上",
+      "0.10–0.20 m",
+      "0.20–0.40 m",
+      "0.40–0.80 m",
+      "0.80–1.60 m",
+      "1.60 m以上",
     ]) {
       expect(screen.getByText(label)).toBeVisible();
     }

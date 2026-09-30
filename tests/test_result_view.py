@@ -24,6 +24,7 @@ from floodsim.results.view import (
     PointOutsideResult,
     ResultTimeIndexInvalid,
     _display_arrow_length_m,
+    depth_legend_metadata,
     elevation_legend_metadata,
     flow_vectors_geojson,
     inspect_native_point,
@@ -99,10 +100,9 @@ def test_max_depth_png_is_north_up_and_transparent_for_dry_no_data() -> None:
     assert rgba.shape == (2, 2, 4)
     # PNG row 0 is north, so internal row 1 appears first.
     assert rgba[0, 0, 3] == 0  # inactive cell
-    assert tuple(rgba[0, 1]) == DEPTH_BANDS[-1].rgba
+    assert tuple(rgba[0, 1]) == DEPTH_BANDS[5].rgba
     assert rgba[1, 0, 3] == 0  # active but < 0.01 m
-    # The minimum visible depth now maps to the first colour of the result-wide range.
-    assert tuple(rgba[1, 1]) == DEPTH_BANDS[0].rgba
+    assert tuple(rgba[1, 1]) == DEPTH_BANDS[1].rgba
 
 
 def test_depth_png_downscale_preserves_only_declared_band_colors() -> None:
@@ -119,7 +119,7 @@ def test_depth_png_downscale_preserves_only_declared_band_colors() -> None:
 
     allowed = {
         DEPTH_BANDS[0].rgba,
-        DEPTH_BANDS[-1].rgba,
+        DEPTH_BANDS[5].rgba,
     }
 
     max_rgba = _rgba(render_max_depth_png(arrays, max_px=256))
@@ -129,6 +129,44 @@ def test_depth_png_downscale_preserves_only_declared_band_colors() -> None:
     assert time_rgba.shape == (256, 256, 4)
     assert {tuple(pixel) for pixel in max_rgba.reshape(-1, 4)} <= allowed
     assert {tuple(pixel) for pixel in time_rgba.reshape(-1, 4)} <= allowed
+
+
+def test_depth_png_uses_fixed_thresholds_when_one_cell_is_deep() -> None:
+    values = np.asarray([[0.02, 0.12, 0.30, 1.20, 2.00]], dtype=np.float32)
+    arrays = NormalizedArrays(
+        depth_time_m=values[np.newaxis, :, :],
+        max_depth_m=values,
+        terrain_elevation_m=np.zeros_like(values),
+        active_mask=np.ones_like(values, dtype=bool),
+        time_values=("0",),
+        grid_resolution_m=1.0,
+    )
+
+    rgba = _rgba(render_max_depth_png(arrays, max_px=4096))
+
+    assert [tuple(pixel) for pixel in rgba[0]] == [
+        DEPTH_BANDS[0].rgba,
+        DEPTH_BANDS[2].rgba,
+        DEPTH_BANDS[3].rgba,
+        DEPTH_BANDS[5].rgba,
+        DEPTH_BANDS[6].rgba,
+    ]
+
+
+def test_depth_legend_is_fixed_when_analysis_maximum_changes() -> None:
+    shallow = depth_legend_metadata(0.01, 0.04)
+    deep = depth_legend_metadata(0.01, 12.0)
+
+    assert shallow == deep
+    assert [item["label"] for item in shallow] == [
+        "0.00–0.05 m",
+        "0.05–0.10 m",
+        "0.10–0.20 m",
+        "0.20–0.40 m",
+        "0.40–0.80 m",
+        "0.80–1.60 m",
+        "1.60 m以上",
+    ]
 
 
 def test_time_depth_png_validates_time_index() -> None:
@@ -582,6 +620,15 @@ def test_result_api_exposes_png_metadata_and_native_inspection(
     assert metadata.json()["engine_summary"]["sfincs_version"] == "2.4.0 Galibier"
     assert metadata.json()["run_summary"]["requested_accuracy_mode"] == "full_1m"
     assert metadata.json()["run_summary"]["manning_defaults"]["road"] == pytest.approx(0.02)
+    assert [item["label"] for item in metadata.json()["depth_legend"]] == [
+        "0.00–0.05 m",
+        "0.05–0.10 m",
+        "0.10–0.20 m",
+        "0.20–0.40 m",
+        "0.40–0.80 m",
+        "0.80–1.60 m",
+        "1.60 m以上",
+    ]
     assert len(metadata.json()["elevation_legend"]) == 8
     assert metadata.json()["elevation_legend"][0]["min_m"] == pytest.approx(1.0)
     assert metadata.json()["elevation_legend"][-1]["max_m"] == pytest.approx(4.0)
