@@ -27,6 +27,7 @@ from floodsim.orchestration.run_coordinator import (
     RunCoordinator,
 )
 from floodsim.preprocessing.full_grid import (
+    BUILDING_PERIMETER_MANNING,
     GENERAL_MANNING,
     ROAD_MANNING,
     build_full_1m_grid,
@@ -218,8 +219,19 @@ def test_full_grid_sets_building_boundary_and_manning() -> None:
     boundary[:, [0, -1]] = True
     assert np.all(grid.sfincs_mask[boundary & ~grid.building_mask] == 1)
     assert np.any(np.isclose(grid.manning_n, ROAD_MANNING))
-    assert np.any(np.isclose(grid.manning_n, GENERAL_MANNING))
+    perimeter = np.zeros_like(grid.building_mask, dtype=bool)
+    perimeter[1:, :] |= grid.building_mask[:-1, :]
+    perimeter[:-1, :] |= grid.building_mask[1:, :]
+    perimeter[:, 1:] |= grid.building_mask[:, :-1]
+    perimeter[:, :-1] |= grid.building_mask[:, 1:]
+    perimeter[1:, 1:] |= grid.building_mask[:-1, :-1]
+    perimeter[1:, :-1] |= grid.building_mask[:-1, 1:]
+    perimeter[:-1, 1:] |= grid.building_mask[1:, :-1]
+    perimeter[:-1, :-1] |= grid.building_mask[1:, 1:]
+    perimeter &= ~grid.building_mask
+    assert np.all(np.isclose(grid.manning_n[perimeter], BUILDING_PERIMETER_MANNING))
     assert ROAD_MANNING == pytest.approx(0.030)
+    assert BUILDING_PERIMETER_MANNING == pytest.approx(GENERAL_MANNING * 2)
     assert grid.roof_allocation.relative_mass_error <= 1e-9
 
 

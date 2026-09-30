@@ -25,6 +25,7 @@ from floodsim.providers.gsi_elevation import ElevationProduct
 
 GENERAL_MANNING = 0.030
 ROAD_MANNING = 0.030
+BUILDING_PERIMETER_MANNING = 0.060
 OUTFLOW_MASK = np.uint8(3)
 NEUMANN_MASK = np.uint8(6)
 
@@ -60,6 +61,20 @@ def _cell_count(size_m: float, grid_m: float) -> int:
     if rounded <= 0 or not math.isclose(count, rounded, rel_tol=0.0, abs_tol=1e-6):
         raise ValueError("analysis dimensions must be divisible by the uniform grid size")
     return rounded
+
+
+def _building_perimeter_mask(building_mask: np.ndarray) -> np.ndarray:
+    """Return the eight-connected active-cell ring immediately around buildings."""
+    perimeter = np.zeros_like(building_mask, dtype=bool)
+    perimeter[1:, :] |= building_mask[:-1, :]
+    perimeter[:-1, :] |= building_mask[1:, :]
+    perimeter[:, 1:] |= building_mask[:, :-1]
+    perimeter[:, :-1] |= building_mask[:, 1:]
+    perimeter[1:, 1:] |= building_mask[:-1, :-1]
+    perimeter[1:, :-1] |= building_mask[:-1, 1:]
+    perimeter[:-1, 1:] |= building_mask[1:, :-1]
+    perimeter[:-1, :-1] |= building_mask[1:, 1:]
+    return perimeter & ~building_mask
 
 
 def _cell_center_elevation(product: ElevationProduct, height: int, width: int) -> np.ndarray:
@@ -257,6 +272,8 @@ def build_full_1m_grid(
 
     manning = np.full((height, width), GENERAL_MANNING, dtype=np.float32)
     manning[road_mask & ~building_mask] = ROAD_MANNING
+    building_perimeter = _building_perimeter_mask(building_mask)
+    manning[building_perimeter & land_mask] = BUILDING_PERIMETER_MANNING
 
     sfincs_mask = np.zeros((height, width), dtype=np.uint8)
     sfincs_mask[land_mask] = 1

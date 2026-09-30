@@ -47,7 +47,7 @@ class RunManifest(BaseModel):
     sfincs_engine_source: str | None = None
     hydromt_sfincs_version: str | None = None
     manning_defaults: dict[str, float] = Field(
-        default_factory=lambda: {"general": 0.030, "road": 0.020}
+        default_factory=lambda: {"general": 0.030, "road": 0.030, "building_perimeter": 0.060}
     )
     boundary_policy: str = (
         "rectangular outer land cells remain active SFINCS mask msk=1 with no exterior "
