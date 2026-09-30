@@ -322,7 +322,7 @@ def test_real_sfincs_builder_writes_with_host_debug(
             ),
         )
         assert float(values.isel(time=0).sum()) == pytest.approx(60.0 * grid.cell_count)
-        assert float(values.isel(time=1).sum()) == 0.0
+        assert float(values.isel(time=1).sum()) == pytest.approx(60.0 * grid.cell_count)
 
 
 def test_full_builder_uses_explicit_performance_settings(

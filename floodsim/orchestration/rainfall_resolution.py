@@ -38,7 +38,7 @@ def _constant_series(intensity: float, duration_minutes: int, metadata: dict[str
     return RainfallTimeSeries(
         start_time=MODEL_REFERENCE_TIME,
         elapsed_seconds=[0.0, duration_seconds],
-        intensity_mm_per_h=[float(intensity), 0.0],
+        intensity_mm_per_h=[float(intensity), float(intensity)],
         source_metadata=metadata,
     )
 
