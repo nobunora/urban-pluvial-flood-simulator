@@ -1,6 +1,6 @@
 # Water magic variant specification
 
-> Status: Draft — catalog and engine forcing validation required before Ready.
+> Status: Draft — source catalog captured; preset approval and engine forcing validation required before Ready.
 >
 > Contract shape: standard
 >
@@ -31,7 +31,7 @@ Choose water magic, preview its placement and footprint on a real map, then simu
 ## Requirements / Invariants
 
 - WM-01: preserve the exact baseline with tag `baseline/main-before-water-magic-2026-10-02`. Develop on `codex/water-magic-spec` in `C:/VSC/urban-pluvial-flood-simulator-water-magic`. This is a Git branch/worktree variant, not a separately created GitHub repository fork. The original checkout and main receive no feature edits. Subsequent main changes do not alter the recorded baseline.
-- WM-02: catalog entries require stable ID, revision, Japanese name, description, illustration reference, footprint kind, supported controls, defaults, bounds, quantity definition, duration and approximation notice. Catalog membership and physical defaults remain blocked pending the discussion content.
+- WM-02: catalog entries require stable ID, revision, Japanese name, description, illustration reference, footprint kind, supported controls, defaults, bounds, quantity definition, duration and approximation notice. Candidate membership is captured in the source catalog below; executable membership and defaults require approval. Preserve estimated ranges and evidence categories instead of treating the discussion as official game specifications.
 - WM-03: selecting a spell initially places its anchor at the current visible map center. Persist that location; panning/zooming must not silently move it. Provide explicit “place at map center” and position adjustment. Analysis-domain geometry and casting geometry are separate.
 - WM-04: render a decorative magic illustration and the actual injection footprint as distinct map layers. Illustration scale cannot determine injection area. Keep terrain and analysis boundary visible. Show a direction arrow where applicable. A simple symbolic illustration is allowed when an asset is unavailable, with an accessible text label.
 - WM-05: shape controls must have numeric equivalents: disk radius; sector radius/opening angle/bearing; oriented rectangle length/width/bearing; polygon vertex edit/undo/reset. These are supported geometry proposals, not a confirmed spell list. Show only controls applicable to the selected spell. Distances use metres; bearing is clockwise from true north, independent of map rotation. A rectangle starts at its anchor and extends along its bearing, centered across its width.
@@ -110,13 +110,14 @@ Time discretization must conserve the prescribed source volume across casting cu
 
 This iteration: documentation structure, links, baseline identity, bounded diff and `git diff --check`; no hydraulic or browser-product acceptance is claimed.
 
-Before Ready: obtain source discussion, complete catalog and limits, settle source eligibility/roof handling, query relevant symbols/callers/tests on demand, and verify pinned engine forcing/time behavior against primary documentation and a tiny real-engine experiment.
+Before Ready: verify material game claims against primary sources, approve executable catalog and limits, settle source eligibility/roof handling, query relevant symbols/callers/tests on demand, and verify pinned engine forcing/time behavior against primary documentation and a tiny real-engine experiment.
 
 Before implementation acceptance: applicable independent quality checks before focused tests; geometry/time/mass unit tests; generated forcing inspection; API/schema/archive integration; tiny real SFINCS source-only and terrain runs; browser selection/placement/direction/timeline/return/import flows; regression of retained results. Use the canonical `urban-pluvial-flood-phase0` interpreter for Python checks. Record exact versions, SHA, commands, exit status and artifacts. Full-suite/build/release gates follow repository policy when implementation exists.
 
 ## Completion Criteria
 
-- [ ] Discussion content is captured with confirmed spell definitions and revisions.
+- [x] Discussion content and candidate spell definitions are captured by reading the user-opened Chrome conversation.
+- [ ] Executable spell definitions, evidence and preset revisions are approved.
 - [ ] Product defaults, bounds, relaxation presets and source eligibility are decided.
 - [ ] Engine localization, cutoff, output times and volume acceptance are demonstrated.
 - [ ] Repository review resolves schema/UI/result compatibility and defines implementation tasks.
@@ -134,9 +135,40 @@ Concentrated volume may cause high local depth, small stable timesteps and large
 
 ## Open Questions
 
-1. The conversation at https://chatgpt.com/c/6abdb38d-8f90-83e9-9cfe-af76e33518cc was inaccessible: public retrieval returned a login page, Chrome navigation/DOM retrieval timed out. Which exact spells, quantities and durations were agreed?
+1. The user-opened Chrome conversation was successfully read after initial public retrieval/login and new-tab timeout failures. Which candidate entries and estimated values should become executable presets? No table value is yet an approved default.
 2. Are any agreed spells momentum-driven, moving, removing water or barrier-producing, requiring another model/scope?
 3. Which catalog presets/bounds and relaxation defaults should be offered?
 4. What source placement/roof routing policy preserves both the intended footprint and mass?
 5. Does the pinned engine faithfully support the proposed short-time forcing/output contract, and what validated execution limits apply?
 6. Does “fork” require a separately named GitHub repository in addition to the branch/worktree created here? Destination/ownership/name were not specified; no new GitHub repository is created by this draft.
+
+## Source Catalog and Conversion Policy
+
+Source: [ゲーム水魔法調査表](https://chatgpt.com/c/6abdb38d-8f90-83e9-9cfe-af76e33518cc), user-opened Chrome tab read on 2026-10-02 JST, including the follow-up equivalent-depth table. The conversation describes water volumes as visual/physical estimates, not official quantities. Durations, dimensions and game mechanics below are discussion claims, not independently verified facts. Preserve that evidence status in the UI and saved catalog. Years label the discussed games/versions, not independently established release metadata.
+
+| Candidate ID | Game / spell | Estimated V (m³) | Discussed time | Discussed effective area (m²) | Variant treatment proposal |
+| --- | --- | --- | --- | --- | --- |
+| ff3-tsunami | FFIII / Tsunami | 10–100 | 1–3 s effect | 150–300 | Directional swept-footprint deposition; wave momentum omitted |
+| warcraft1-elemental | Warcraft I / Water Elemental | 0.2–0.8 | Until defeated | 0.5–1 | Optional collapse-to-water scenario; finite release duration must be specified |
+| chrono-water2 | Chrono Trigger / Water II | 20–80 | 2–4 s effect | 100–200 | Fixed battlefield footprint deposition |
+| ff7-tidalwave | FFVII / Leviathan Tidal Wave | 1,000–10,000 | 5–10 s effect | 500–2,000 | Directional swept footprint; extreme depth/budget gate |
+| ro-waterball5 | Ragnarok Online / Water Ball Lv.5 | 0.84–4.5 | 5 s casting plus impact sequence | About 25 | Target deposition approximation; impact timing unresolved, not 5 s injection by assumption |
+| warcraft3-elemental | Warcraft III / Water Elemental | 0.3–1 | 60 s entity lifetime | 0.8–1.5 | Optional collapse scenario; entity lifetime is not water generation duration |
+| tales-tidalwave | Tales of Symphonia / Tidal Wave | 50–200 | 2–4 s effect; about 7 s casting | 150–300 | Fixed battlefield deposition; exclude casting delay from release duration |
+| gw2-healingrain | Guild Wars 2 / Healing Rain | 0.039–0.117 | 6 s rainfall | About 468, radius about 12.2 m | Disk rain; strongest initial temporal/geometry candidate |
+| lol-nami-wave | LoL / Nami Tidal Wave | 10–40 | 3.267 s travel | 100–210 | Oriented strip deposition; game units lack verified metre conversion |
+| dos2-rain | Divinity: Original Sin 2 / Rain | 1.6–6.3 | 6 s rain, puddle persists | About 314, radius about 10 m | Disk rain; confirm radius/diameter discrepancy |
+| kh3-waterga | Kingdom Hearts III / Waterga | 0.5–5 | 1–2 s effect | 3–13 | Target disk deposition; homing/barrier mechanics omitted |
+| genshin-mona | Genshin / Mona Illusory Torrent | 0.05–0.2 instantaneous water | Stamina-dependent | 1–2 | Optional one-time local release; no repeated generation from moving film |
+| genshin-neuvillette | Genshin / Equitable Judgment | 7.5–60 integrated passage | 3 s | 4–8 irradiation strip | Oriented deposition approximation; jet momentum and moving aim omitted |
+| forspoken-cataract | Forspoken / Cataract | 10–100 | Several seconds, unspecified | 28–79 | Disk/sector deposition; vortex and upward/forward momentum omitted |
+| bg3-createwater | Baldur's Gate 3 / Create Water | 0.25–1 | Brief rain; Wet status 3 turns | About 50.3, radius 4 m | Disk generation; numeric release seconds required, do not convert Wet turns to rain duration |
+| wow-elemental | WoW / Water Elemental (discussion's 2026 version) | 0.4–1.5 | 1.5 s casting; no fixed lifetime given | 1–2 | Optional collapse scenario; casting is not release duration |
+
+All 16 entries may be listed for exploration, but unsupported entries must be marked reference-only and cannot execute without a validated deposition contract. This proposal allows water-volume approximations for directional spells rather than silently removing them from the catalog; it does not broaden the initial model to moving sources or momentum injection.
+
+The same conversation supplies area-based equivalent depth. Recompute it from the actual chosen inputs instead of copying rounded extrema: `h_eq_mm = 1000 * V / A`; `Q_L_per_s = 1000 * V / T_cast`; `q_L_per_s_per_m2 = 1000 * V / (T_cast * A)`. `1 L/m² = 1 mm`. Display these beside quantity, area and duration. Label equivalent depth as cumulative supplied water per area, distinct from calculated terrain water depth. For beams, integrated passage is not instantaneous stored volume; for summoned entities, body volume is not continuous production.
+
+For a source range `[V_min,V_max]` and independently variable area `[A_min,A_max]`, the bounding depth range is `[1000*V_min/A_max,1000*V_max/A_min]`; do not imply endpoints are correlated or precise. Approximate geometry and water volume remain separate uncertainty fields. Do not select a midpoint automatically as an approved preset or interpret estimate ranges as numerical safety limits.
+
+Conversion checks for eventual tests: GW2 `V=0.039 m³,A=468 m²,T=6 s` gives `h≈0.08333 mm,Q=6.5 L/s`; BG3 `V=0.25 m³,r=4 m` gives `h≈4.97359 mm`; Neuvillette `V=60 m³,A=4 m²,T=3 s` gives `h_eq=15000 mm,Q=20000 L/s`, explicitly not a predicted 15 m flood depth. Retain full precision internally and round display only.
