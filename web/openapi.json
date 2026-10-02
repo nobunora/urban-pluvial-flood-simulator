@@ -1184,6 +1184,14 @@
             "title": "Depth Legend",
             "type": "array"
           },
+          "display_scales": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Display Scales",
+            "type": "object"
+          },
           "elevation_legend": {
             "items": {
               "$ref": "#/components/schemas/ResultElevationLegendItem"
@@ -1619,7 +1627,7 @@
   },
   "info": {
     "title": "Urban Pluvial Flood Simulator",
-    "version": "0.1.19"
+    "version": "0.1.20"
   },
   "openapi": "3.1.0",
   "paths": {

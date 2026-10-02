@@ -372,10 +372,12 @@ def test_full_builder_uses_explicit_performance_settings(
     assert int(float(settings["storevel"])) == 1
     assert float(settings["alpha"]) == pytest.approx(0.70)
     assert float(settings["huthresh"]) == pytest.approx(0.005)
-    assert settings["bndfile"] == "sfincs.bnd"
-    assert settings["bzsfile"] == "sfincs.bzs"
-    assert (result.model_dir / "sfincs.bnd").is_file()
-    assert (result.model_dir / "sfincs.bzs").is_file()
+    assert "bndfile" not in settings
+    assert "bzsfile" not in settings
+    assert not (result.model_dir / "sfincs.bnd").exists()
+    assert not (result.model_dir / "sfincs.bzs").exists()
+    assert result.report["neumann_boundary_cells"] == 0
+    assert result.report["neumann_boundary_compatibility_boundary_file"] is False
 
     assert result.report["output_interval_seconds"] == 60
     assert result.report["maximum_output_interval_seconds"] == pytest.approx(600.0)
@@ -383,8 +385,6 @@ def test_full_builder_uses_explicit_performance_settings(
     assert result.report["velocity_output"]["storevel"] == 1
     assert result.report["numerics"]["alpha"] == pytest.approx(0.70)
     assert result.report["numerics"]["huthresh_m"] == pytest.approx(0.005)
-    assert result.report["neumann_boundary_cells"] > 0
-    assert result.report["neumann_boundary_compatibility_boundary_file"] is True
 
 
 def test_full_builder_can_reduce_saved_frame_frequency_without_changing_solver(

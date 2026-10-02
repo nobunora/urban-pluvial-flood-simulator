@@ -794,6 +794,12 @@ export interface components {
             chunk_shape?: number[] | null;
             /** Depth Legend */
             depth_legend?: components["schemas"]["ResultDepthLegendItem"][];
+            /** Display Scales */
+            display_scales?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
             /** Elevation Legend */
             elevation_legend?: components["schemas"]["ResultElevationLegendItem"][];
             engine_summary?: components["schemas"]["ResultEngineSummary"];

@@ -15,6 +15,7 @@ from floodsim.results.regular_netcdf_source import (
     RegularNetcdfSource,
     scan_regular_diagnostics,
 )
+from floodsim.results.regular_queries import prepare_regular_queries
 from floodsim.results.view import (
     AdaptiveNormalizedArrays,
     NormalizedArrays,
@@ -56,6 +57,7 @@ def finalize_regular_netcdf_result(
     root = Path(results_dir)
     root.mkdir(parents=True, exist_ok=True)
     diagnostics = scan_regular_diagnostics(source, model_dir=model_dir)
+    prepare_regular_queries(source, model_dir=model_dir)
     metadata = {
         "schema_version": "1",
         "storage_kind": "regular_netcdf_source",

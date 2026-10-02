@@ -63,7 +63,7 @@ function interpolateFlow(a: FlowVectorFeatureCollection, b: FlowVectorFeatureCol
   return { ...a, features, metadata: { ...a.metadata, arrow_count: features.length, sampling_method: "canonical-1m-viewport-stride-interpolated" } };
 }
 
-const FLOW_COLORS = ["#2DC4B2", "#3BB2D0", "#3F51B5", "#8E44AD", "#E74C3C", "#7F0000"] as const;
+const FLOW_COLORS = ["#2DC4B2", "#3BB2D0", "#3F51B5", "#8E44AD", "#E74C3C", "#A52A2A", "#7F0000"] as const;
 
 function metres(value: number | null | undefined): string {
   return value == null ? "—" : `${value.toFixed(3)} m`;
@@ -141,6 +141,9 @@ export default function ResultPanel({
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionError, setInspectionError] = useState<string | null>(null);
   const [inspectionPoint, setInspectionPoint] = useState<{ lon: number; lat: number } | null>(null);
+  const [mapFocusPoint, setMapFocusPoint] = useState<{ lon: number; lat: number } | null>(null);
+  const maximumLon = metadata.max_depth_summary.global_max_lon_deg;
+  const maximumLat = metadata.max_depth_summary.global_max_lat_deg;
   const depthFrameCacheRef = useRef<Map<number, string>>(new Map());
   const focusRegionRef = useRef<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -191,15 +194,12 @@ export default function ResultPanel({
       setFlowRenderStats(null);
       return;
     }
-    const selectInitialFlowTime = initialFlowTimeRunIdRef.current !== runId;
+    const selectInitialFlowTime = initialFlowTimeRunIdRef.current !== runId && layer !== "time_depth" && !isFullscreen;
     initialFlowTimeRunIdRef.current = runId;
     flowAutoLocateRef.current = selectInitialFlowTime;
     setLayer("time_depth");
-    if (selectInitialFlowTime) {
-      setTimePosition(Math.max(0, metadata.available_time_indices.length - 1));
-    }
     setFlowMode(requestedMode);
-  }, [flowMode, metadata.available_time_indices.length, runId]);
+  }, [flowMode, layer, isFullscreen, runId]);
 
   const showMaximumDepth = useCallback(() => {
     setLayer("max_depth");
@@ -229,7 +229,29 @@ export default function ResultPanel({
     const load = async () => {
       setFlowLoading(true);
       setFlowError(null);
+      setFlowVectorData(null);
       try {
+        if (flowAutoLocateRef.current) {
+          const center = await inspectResult(
+            runId,
+            (metadata.bounds.west_deg + metadata.bounds.east_deg) / 2,
+            (metadata.bounds.south_deg + metadata.bounds.north_deg) / 2,
+            null,
+            controller.signal,
+          );
+          if (disposed) return;
+          flowAutoLocateRef.current = false;
+          if (center?.has_data && center.max_time_index !== null) {
+            const maximumPosition = metadata.available_time_indices.reduce((best, index, position) => (
+              Math.abs(index - center.max_time_index!) < Math.abs(metadata.available_time_indices[best] - center.max_time_index!)
+                ? position : best
+            ), 0);
+            if (maximumPosition !== timePosition) {
+              setTimePosition(maximumPosition);
+              return;
+            }
+          }
+        }
         const current = await getFlowVectors(
           runId,
           selectedTimeIndex,
@@ -238,36 +260,6 @@ export default function ResultPanel({
           controller.signal,
         );
         if (disposed) return;
-
-        if (current.metadata.arrow_count > 0 || !flowAutoLocateRef.current) {
-          flowAutoLocateRef.current = false;
-          setFlowVectorData(current);
-          return;
-        }
-
-        const positions = metadata.available_time_indices
-          .map((_, position) => position)
-          .filter((position) => position !== timePosition)
-          .sort((a, b) => Math.abs(a - timePosition) - Math.abs(b - timePosition));
-
-        for (const position of positions) {
-          const candidateIndex = metadata.available_time_indices[position];
-          if (candidateIndex == null) continue;
-          const candidate = await getFlowVectors(
-            runId,
-            candidateIndex,
-            flowViewport,
-            flowStride,
-            controller.signal,
-          );
-          if (disposed) return;
-          if (candidate.metadata.arrow_count > 0) {
-            flowAutoLocateRef.current = false;
-            setFlowVectorData(candidate);
-            setTimePosition(position);
-            return;
-          }
-        }
 
         flowAutoLocateRef.current = false;
         setFlowVectorData(current);
@@ -291,6 +283,7 @@ export default function ResultPanel({
     flowVisible,
     metadata.available_time_indices,
     metadata.flow_vectors_available,
+    metadata.bounds,
     runId,
     selectedTimeIndex,
     timePosition,
@@ -310,6 +303,12 @@ export default function ResultPanel({
     if (indices.length === 0 || typeof window.fetch !== "function") return;
 
     const controller = new AbortController();
+    // Warm static layers while the initial maximum-depth map is shown.
+    for (const staticLayer of ["elevation", "grid-resolution"] as const) {
+      void window.fetch(resultLayerUrl(runId, staticLayer), {
+        cache: "force-cache", signal: controller.signal,
+      }).catch(() => undefined);
+    }
     const createdObjectUrls: string[] = [];
     let cursor = 0;
 
@@ -415,12 +414,19 @@ export default function ResultPanel({
     const candidateMaximum = flowVectorData?.metadata.display_max_speed_mps ?? 2;
     return [minimum, candidateMaximum > minimum ? candidateMaximum : Math.max(minimum, 2)];
   }, [flowVectorData]);
-  const flowLegend = useMemo(() => FLOW_COLORS.map((color, index) => {
-    const [minimum, maximum] = flowSpeedRange;
-    const edge0 = minimum + (maximum - minimum) * index / FLOW_COLORS.length;
-    const edge1 = minimum + (maximum - minimum) * (index + 1) / FLOW_COLORS.length;
-    return [`${edge0.toFixed(3)}–${edge1.toFixed(3)} m/s`, color] as const;
-  }), [flowSpeedRange]);
+  const flowSpeedBreaks = flowVectorData?.metadata.speed_scale?.breaks;
+  const flowLegend = useMemo(() => {
+    if (flowSpeedBreaks) return Array.from({ length: flowVectorData?.metadata.speed_scale?.class_count ?? 0 }, (_, index) => {
+      const edge0 = flowSpeedBreaks[index];
+      const edge1 = flowSpeedBreaks[Math.min(index + 1, flowSpeedBreaks.length - 1)];
+      const labels = flowVectorData?.metadata.speed_scale?.boundary_labels;
+      return [`${labels?.[index] ?? edge0}–${labels?.[Math.min(index + 1, flowSpeedBreaks.length - 1)] ?? edge1} m/s`, FLOW_COLORS[index]] as const;
+    });
+    return FLOW_COLORS.map((color, index) => {
+      const [minimum, maximum] = flowSpeedRange;
+      return [`${(minimum + (maximum - minimum) * index / FLOW_COLORS.length).toFixed(3)}–${(minimum + (maximum - minimum) * (index + 1) / FLOW_COLORS.length).toFixed(3)} m/s`, color] as const;
+    });
+  }, [flowSpeedBreaks, flowVectorData, flowSpeedRange]);
   const maxTimePosition = Math.max(0, metadata.available_time_indices.length - 1);
 
   useEffect(() => {
@@ -432,7 +438,9 @@ export default function ResultPanel({
     if (nextIndex == null) return;
     const controller = new AbortController();
     void getFlowVectors(runId, nextIndex, flowViewport, flowStride, controller.signal)
-      .then(setNextFlowVectorData)
+      .then((data) => {
+        if (!controller.signal.aborted) setNextFlowVectorData(data);
+      })
       .catch(() => undefined);
     return () => controller.abort();
   }, [flowVectorData, flowVisible, flowStride, flowViewport, metadata.available_time_indices, runId, selectedTimeIndex, timePosition]);
@@ -555,6 +563,16 @@ export default function ResultPanel({
               </button>
               <button
                 type="button"
+                disabled={!Number.isFinite(maximumLon) || !Number.isFinite(maximumLat)}
+                onClick={() => {
+                  setMapFocusPoint({ lon: maximumLon, lat: maximumLat });
+                  setInspectionPoint({ lon: maximumLon, lat: maximumLat });
+                }}
+              >
+                最大深度箇所
+              </button>
+              <button
+                type="button"
                 className={flowMode === "vectors" ? "is-active" : ""}
                 aria-pressed={flowMode === "vectors"}
                 disabled={!metadata.flow_vectors_available || !flowViewportReady}
@@ -672,9 +690,11 @@ export default function ResultPanel({
               imageUrl={imageUrl}
               flowVectorData={visualFlowVectorData}
               flowSpeedRange={flowSpeedRange}
+              flowSpeedBreaks={flowSpeedBreaks}
               flowDisplayMode={flowMode === "off" ? null : flowMode}
               backgroundOpacity={(100 - backgroundTransparency) / 100}
               mapLabel={mapLabel}
+              focusPoint={mapFocusPoint}
               onInspect={handleInspect}
               onFlowRenderStats={setFlowRenderStats}
               onViewportChange={handleViewportChange}

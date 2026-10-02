@@ -1,0 +1,20 @@
+{
+  "python.analysis.exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.venv",
+    "**/.cache",
+    "**/.pytest_cache",
+    "**/.mypy_cache",
+    "**/.ruff_cache",
+    ".codebase-memory",
+    "build",
+    "build-msvc",
+    "artifacts",
+    "data",
+    "area",
+    "SFINCS_2026_01_release",
+    "floodsim/static",
+    "web"
+  ]
+}

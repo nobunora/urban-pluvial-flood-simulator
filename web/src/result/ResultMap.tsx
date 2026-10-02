@@ -35,9 +35,11 @@ type Props = {
   imageUrl: string;
   flowVectorData: FlowVectorFeatureCollection | null;
   flowSpeedRange?: readonly [number, number];
+  flowSpeedBreaks?: readonly number[];
   flowDisplayMode?: "vectors" | "particles" | null;
   backgroundOpacity: number;
   mapLabel: string;
+  focusPoint?: { lon: number; lat: number } | null;
   onInspect?: (lon: number, lat: number) => void;
   onFlowRenderStats?: (stats: FlowRenderStats | null) => void;
   onViewportChange?: (viewport: FlowViewport, zoom: number) => void;
@@ -90,8 +92,13 @@ type FlowParticle = ScreenPoint & {
   generation: number;
 };
 
-function flowColor(speedMps: number, range: readonly [number, number]): string {
-  const colors = ["#2DC4B2", "#3BB2D0", "#3F51B5", "#8E44AD", "#E74C3C", "#7F0000"];
+function flowColor(speedMps: number, range: readonly [number, number], breaks?: readonly number[]): string {
+  const colors = ["#2DC4B2", "#3BB2D0", "#3F51B5", "#8E44AD", "#E74C3C", "#A52A2A", "#7F0000"];
+  if (breaks) {
+    let index = 0;
+    while (index < breaks.length - 2 && speedMps > breaks[index + 1]) index++;
+    return colors[Math.min(index, colors.length - 1)];
+  }
   const [minimum, maximum] = range;
   if (maximum <= minimum) return colors[colors.length - 1];
   return colors[Math.min(colors.length - 1, Math.floor(Math.max(0, Math.min(1, (speedMps - minimum) / (maximum - minimum))) * colors.length))];
@@ -388,9 +395,11 @@ export default function ResultMap({
   imageUrl,
   flowVectorData,
   flowSpeedRange = [0.001, 1] as const,
+  flowSpeedBreaks,
   flowDisplayMode = flowVectorData ? "vectors" : null,
   backgroundOpacity,
   mapLabel,
+  focusPoint,
   onInspect,
   onFlowRenderStats,
   onViewportChange,
@@ -406,6 +415,16 @@ export default function ResultMap({
   const inspectRef = useRef(onInspect);
   const viewportRef = useRef(onViewportChange);
   const initialImageUrlRef = useRef(imageUrl);
+
+  useEffect(() => {
+    const map = overlayMapRef.current;
+    if (!map || !focusPoint) return;
+    map.jumpTo({ center: [focusPoint.lon, focusPoint.lat] });
+    markerRef.current?.remove();
+    markerRef.current = new Marker({ color: "#1f2937" })
+      .setLngLat([focusPoint.lon, focusPoint.lat])
+      .addTo(map);
+  }, [focusPoint]);
 
   useEffect(() => {
     inspectRef.current = onInspect;
@@ -642,7 +661,7 @@ export default function ResultMap({
         const line = document.createElementNS(namespace, "path");
         line.setAttribute("d", d);
         line.setAttribute("fill", "none");
-        line.setAttribute("stroke", flowColor(feature.properties.speed_mps, flowSpeedRange));
+        line.setAttribute("stroke", flowColor(feature.properties.speed_mps, flowSpeedRange, flowSpeedBreaks));
         line.setAttribute("stroke-width", "4");
         line.setAttribute("stroke-linecap", "round");
         line.setAttribute("stroke-linejoin", "round");
@@ -719,7 +738,7 @@ export default function ResultMap({
       svg.replaceChildren();
       svg.dataset.flowSvgArrows = "0";
     };
-  }, [flowDisplayMode, flowVectorData, onFlowRenderStats]);
+  }, [flowDisplayMode, flowVectorData, flowSpeedRange, flowSpeedBreaks, onFlowRenderStats]);
 
   useEffect(() => {
     const map = overlayMapRef.current;
@@ -858,7 +877,7 @@ export default function ResultMap({
           if (!flow) return;
         }
 
-        const particleColor = flowColor(flow.speedMps, flowSpeedRange);
+        const particleColor = flowColor(flow.speedMps, flowSpeedRange, flowSpeedBreaks);
         drawFadingTrail(context, particle.trail, particleColor);
 
         // The particle itself is a zero-length point; only its fading history
@@ -886,7 +905,7 @@ export default function ResultMap({
       context.clearRect(0, 0, canvas.width, canvas.height);
       canvas.dataset.flowParticles = "0";
     };
-  }, [flowDisplayMode, flowVectorData]);
+  }, [flowDisplayMode, flowVectorData, flowSpeedRange, flowSpeedBreaks]);
 
   return (
     <div className="result-map-stack" role="region" aria-label={mapLabel}>
