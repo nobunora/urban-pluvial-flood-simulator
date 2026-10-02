@@ -28,13 +28,21 @@ from floodsim.api.schemas import (
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.orchestration.run_coordinator import ResultNotReady, RunNotFound
 from floodsim.providers.common import ProviderError
+from floodsim.results.adaptive_scale import generate_adaptive_breaks
 from floodsim.results.archive import ResultArchiveError, create_result_archive
 from floodsim.results.elevation_preview import ElevationPreviewStore
+from floodsim.results.regular_flow import regular_flow_viewport
 from floodsim.results.regular_netcdf_source import (
     RegularNetcdfSourceError,
     load_regular_netcdf_descriptor,
-    read_regular_point_depth_series,
+    regular_speed_reference,
     regular_window_arrays,
+)
+from floodsim.results.regular_queries import (
+    inspect_regular_point,
+    regular_elevation_png,
+    regular_grid_png,
+    saved_speed_scale,
 )
 from floodsim.results.vector_viewport import flow_vectors_viewport_geojson
 from floodsim.results.view import (
@@ -46,6 +54,7 @@ from floodsim.results.view import (
     elevation_legend_metadata,
     inspect_native_point,
     load_normalized_arrays,
+    maximum_depth_location,
     render_elevation_values_png,
     render_grid_resolution_png,
     render_max_depth_png,
@@ -153,6 +162,13 @@ def _source_arrays_for_run(run_id: UUID, time_index: int) -> ResultArrays | None
     )
 
 
+@lru_cache(maxsize=16)
+def _source_speed_scale_cached(path_text: str, mtime_ns: int, model_dir: str) -> dict[str, Any]:
+    del mtime_ns
+    descriptor = load_regular_netcdf_descriptor(path_text)
+    return regular_speed_reference(descriptor, model_dir=model_dir).to_metadata()
+
+
 LAYER_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=31536000, immutable",
 }
@@ -165,13 +181,15 @@ def result_metadata(run_id: UUID) -> ResultMetadataResponse:
         metadata = coordinator.result_metadata(run_id)
     except (RunNotFound, ResultNotReady) as exc:
         raise _map_result_error(exc) from exc
-    # Depth bands are a presentation contract. Override legacy persisted metadata
-    # so imported and already-completed runs use the current fixed thresholds.
-    metadata["depth_legend"] = depth_legend_metadata()
-    if not metadata.get("elevation_legend"):
-        arrays = _arrays_for_run(run_id)
-        minimum_m, maximum_m = terrain_elevation_range(arrays)
-        metadata["elevation_legend"] = elevation_legend_metadata(minimum_m, maximum_m)
+    arrays = _arrays_for_run(run_id)
+    metadata["max_depth_summary"] = {
+        **metadata["max_depth_summary"],
+        **maximum_depth_location(arrays, area=coordinator.get(run_id).config.analysis_area),
+    }
+    metadata["depth_legend"] = depth_legend_metadata(scale=arrays.depth_scale)
+    minimum_m, maximum_m = terrain_elevation_range(arrays)
+    metadata["elevation_legend"] = elevation_legend_metadata(minimum_m, maximum_m, scale=arrays.elevation_scale)
+    metadata["display_scales"] = {"depth": arrays.depth_scale.to_metadata(), "elevation": arrays.elevation_scale.to_metadata()}
     return ResultMetadataResponse.model_validate(metadata)
 
 
@@ -211,7 +229,7 @@ def create_elevation_preview(request: ElevationPreviewRequest) -> ElevationPrevi
             "grid_cell_size_m": request.grid_cell_size_m,
             "width_samples": int(product.z.shape[1]),
             "height_samples": int(product.z.shape[0]),
-            "elevation_legend": elevation_legend_metadata(minimum_m, maximum_m),
+            "elevation_legend": elevation_legend_metadata(minimum_m, maximum_m, scale=generate_adaptive_breaks(product.z[active_mask], anchor_zero=False)),
             "provider_counts": counts,
             "nearest_filled_cells": int(product.nearest_filled),
         }
@@ -382,20 +400,34 @@ def time_depth_layer(
 
 @router.get("/runs/{run_id}/layers/grid-resolution.png")
 def grid_resolution_layer(run_id: UUID, max_px: int = 4096) -> Response:
-    arrays = _arrays_for_run(run_id)
     try:
-        content = render_grid_resolution_png(arrays, max_px=max_px)
-    except ResultViewError as exc:
+        try:
+            source_path = coordinator.result_source_path(run_id)
+        except ResultNotReady:
+            source_path = None
+        if source_path is not None:
+            content = regular_grid_png(load_regular_netcdf_descriptor(source_path),
+                coordinator.store.run_dir(run_id) / "model", max_px)
+        else:
+            content = render_grid_resolution_png(_arrays_for_run(run_id), max_px=max_px)
+    except (RunNotFound, ResultViewError, RegularNetcdfSourceError, OSError) as exc:
         raise _map_result_error(exc) from exc
     return Response(content=content, media_type="image/png", headers=LAYER_CACHE_HEADERS)
 
 
 @router.get("/runs/{run_id}/layers/elevation.png")
 def elevation_layer(run_id: UUID, max_px: int = 4096) -> Response:
-    arrays = _arrays_for_run(run_id)
     try:
-        content = render_terrain_elevation_png(arrays, max_px=max_px)
-    except ResultViewError as exc:
+        try:
+            source_path = coordinator.result_source_path(run_id)
+        except ResultNotReady:
+            source_path = None
+        if source_path is not None:
+            content = regular_elevation_png(load_regular_netcdf_descriptor(source_path),
+                coordinator.store.run_dir(run_id) / "model", max_px)
+        else:
+            content = render_terrain_elevation_png(_arrays_for_run(run_id), max_px=max_px)
+    except (RunNotFound, ResultViewError, RegularNetcdfSourceError, OSError) as exc:
         raise _map_result_error(exc) from exc
     return Response(content=content, media_type="image/png", headers=LAYER_CACHE_HEADERS)
 
@@ -416,17 +448,26 @@ def flow_vectors_geojson_layer(
 ) -> JSONResponse:
     try:
         record = coordinator.get(run_id)
-        source_arrays = _source_arrays_for_run(run_id, time_index)
-        if source_arrays is not None:
-            payload = flow_vectors_viewport_geojson(
-                source_arrays,
+        try:
+            source_path = coordinator.result_source_path(run_id)
+        except ResultNotReady:
+            source_path = None
+        if source_path is not None:
+            source = load_regular_netcdf_descriptor(source_path)
+            model_dir = coordinator.store.run_dir(run_id) / "model"
+            speed_scale = saved_speed_scale(source, model_dir) or _source_speed_scale_cached(
+                str(source_path), source_path.stat().st_mtime_ns, str(model_dir)
+            )
+            payload = regular_flow_viewport(
+                source, model_dir=model_dir,
                 area=record.config.analysis_area,
-                time_index=0,
+                time_index=time_index,
                 west=west,
                 south=south,
                 east=east,
                 north=north,
                 stride=stride,
+                speed_scale=speed_scale,
             )
         else:
             path, mtime_ns = _arrays_path_for_run(run_id)
@@ -455,34 +496,24 @@ def inspect_result(
 ) -> PointInspectionResponse:
     try:
         record = coordinator.get(run_id)
-        source_arrays = _source_arrays_for_run(run_id, time_index or 0)
-        arrays = source_arrays or _arrays_for_run(run_id)
+        try:
+            source_path = coordinator.result_source_path(run_id)
+        except ResultNotReady:
+            source_path = None
+        if source_path is not None:
+            return PointInspectionResponse.model_validate(inspect_regular_point(
+                load_regular_netcdf_descriptor(source_path),
+                model_dir=coordinator.store.run_dir(run_id) / "model",
+                area=record.config.analysis_area, lon=lon, lat=lat, time_index=time_index,
+            ))
+        arrays = _arrays_for_run(run_id)
         payload = inspect_native_point(
             arrays,
             area=record.config.analysis_area,
             lon_deg=lon,
             lat_deg=lat,
-            time_index=(0 if source_arrays is not None and time_index is not None else time_index),
+            time_index=time_index,
         )
-        if source_arrays is not None:
-            assert record.result_metadata is not None
-            source = load_regular_netcdf_descriptor(coordinator.result_source_path(run_id))
-            if payload["has_data"]:
-                depth_series = read_regular_point_depth_series(
-                    source,
-                    model_dir=coordinator.store.run_dir(run_id) / "model",
-                    row=int(payload["row"]),
-                    column=int(payload["column"]),
-                )
-                max_time_index = int(np.nanargmax(depth_series))
-                payload["max_time_index"] = max_time_index
-                payload["max_time_value"] = source.time_values[max_time_index]
-            payload["time_index"] = time_index
-            payload["time_value"] = (
-                record.result_metadata["time_values"][time_index]
-                if time_index is not None
-                else None
-            )
     except (RunNotFound, ResultViewError, RegularNetcdfSourceError) as exc:
         raise _map_result_error(exc) from exc
     return PointInspectionResponse.model_validate(payload)

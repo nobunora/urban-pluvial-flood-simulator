@@ -40,6 +40,7 @@ def _viewport_cell_bounds(
     south: float,
     east: float,
     north: float,
+    source_shape: tuple[int, int] | None = None,
 ) -> tuple[int, int, int, int]:
     if not (-180 <= west < east <= 180 and -90 <= south < north <= 90):
         raise ResultViewError("viewport bounds are invalid")
@@ -54,7 +55,7 @@ def _viewport_cell_bounds(
     ys = [p[1] for p in corners]
     xmin = -area.width_m / 2.0
     ymin = -area.height_m / 2.0
-    height, width = arrays.shape
+    height, width = source_shape or arrays.shape
     cell_width_m = area.width_m / float(width)
     cell_height_m = area.height_m / float(height)
     col0 = max(0, min(width, int(np.floor((min(xs) - xmin) / cell_width_m))))
@@ -88,6 +89,9 @@ def flow_vectors_viewport_geojson(
     north: float,
     stride: int,
     min_speed_mps: float = _MIN_SPEED_MPS,
+    source_shape: tuple[int, int] | None = None,
+    window_origin: tuple[int, int] = (0, 0),
+    speed_scale: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return viewport samples at ``stride`` metres, independent of grid size."""
     if stride < 1:
@@ -99,7 +103,7 @@ def flow_vectors_viewport_geojson(
     speed_min_mps, speed_max_mps = _result_speed_range(arrays, time_index)
 
     row0, row1, col0, col1 = _viewport_cell_bounds(
-        arrays, area=area, west=west, south=south, east=east, north=north
+        arrays, area=area, west=west, south=south, east=east, north=north, source_shape=source_shape
     )
     to_wgs84 = Transformer.from_crs(local_crs(area), CRS.from_epsg(4326), always_xy=True)
     xmin = -area.width_m / 2.0
@@ -110,8 +114,9 @@ def flow_vectors_viewport_geojson(
         face_lookup = _face_lookup(arrays)
     else:
         face_lookup = None
-    cell_width_m = area.width_m / float(arrays.shape[1])
-    cell_height_m = area.height_m / float(arrays.shape[0])
+    height, width = source_shape or arrays.shape
+    cell_width_m = area.width_m / float(width)
+    cell_height_m = area.height_m / float(height)
     cell_spacing_m = min(cell_width_m, cell_height_m)
     stride_cells = max(1, round(float(stride) / cell_spacing_m))
     arrow_length_m = 0.8 * float(stride)
@@ -181,8 +186,10 @@ def flow_vectors_viewport_geojson(
                 col += int(grid_resolution) // 2
             else:
                 assert isinstance(arrays, NormalizedArrays)
-                rows = np.arange(sample_row0, sample_row1)
-                cols = np.arange(sample_col0, sample_col1)
+                r0, r1 = sample_row0 - window_origin[0], sample_row1 - window_origin[0]
+                c0, c1 = sample_col0 - window_origin[1], sample_col1 - window_origin[1]
+                rows = np.arange(r0, r1)
+                cols = np.arange(c0, c1)
                 velocity_rows = np.minimum(
                     arrays.velocity_u_mps.shape[1] - 1,
                     rows // arrays.velocity_grid_stride,
@@ -192,14 +199,14 @@ def flow_vectors_viewport_geojson(
                     cols // arrays.velocity_grid_stride,
                 )
                 depths = arrays.depth_time_m[
-                    time_index, sample_row0:sample_row1, sample_col0:sample_col1
+                    time_index, r0:r1, c0:c1
                 ]
                 us = arrays.velocity_u_mps[time_index][np.ix_(velocity_rows, velocity_cols)]
                 vs = arrays.velocity_v_mps[time_index][np.ix_(velocity_rows, velocity_cols)]
                 speeds = np.hypot(us, vs)
                 valid = (
                     arrays.active_mask[
-                        sample_row0:sample_row1, sample_col0:sample_col1
+                        r0:r1, c0:c1
                     ]
                     & np.isfinite(depths)
                     & (depths >= DISPLAY_DRY_THRESHOLD_M)
@@ -225,7 +232,7 @@ def flow_vectors_viewport_geojson(
                 grid_resolution = (
                     float(arrays.grid_resolution_m)
                     if np.ndim(arrays.grid_resolution_m) == 0
-                    else float(np.asarray(arrays.grid_resolution_m)[row, col])
+                    else float(np.asarray(arrays.grid_resolution_m)[row - window_origin[0], col - window_origin[1]])
                 )
 
             speed = float(np.hypot(u, v))
@@ -286,6 +293,7 @@ def flow_vectors_viewport_geojson(
             "min_speed_mps": float(min_speed_mps),
             "display_min_speed_mps": speed_min_mps,
             "display_max_speed_mps": speed_max_mps,
+            "speed_scale": speed_scale if speed_scale is not None else arrays.speed_scale.to_metadata(),
             "sample_stride_cells": stride_cells,
             "target_spacing_m": float(stride),
             "arrow_length_m": arrow_length_m,

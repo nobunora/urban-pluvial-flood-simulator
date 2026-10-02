@@ -182,6 +182,13 @@ function options(index: number) {
 }
 
 describe("ResultMap", () => {
+  it("moves the map to the requested deepest-cell coordinates", () => {
+    const props = { metadata, imageUrl: "/test.png", flowVectorData: null, backgroundOpacity: 1, mapLabel: "test" };
+    const view = render(<ResultMap {...props} />);
+    view.rerender(<ResultMap {...props} focusPoint={{ lon: 139.76, lat: 35.66 }} />);
+    expect(mocks.jumpTo).toHaveBeenCalledWith({ center: [139.76, 35.66] });
+  });
+
   it("maps particle travel speed proportionally to hydraulic velocity", () => {
     expect(particleSpeedPxPerSecond(0.1)).toBeCloseTo(3.6);
     expect(particleSpeedPxPerSecond(0.5)).toBeCloseTo(18);

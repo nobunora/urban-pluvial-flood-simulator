@@ -29,6 +29,7 @@ from floodsim.results.view import (
     flow_vectors_geojson,
     inspect_native_point,
     load_normalized_arrays,
+    maximum_depth_location,
     render_grid_resolution_png,
     render_max_depth_png,
     render_terrain_elevation_png,
@@ -94,15 +95,26 @@ def _rgba(png: bytes) -> np.ndarray:
         return np.asarray(image.convert("RGBA"))
 
 
+@pytest.mark.parametrize("cell_size", [1.0, 4.0])
+def test_maximum_location_resolves_to_the_deepest_native_cell(cell_size: float) -> None:
+    arrays = _arrays()
+    area = _area().model_copy(update={"width_m": 2 * cell_size, "height_m": 2 * cell_size, "area_m2": 4 * cell_size ** 2})
+    location = maximum_depth_location(arrays, area=area)
+    point = inspect_native_point(arrays, area=area, lon_deg=location["global_max_lon_deg"], lat_deg=location["global_max_lat_deg"])
+    assert point["row"] == 1
+    assert point["column"] == 1
+    assert point["max_depth_m"] == pytest.approx(1.2)
+
+
 def test_max_depth_png_is_north_up_and_transparent_for_dry_no_data() -> None:
     rgba = _rgba(render_max_depth_png(_arrays(), max_px=4096))
 
     assert rgba.shape == (2, 2, 4)
     # PNG row 0 is north, so internal row 1 appears first.
     assert rgba[0, 0, 3] == 0  # inactive cell
-    assert tuple(rgba[0, 1]) == DEPTH_BANDS[5].rgba
+    assert tuple(rgba[0, 1]) == DEPTH_BANDS[1].rgba
     assert rgba[1, 0, 3] == 0  # active but < 0.01 m
-    assert tuple(rgba[1, 1]) == DEPTH_BANDS[1].rgba
+    assert tuple(rgba[1, 1]) == DEPTH_BANDS[0].rgba
 
 
 def test_depth_png_downscale_preserves_only_declared_band_colors() -> None:
@@ -119,7 +131,7 @@ def test_depth_png_downscale_preserves_only_declared_band_colors() -> None:
 
     allowed = {
         DEPTH_BANDS[0].rgba,
-        DEPTH_BANDS[5].rgba,
+        DEPTH_BANDS[1].rgba,
     }
 
     max_rgba = _rgba(render_max_depth_png(arrays, max_px=256))
@@ -131,42 +143,13 @@ def test_depth_png_downscale_preserves_only_declared_band_colors() -> None:
     assert {tuple(pixel) for pixel in time_rgba.reshape(-1, 4)} <= allowed
 
 
-def test_depth_png_uses_fixed_thresholds_when_one_cell_is_deep() -> None:
-    values = np.asarray([[0.02, 0.12, 0.30, 1.20, 2.00]], dtype=np.float32)
-    arrays = NormalizedArrays(
-        depth_time_m=values[np.newaxis, :, :],
-        max_depth_m=values,
-        terrain_elevation_m=np.zeros_like(values),
-        active_mask=np.ones_like(values, dtype=bool),
-        time_values=("0",),
-        grid_resolution_m=1.0,
-    )
-
-    rgba = _rgba(render_max_depth_png(arrays, max_px=4096))
-
-    assert [tuple(pixel) for pixel in rgba[0]] == [
-        DEPTH_BANDS[0].rgba,
-        DEPTH_BANDS[2].rgba,
-        DEPTH_BANDS[3].rgba,
-        DEPTH_BANDS[5].rgba,
-        DEPTH_BANDS[6].rgba,
-    ]
-
-
-def test_depth_legend_is_fixed_when_analysis_maximum_changes() -> None:
+def test_depth_legend_tracks_adaptive_analysis_range() -> None:
     shallow = depth_legend_metadata(0.01, 0.04)
     deep = depth_legend_metadata(0.01, 12.0)
-
-    assert shallow == deep
-    assert [item["label"] for item in shallow] == [
-        "0.00–0.05 m",
-        "0.05–0.10 m",
-        "0.10–0.20 m",
-        "0.20–0.40 m",
-        "0.40–0.80 m",
-        "0.80–1.60 m",
-        "1.60 m以上",
-    ]
+    assert shallow != deep
+    assert shallow[0]["min_m"] == 0
+    assert shallow[-1]["max_m"] == pytest.approx(0.04)
+    assert deep[-1]["max_m"] == pytest.approx(12)
 
 
 def test_time_depth_png_validates_time_index() -> None:
@@ -193,15 +176,14 @@ def test_terrain_elevation_png_uses_rainbow_bands_and_active_mask() -> None:
 
     assert rgba[0, 0, 3] == 0
     assert tuple(rgba[1, 0]) == ELEVATION_COLORS[0]
-    assert tuple(rgba[0, 1]) == ELEVATION_COLORS[-1]
+    assert tuple(rgba[0, 1]) == ELEVATION_COLORS[1]
 
 
-def test_elevation_legend_divides_the_analysis_range_into_eight_bands() -> None:
+def test_elevation_legend_uses_seven_adaptive_bands() -> None:
     legend = elevation_legend_metadata(1.0, 4.0)
 
-    assert len(legend) == 8
-    assert legend[0]["label"] == "1.00–1.38 m"
-    assert legend[-1]["label"] == "3.62–4.00 m"
+    assert len(legend) == 7
+    assert all(item["max_m"] > item["min_m"] for item in legend)
     assert legend[0]["min_m"] == 1.0
     assert legend[-1]["max_m"] == 4.0
 
@@ -593,7 +575,7 @@ def test_elevation_preview_api_fetches_terrain_without_creating_a_run(
     assert payload["height_samples"] == 2
     assert payload["provider_counts"] == {"gsi_1m": 3}
     assert payload["nearest_filled_cells"] == 2
-    assert len(payload["elevation_legend"]) == 8
+    assert len(payload["elevation_legend"]) == 2
     assert payload["elevation_legend"][0]["min_m"] == pytest.approx(1.0)
     assert payload["elevation_legend"][-1]["max_m"] == pytest.approx(4.0)
 
@@ -620,16 +602,9 @@ def test_result_api_exposes_png_metadata_and_native_inspection(
     assert metadata.json()["engine_summary"]["sfincs_version"] == "2.4.0 Galibier"
     assert metadata.json()["run_summary"]["requested_accuracy_mode"] == "full_1m"
     assert metadata.json()["run_summary"]["manning_defaults"]["road"] == pytest.approx(0.02)
-    assert [item["label"] for item in metadata.json()["depth_legend"]] == [
-        "0.00–0.05 m",
-        "0.05–0.10 m",
-        "0.10–0.20 m",
-        "0.20–0.40 m",
-        "0.40–0.80 m",
-        "0.80–1.60 m",
-        "1.60 m以上",
-    ]
-    assert len(metadata.json()["elevation_legend"]) == 8
+    assert len(metadata.json()["depth_legend"]) == 2
+    assert metadata.json()["display_scales"]["depth"]["mode"] == "quantile"
+    assert len(metadata.json()["elevation_legend"]) == 2
     assert metadata.json()["elevation_legend"][0]["min_m"] == pytest.approx(1.0)
     assert metadata.json()["elevation_legend"][-1]["max_m"] == pytest.approx(4.0)
 

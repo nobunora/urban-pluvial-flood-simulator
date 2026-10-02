@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import cached_property
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,12 @@ from pyproj import CRS, Transformer
 
 from floodsim.domain.geometry import AnalysisArea
 from floodsim.providers.common import local_crs
+from floodsim.results.adaptive_scale import (
+    AdaptiveScaleResult,
+    color_indices,
+    generate_adaptive_breaks,
+    scale_legend,
+)
 
 DISPLAY_DRY_THRESHOLD_M = 0.01
 MIN_RENDER_PX = 256
@@ -98,6 +105,18 @@ class NormalizedArrays:
     velocity_v_mps: np.ndarray | None = None
     velocity_grid_stride: int = 1
 
+    @cached_property
+    def depth_scale(self) -> AdaptiveScaleResult:
+        return result_scale(self, self.max_depth_m, zero_epsilon=DISPLAY_DRY_THRESHOLD_M)
+
+    @cached_property
+    def elevation_scale(self) -> AdaptiveScaleResult:
+        return result_scale(self, self.terrain_elevation_m, anchor_zero=False)
+
+    @cached_property
+    def speed_scale(self) -> AdaptiveScaleResult:
+        return result_speed_scale(self)
+
     @property
     def shape(self) -> tuple[int, int]:
         return self.max_depth_m.shape
@@ -122,6 +141,18 @@ class AdaptiveNormalizedArrays:
     velocity_u_mps: np.ndarray | None = None
     velocity_v_mps: np.ndarray | None = None
 
+    @cached_property
+    def depth_scale(self) -> AdaptiveScaleResult:
+        return result_scale(self, self.max_depth_m, zero_epsilon=DISPLAY_DRY_THRESHOLD_M)
+
+    @cached_property
+    def elevation_scale(self) -> AdaptiveScaleResult:
+        return result_scale(self, self.terrain_elevation_m, anchor_zero=False)
+
+    @cached_property
+    def speed_scale(self) -> AdaptiveScaleResult:
+        return result_speed_scale(self)
+
     @property
     def shape(self) -> tuple[int, int]:
         return (self.source_height_cells, self.source_width_cells)
@@ -130,11 +161,56 @@ class AdaptiveNormalizedArrays:
 ResultArrays = NormalizedArrays | AdaptiveNormalizedArrays
 
 
+def maximum_depth_location(arrays: ResultArrays, *, area: AnalysisArea) -> dict[str, float]:
+    """Locate the first deepest finite active native cell, never a display pixel."""
+    valid = arrays.active_mask & np.isfinite(arrays.max_depth_m)
+    if not np.any(valid):
+        return {}
+    index = int(np.argmax(np.where(valid, arrays.max_depth_m, -np.inf)))
+    if isinstance(arrays, AdaptiveNormalizedArrays):
+        row0, row1, col0, col1 = _adaptive_face_bounds(arrays, index)
+        row, col = (row0 + row1) / 2, (col0 + col1) / 2
+    else:
+        r, c = np.unravel_index(index, arrays.shape)
+        row, col = float(r) + 0.5, float(c) + 0.5
+    x = -area.width_m / 2 + col * area.width_m / arrays.shape[1]
+    y = -area.height_m / 2 + row * area.height_m / arrays.shape[0]
+    transformer = Transformer.from_crs(local_crs(area), CRS.from_epsg(4326), always_xy=True)
+    lon, lat = transformer.transform(x, y)
+    return {"global_max_lon_deg": float(lon), "global_max_lat_deg": float(lat)}
+
+
+def result_scale(arrays: ResultArrays, values: np.ndarray, **options: Any) -> AdaptiveScaleResult:
+    areas = arrays.face_source_overlap_area_m2 if isinstance(arrays, AdaptiveNormalizedArrays) else np.broadcast_to(arrays.grid_resolution_m, arrays.shape) ** 2
+    return generate_adaptive_breaks(np.where(arrays.active_mask, values, np.nan), areas, **options)
+
+
+def result_speed_scale(arrays: ResultArrays) -> AdaptiveScaleResult:
+    if arrays.velocity_u_mps is None or arrays.velocity_v_mps is None:
+        return generate_adaptive_breaks(np.array([]))
+    peak = np.full(arrays.velocity_u_mps.shape[1:], np.nan)
+    for index in range(arrays.velocity_u_mps.shape[0]):
+        speed = np.hypot(arrays.velocity_u_mps[index], arrays.velocity_v_mps[index])
+        if isinstance(arrays, AdaptiveNormalizedArrays):
+            wet = arrays.active_mask & (arrays.depth_time_m[index] > DISPLAY_DRY_THRESHOLD_M)
+        else:
+            stride = arrays.velocity_grid_stride
+            wet = arrays.active_mask[::stride, ::stride] & (arrays.depth_time_m[index, ::stride, ::stride] > DISPLAY_DRY_THRESHOLD_M)
+        peak = np.fmax(peak, np.where(wet & np.isfinite(speed), speed, np.nan))
+    if isinstance(arrays, AdaptiveNormalizedArrays):
+        areas = arrays.face_source_overlap_area_m2
+    else:
+        stride = arrays.velocity_grid_stride
+        cell_areas = np.broadcast_to(arrays.grid_resolution_m, arrays.shape) ** 2
+        areas = np.add.reduceat(np.add.reduceat(cell_areas, np.arange(0, arrays.shape[0], stride), axis=0), np.arange(0, arrays.shape[1], stride), axis=1)
+    return generate_adaptive_breaks(peak, areas, zero_epsilon=0.001)
+
+
 def depth_display_range(arrays: ResultArrays) -> tuple[float, float]:
     """Return one stable colour range for every depth frame of a result."""
     values = np.asarray(arrays.max_depth_m, dtype=np.float64)
     visible = np.asarray(arrays.active_mask, dtype=bool) & np.isfinite(values)
-    visible &= values >= DISPLAY_DRY_THRESHOLD_M
+    visible &= values > DISPLAY_DRY_THRESHOLD_M
     if not np.any(visible):
         return DISPLAY_DRY_THRESHOLD_M, DISPLAY_DRY_THRESHOLD_M
     minimum_m = float(np.min(values[visible]))
@@ -145,33 +221,25 @@ def depth_display_range(arrays: ResultArrays) -> tuple[float, float]:
 def depth_legend_metadata(
     minimum_m: float = DISPLAY_DRY_THRESHOLD_M,
     maximum_m: float = 1.0,
+    *,
+    scale: AdaptiveScaleResult | None = None,
 ) -> list[dict[str, Any]]:
-    """Return the fixed depth legend used by all result layers."""
     if not np.isfinite(minimum_m) or not np.isfinite(maximum_m) or maximum_m < minimum_m:
         raise ResultViewError("depth range is invalid")
-    return [band.to_metadata() for band in DEPTH_BANDS]
+    reference = scale or generate_adaptive_breaks(np.linspace(minimum_m, maximum_m, 100))
+    return scale_legend(reference, tuple(band.rgba for band in DEPTH_BANDS))
 
 
 def elevation_legend_metadata(
     minimum_m: float,
     maximum_m: float,
+    *,
+    scale: AdaptiveScaleResult | None = None,
 ) -> list[dict[str, Any]]:
-    if not np.isfinite(minimum_m) or not np.isfinite(maximum_m):
-        raise ResultViewError("terrain elevation range is not finite")
-    if maximum_m < minimum_m:
+    if not np.isfinite(minimum_m) or not np.isfinite(maximum_m) or maximum_m < minimum_m:
         raise ResultViewError("terrain elevation range is invalid")
-    edges = np.linspace(minimum_m, maximum_m, len(ELEVATION_COLORS) + 1)
-    if maximum_m == minimum_m:
-        edges = np.full(len(ELEVATION_COLORS) + 1, minimum_m, dtype=np.float64)
-    return [
-        {
-            "label": f"{edges[index]:.2f}–{edges[index + 1]:.2f} m",
-            "min_m": float(edges[index]),
-            "max_m": float(edges[index + 1]),
-            "color": "#{:02X}{:02X}{:02X}".format(*color[:3]),
-        }
-        for index, color in enumerate(ELEVATION_COLORS)
-    ]
+    reference = scale or generate_adaptive_breaks(np.linspace(minimum_m, maximum_m, 100), anchor_zero=False)
+    return scale_legend(reference, ELEVATION_COLORS)
 
 
 def terrain_elevation_range(arrays: ResultArrays) -> tuple[float, float]:
@@ -367,13 +435,14 @@ def _depth_rgba(
     *,
     minimum_m: float,
     maximum_m: float,
+    scale: AdaptiveScaleResult | None = None,
 ) -> np.ndarray:
     rgba = np.zeros((*values.shape, 4), dtype=np.uint8)
-    visible = active_mask & np.isfinite(values) & (values >= DISPLAY_DRY_THRESHOLD_M)
-    del minimum_m, maximum_m
-    for index, band in enumerate(DEPTH_BANDS):
-        upper_bound = np.ones(values.shape, dtype=bool) if band.maximum_m is None else values < band.maximum_m
-        rgba[visible & (values >= band.minimum_m) & upper_bound] = band.rgba
+    visible = active_mask & np.isfinite(values) & (values > DISPLAY_DRY_THRESHOLD_M)
+    reference = scale or generate_adaptive_breaks(values[visible], zero_epsilon=DISPLAY_DRY_THRESHOLD_M)
+    indices = color_indices(values, reference)
+    for index, band in enumerate(DEPTH_BANDS[:reference.class_count]):
+        rgba[visible & (indices == index)] = band.rgba
     return rgba
 
 
@@ -396,21 +465,20 @@ def _adaptive_depth_rgba(
     *,
     minimum_m: float,
     maximum_m: float,
+    scale: AdaptiveScaleResult | None = None,
 ) -> np.ndarray:
     if values.shape != arrays.max_depth_m.shape:
         raise ResultViewError("Adaptive face depth shape is inconsistent")
     rgba = np.zeros((*arrays.shape, 4), dtype=np.uint8)
-    del minimum_m, maximum_m
+    reference = scale or arrays.depth_scale
+    indices = color_indices(values, reference)
     for face_index, value in enumerate(values):
         if not arrays.active_mask[face_index] or not np.isfinite(value):
             continue
         depth = float(value)
-        if depth < DISPLAY_DRY_THRESHOLD_M:
+        if depth <= DISPLAY_DRY_THRESHOLD_M:
             continue
-        band_color = next(
-            band.rgba for band in DEPTH_BANDS
-            if band.maximum_m is None or depth < band.maximum_m
-        )
+        band_color = DEPTH_BANDS[int(indices[face_index])].rgba
         row0, row1, col0, col1 = _adaptive_face_bounds(arrays, face_index)
         if row1 > row0 and col1 > col0:
             rgba[row0:row1, col0:col1] = band_color
@@ -448,9 +516,9 @@ def _adaptive_resolution_rgba(arrays: AdaptiveNormalizedArrays) -> np.ndarray:
 def render_max_depth_png(arrays: ResultArrays, *, max_px: int = MAX_RENDER_PX) -> bytes:
     minimum_m, maximum_m = depth_display_range(arrays)
     rgba = (
-        _adaptive_depth_rgba(arrays, arrays.max_depth_m, minimum_m=minimum_m, maximum_m=maximum_m)
+        _adaptive_depth_rgba(arrays, arrays.max_depth_m, minimum_m=minimum_m, maximum_m=maximum_m, scale=arrays.depth_scale)
         if isinstance(arrays, AdaptiveNormalizedArrays)
-        else _depth_rgba(arrays.max_depth_m, arrays.active_mask, minimum_m=minimum_m, maximum_m=maximum_m)
+        else _depth_rgba(arrays.max_depth_m, arrays.active_mask, minimum_m=minimum_m, maximum_m=maximum_m, scale=arrays.depth_scale)
     )
     return _png_bytes(rgba, max_px=max_px, categorical=True)
 
@@ -466,9 +534,9 @@ def render_time_depth_png(
     values = arrays.depth_time_m[time_index]
     minimum_m, maximum_m = depth_display_range(arrays)
     rgba = (
-        _adaptive_depth_rgba(arrays, values, minimum_m=minimum_m, maximum_m=maximum_m)
+        _adaptive_depth_rgba(arrays, values, minimum_m=minimum_m, maximum_m=maximum_m, scale=arrays.depth_scale)
         if isinstance(arrays, AdaptiveNormalizedArrays)
-        else _depth_rgba(values, arrays.active_mask, minimum_m=minimum_m, maximum_m=maximum_m)
+        else _depth_rgba(values, arrays.active_mask, minimum_m=minimum_m, maximum_m=maximum_m, scale=arrays.depth_scale)
     )
     return _png_bytes(rgba, max_px=max_px, categorical=True)
 
@@ -494,26 +562,29 @@ def render_grid_resolution_png(
     return _png_bytes(rgba, max_px=max_px, categorical=True)
 
 
+def render_regular_grid_resolution_png(
+    active_mask: np.ndarray, resolution_m: float, *, max_px: int = MAX_RENDER_PX,
+) -> bytes:
+    rgba = np.zeros((*active_mask.shape, 4), dtype=np.uint8)
+    for level, color in GRID_RESOLUTION_COLORS.items():
+        if np.isclose(resolution_m, float(level)):
+            rgba[active_mask] = color
+    return _png_bytes(rgba, max_px=max_px, categorical=True)
+
+
 def render_terrain_elevation_png(
     arrays: ResultArrays,
     *,
     max_px: int = MAX_RENDER_PX,
 ) -> bytes:
-    minimum_m, maximum_m = terrain_elevation_range(arrays)
-
-    def color_index(elevation: float) -> int:
-        if maximum_m == minimum_m:
-            return 0
-        normalized = (elevation - minimum_m) / (maximum_m - minimum_m)
-        return min(len(ELEVATION_COLORS) - 1, max(0, int(normalized * len(ELEVATION_COLORS))))
-
+    indices = color_indices(arrays.terrain_elevation_m, arrays.elevation_scale)
     if isinstance(arrays, AdaptiveNormalizedArrays):
         rgba = np.zeros((*arrays.shape, 4), dtype=np.uint8)
         for index, elevation in enumerate(arrays.terrain_elevation_m):
             if not arrays.active_mask[index] or not np.isfinite(elevation):
                 continue
             row0, row1, col0, col1 = _adaptive_face_bounds(arrays, index)
-            rgba[row0:row1, col0:col1] = ELEVATION_COLORS[color_index(float(elevation))]
+            rgba[row0:row1, col0:col1] = ELEVATION_COLORS[int(indices[index])]
         return _png_bytes(rgba, max_px=max_px, categorical=True)
     return render_elevation_values_png(
         arrays.terrain_elevation_m,
@@ -535,24 +606,11 @@ def render_elevation_values_png(
     visible = active & np.isfinite(values)
     if not np.any(visible):
         raise ResultViewError("terrain elevation has no finite active values")
-    minimum_m = float(np.min(values[visible]))
-    maximum_m = float(np.max(values[visible]))
+    reference = generate_adaptive_breaks(values[visible], anchor_zero=False)
     rgba = np.zeros((*values.shape, 4), dtype=np.uint8)
-    if maximum_m == minimum_m:
-        rgba[visible] = ELEVATION_COLORS[0]
-    else:
-        normalized = np.where(
-            visible,
-            (values - minimum_m) / (maximum_m - minimum_m),
-            0.0,
-        )
-        indices = np.clip(
-            (normalized * len(ELEVATION_COLORS)).astype(np.int16),
-            0,
-            len(ELEVATION_COLORS) - 1,
-        )
-        for index, color in enumerate(ELEVATION_COLORS):
-            rgba[visible & (indices == index)] = color
+    indices = color_indices(values, reference)
+    for index, color in enumerate(ELEVATION_COLORS[:reference.class_count]):
+        rgba[visible & (indices == index)] = color
     return _png_bytes(rgba, max_px=max_px, categorical=True)
 
 
@@ -891,9 +949,9 @@ def inspect_native_point(
     if not (xmin <= x_m < xmax and ymin <= y_m < ymax):
         raise PointOutsideResult("point is outside result bounds")
 
-    row = int(np.floor(y_m - ymin))
-    col = int(np.floor(x_m - xmin))
     height, width = arrays.shape
+    row = int(np.floor((y_m - ymin) * height / area.height_m))
+    col = int(np.floor((x_m - xmin) * width / area.width_m))
     if row < 0 or row >= height or col < 0 or col >= width:
         raise PointOutsideResult("point is outside result grid")
 

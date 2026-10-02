@@ -4,8 +4,8 @@
 
 Windows版のダウンロードは、[最新版リリース](https://github.com/nobunora/urban-pluvial-flood-simulator/releases/latest)から行えます。
 
-- [サンプル5件入り Windows版（v0.1.19）](https://github.com/nobunora/urban-pluvial-flood-simulator/releases/download/v0.1.19/UrbanPluvialFloodSimulator-v0.1.19-windows-x64.zip)
-- [軽量 Windows版（v0.1.19、サンプルなし）](https://github.com/nobunora/urban-pluvial-flood-simulator/releases/download/v0.1.19/UrbanPluvialFloodSimulator-v0.1.19-windows-x64-no-samples.zip)
+- [サンプル5件入り Windows版（v0.1.20）](https://github.com/nobunora/urban-pluvial-flood-simulator/releases/download/v0.1.20/UrbanPluvialFloodSimulator-v0.1.20-windows-x64.zip)
+- [軽量 Windows版（v0.1.20、サンプルなし）](https://github.com/nobunora/urban-pluvial-flood-simulator/releases/download/v0.1.20/UrbanPluvialFloodSimulator-v0.1.20-windows-x64-no-samples.zip)
 
 国土地理院が公開している**1m級の数値標高モデル（DEM1A）**と基盤地図情報を使い、都市部に強い雨が降ったときに、水がどこへ流れ、どこに溜まるかを2次元で計算します。
 

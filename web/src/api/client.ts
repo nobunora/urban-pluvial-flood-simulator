@@ -148,9 +148,9 @@ export function resultLayerUrl(
     if (timeIndex === null) {
       throw new Error("timeIndex is required for time-dependent result layers");
     }
-    return `/api/v1/runs/${encodedRunId}/layers/${layer}.png?time_index=${timeIndex}`;
+    return `/api/v1/runs/${encodedRunId}/layers/${layer}.png?time_index=${timeIndex}&display_revision=adaptive-area-v1`;
   }
-  return `/api/v1/runs/${encodedRunId}/layers/${layer}.png`;
+  return `/api/v1/runs/${encodedRunId}/layers/${layer}.png?display_revision=adaptive-area-v1`;
 }
 
 
@@ -169,6 +169,7 @@ export function flowVectorsGeoJsonUrl(
 ): string {
   const params = new URLSearchParams({
     time_index: String(timeIndex),
+    display_revision: "adaptive-area-v1",
     west: String(viewport.west),
     south: String(viewport.south),
     east: String(viewport.east),
@@ -200,6 +201,7 @@ export type FlowVectorFeatureCollection = {
   metadata: {
     speed_unit: string;
     min_speed_mps: number;
+    speed_scale?: { breaks: number[]; boundary_labels?: string[]; class_count: number; mode: string };
     display_min_speed_mps?: number;
     display_max_speed_mps?: number;
     sample_stride_cells: number;

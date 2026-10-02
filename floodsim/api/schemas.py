@@ -268,6 +268,7 @@ class ResultMetadataResponse(BaseModel):
     cache_schema_revision: int | None = None
     max_depth_summary: dict[str, float]
     grid_level_summary: dict[str, int]
+    display_scales: dict[str, dict[str, Any]] = Field(default_factory=dict)
     depth_legend: list[ResultDepthLegendItem] = Field(default_factory=list)
     elevation_legend: list[ResultElevationLegendItem] = Field(default_factory=list)
     provider_summary: ResultProviderSummary = Field(default_factory=ResultProviderSummary)

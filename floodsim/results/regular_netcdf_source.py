@@ -9,8 +9,40 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
+from floodsim.results.adaptive_scale import (
+    AdaptiveScaleResult,
+    generate_adaptive_breaks,
+)
+
 DESCRIPTOR_SCHEMA = "regular-netcdf-source-v1"
 CACHE_SCHEMA_REVISION = 1
+
+
+def regular_speed_reference(
+    source: RegularNetcdfSource, *, model_dir: str | Path,
+) -> AdaptiveScaleResult:
+    """Area-weighted per-cell peak speed, scanning bounded spatial/time chunks."""
+    path = validate_source_identity(source, model_dir=model_dir)
+    histogram: dict[float, float] = {}
+    _, row_chunk, col_chunk = source.chunk_shape
+    with xr.open_dataset(path) as dataset:
+        if source.flow_vectors_available:
+            for row in range(0, source.height, row_chunk):
+                for col in range(0, source.width, col_chunk):
+                    window = {"n": slice(row, row + row_chunk), "m": slice(col, col + col_chunk)}
+                    active = np.asarray(dataset["msk"].isel(window).values) > 0
+                    peak = np.full(active.shape, np.nan)
+                    for time in range(len(source.time_values)):
+                        depth = np.asarray(dataset["h"].isel({"time": time, **window}).values)
+                        u = np.asarray(dataset["u"].isel({"time": time, **window}).values)
+                        v = np.asarray(dataset["v"].isel({"time": time, **window}).values)
+                        speed = np.hypot(u, v)
+                        wet = active & np.isfinite(depth) & (depth > 0.01) & np.isfinite(speed)
+                        peak = np.fmax(peak, np.where(wet, speed, np.nan))
+                    values, counts = np.unique(peak[np.isfinite(peak)], return_counts=True)
+                    for value, count in zip(values, counts, strict=True):
+                        histogram[float(value)] = histogram.get(float(value), 0.0) + float(count) * source.block_size_m ** 2
+    return generate_adaptive_breaks(np.array(list(histogram)), np.array(list(histogram.values())), zero_epsilon=0.001)
 
 
 class RegularNetcdfSourceError(RuntimeError):
@@ -189,6 +221,13 @@ def read_regular_window(
             msk = np.asarray(dataset["msk"].isel(n=rows, m=cols).values) > 0
             zb = np.asarray(dataset["zb"].isel(n=rows, m=cols).values, dtype=np.float32)
             hmax = np.asarray(dataset["hmax"].isel(n=rows, m=cols).max(dim="timemax", skipna=True).values, dtype=np.float32)
+            missing = msk & ~np.isfinite(hmax)
+            if np.any(missing):
+                reconstructed = np.full(hmax.shape, np.nan, dtype=np.float32)
+                for frame in range(len(descriptor.time_values)):
+                    sample = np.asarray(dataset["h"].isel(time=frame, n=rows, m=cols).values, dtype=np.float32)
+                    reconstructed = np.fmax(reconstructed, sample)
+                hmax[missing] = reconstructed[missing]
             result = {"depth": h, "active_mask": msk, "terrain": zb, "max_depth": hmax}
             if descriptor.flow_vectors_available:
                 result["u"] = np.asarray(dataset["u"].isel(time=time_index, n=rows, m=cols).values, dtype=np.float32)

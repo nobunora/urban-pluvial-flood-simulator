@@ -389,4 +389,6 @@ def test_full_1m_mask_is_the_default_adaptive_hard_boundary_source() -> None:
     zones = {int(value) for value in np.unique(full.adaptive_hard_boundary_zone)}
     assert 0 in zones  # building obstacle
     assert 1 in zones  # normal active Full 1 m cells
-    assert 3 in zones  # immutable analysis-domain edge
+    assert zones == {0, 1}  # buildings and active cells; rectangular limit is closed
+    np.testing.assert_array_equal(full.adaptive_hard_boundary_zone[[0, -1], :], 1)
+    np.testing.assert_array_equal(full.adaptive_hard_boundary_zone[:, [0, -1]], 1)

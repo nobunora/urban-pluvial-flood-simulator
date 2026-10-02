@@ -20,6 +20,7 @@ vi.mock("../api/client", async (importOriginal) => {
 vi.mock("./ResultMap", () => ({
   default: ({
     mapLabel,
+    focusPoint,
     imageUrl,
     flowVectorData,
     flowDisplayMode,
@@ -28,6 +29,7 @@ vi.mock("./ResultMap", () => ({
     onViewportChange,
   }: {
     mapLabel: string;
+    focusPoint?: { lon: number; lat: number } | null;
     imageUrl: string;
     flowVectorData: FlowVectorFeatureCollection | null;
     flowDisplayMode?: "vectors" | "particles" | null;
@@ -43,6 +45,7 @@ vi.mock("./ResultMap", () => ({
     return (
     <div
       data-testid="result-map"
+      data-focus-point={JSON.stringify(focusPoint)}
       data-image-url={imageUrl}
       data-flow-arrow-count={String(flowVectorData?.metadata.arrow_count ?? 0)}
       data-flow-time-index={String(flowVectorData?.features[0]?.properties.time_index ?? "")}
@@ -159,6 +162,26 @@ describe("ResultPanel", () => {
       configurable: true,
       value: null,
     });
+  });
+
+  it("focuses the global deepest cell and inspects it without changing the current time", async () => {
+    vi.mocked(inspectResult).mockResolvedValue({ has_data: false, lon_deg: 139.76, lat_deg: 35.66, row: 0, column: 0 } as Awaited<ReturnType<typeof inspectResult>>);
+    render(<ResultPanel runId="run-1" metadata={{ ...metadata, max_depth_summary: { ...metadata.max_depth_summary, global_max_lon_deg: 139.76, global_max_lat_deg: 35.66 } }} rainfallSummary="10 mm/h" onNewAnalysis={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "時刻別の浸水深" }));
+    fireEvent.click(screen.getByRole("button", { name: "次の時刻" }));
+    const button = screen.getByRole("button", { name: "最大深度箇所" });
+    expect(button.previousElementSibling).toHaveTextContent("時刻別の浸水深");
+    fireEvent.click(button);
+    await waitFor(() => expect(inspectResult).toHaveBeenCalledWith("run-1", 139.76, 35.66, 3, expect.any(AbortSignal)));
+    expect(screen.getByTestId("result-map")).toHaveAttribute("data-focus-point", JSON.stringify({ lon: 139.76, lat: 35.66 }));
+    expect(screen.getByRole("button", { name: "時刻別の浸水深" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(button);
+    expect(screen.getByTestId("result-map")).toHaveAttribute("data-focus-point", JSON.stringify({ lon: 139.76, lat: 35.66 }));
+  });
+
+  it("disables deepest-cell navigation when coordinates are unavailable", () => {
+    render(<ResultPanel runId="run-1" metadata={metadata} rainfallSummary="10 mm/h" onNewAnalysis={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "最大深度箇所" })).toBeDisabled();
   });
 
   it("does not enable flow vectors before the current map zoom is known", () => {
@@ -414,21 +437,21 @@ describe("ResultPanel", () => {
     expect(screen.getByText("現在: 00:00")).toBeVisible();
     expect(screen.getByTestId("result-map")).toHaveAttribute(
       "data-image-url",
-      "/api/v1/runs/run-1/layers/depth.png?time_index=0",
+      "/api/v1/runs/run-1/layers/depth.png?time_index=0&display_revision=adaptive-area-v1",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "次の時刻" }));
     expect(screen.getByText("現在: 00:30")).toBeVisible();
     expect(screen.getByTestId("result-map")).toHaveAttribute(
       "data-image-url",
-      "/api/v1/runs/run-1/layers/depth.png?time_index=3",
+      "/api/v1/runs/run-1/layers/depth.png?time_index=3&display_revision=adaptive-area-v1",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "計算格子" }));
     expect(screen.getByTestId("result-map")).toHaveTextContent("計算格子解像度の地図");
     expect(screen.getByTestId("result-map")).toHaveAttribute(
       "data-image-url",
-      "/api/v1/runs/run-1/layers/grid-resolution.png",
+      "/api/v1/runs/run-1/layers/grid-resolution.png?display_revision=adaptive-area-v1",
     );
     expect(screen.getByText("実計算格子: 1 m")).toBeVisible();
     expect(screen.getByText("32 m")).toBeVisible();
@@ -437,14 +460,18 @@ describe("ResultPanel", () => {
     expect(screen.getByTestId("result-map")).toHaveTextContent("標高の地図");
     expect(screen.getByTestId("result-map")).toHaveAttribute(
       "data-image-url",
-      "/api/v1/runs/run-1/layers/elevation.png",
+      "/api/v1/runs/run-1/layers/elevation.png?display_revision=adaptive-area-v1",
     );
     expect(screen.getByLabelText("標高の凡例")).toBeVisible();
     expect(screen.getByText("1.00–1.38 m")).toBeVisible();
     expect(screen.getByText("3.62–4.00 m")).toBeVisible();
   });
 
-  it("auto-selects the nearest output with visible flow and shows the separate speed legend", async () => {
+  it("selects the center maximum once and updates flow at the selected time", async () => {
+    vi.mocked(inspectResult).mockResolvedValue({
+      lon_deg: 139.75, lat_deg: 35.65, has_data: true,
+      max_time_index: 3, max_time_value: "2026-01-01T00:30:00",
+    } as Awaited<ReturnType<typeof inspectResult>>);
     const emptyFlow: FlowVectorFeatureCollection = {
       type: "FeatureCollection",
       features: [],
@@ -477,6 +504,7 @@ describe("ResultPanel", () => {
       }],
       metadata: {
         speed_unit: "m/s",
+        speed_scale: { breaks: [0, 0.001, 0.25, 0.5, 0.75, 1, 3, 100], class_count: 7, mode: "hybrid" },
         min_speed_mps: 0.001,
         sample_stride_cells: 8,
         arrow_length_m: 6.4,
@@ -504,7 +532,7 @@ describe("ResultPanel", () => {
     expect(screen.getByRole("button", { name: "時刻別の浸水深" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("result-map")).toHaveAttribute(
       "data-image-url",
-      "/api/v1/runs/run-1/layers/depth.png?time_index=3",
+      "/api/v1/runs/run-1/layers/depth.png?time_index=3&display_revision=adaptive-area-v1",
     );
     await waitFor(() => {
       expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-arrow-count", "1");
@@ -513,6 +541,8 @@ describe("ResultPanel", () => {
     expect(screen.getByLabelText("流速の凡例")).toBeVisible();
     expect(screen.getByLabelText("流速の凡例")).toHaveTextContent("0.001");
     expect(screen.getByLabelText("流速の凡例")).toHaveTextContent("m/s");
+    expect(screen.getByLabelText("流速の凡例")).toHaveTextContent("3–100 m/s");
+    expect(screen.getByLabelText("流速の凡例").querySelectorAll("i")).toHaveLength(7);
     expect(screen.getByText("矢印の向き: 流向 / 色: 流速")).toBeVisible();
     expect(screen.getByText("GeoJSON矢印: 1本")).toBeVisible();
     expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-display-mode", "vectors");
@@ -541,9 +571,24 @@ describe("ResultPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "流れベクトル" }));
     expect(screen.getByText("現在: 00:00")).toBeVisible();
 
+    fireEvent.change(screen.getByRole("slider", { name: "結果時刻" }), { target: { value: "1" } });
+    await waitFor(() => {
+      expect(screen.getByTestId("result-map")).toHaveAttribute("data-flow-time-index", "3");
+    });
+    expect(inspectResult).toHaveBeenCalledTimes(1);
+
     fireEvent.click(screen.getByRole("button", { name: "最大浸水深" }));
     expect(screen.getByRole("button", { name: "流れベクトル" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByTestId("result-map")).toHaveTextContent("最大浸水深の地図");
+  });
+
+  it("keeps the selected time when the timeline was already opened", async () => {
+    render(<ResultPanel runId="run-1" metadata={metadata} rainfallSummary="rain" onNewAnalysis={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "時刻別の浸水深" }));
+    fireEvent.click(screen.getByRole("button", { name: "粒子フロー" }));
+    await waitFor(() => expect(getFlowVectors).toHaveBeenCalled());
+    expect(screen.getByText("現在: 00:00")).toBeVisible();
+    expect(inspectResult).not.toHaveBeenCalled();
   });
 
   it("keeps layer controls and the timeline inside the fullscreen region", async () => {
@@ -568,7 +613,7 @@ describe("ResultPanel", () => {
       region.querySelectorAll('[aria-label="結果レイヤー"] button'),
       (button) => button.textContent?.trim(),
     );
-    expect(layerButtons).toEqual(["最大浸水深", "時刻別の浸水深", "流れベクトル", "粒子フロー", "計算格子", "標高"]);
+    expect(layerButtons).toEqual(["最大浸水深", "時刻別の浸水深", "最大深度箇所", "流れベクトル", "粒子フロー", "計算格子", "標高"]);
 
     fireEvent.click(screen.getByRole("button", { name: "地図を全画面表示" }));
     expect(requestFullscreen).toHaveBeenCalledTimes(1);
