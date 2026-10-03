@@ -33,7 +33,7 @@ Choose water magic, preview its placement and footprint on a real map, then simu
 - WM-01: preserve the exact baseline with tag `baseline/main-before-water-magic-2026-10-02`. Develop on `codex/water-magic-spec` in `C:/VSC/urban-pluvial-flood-simulator-water-magic`. This is a Git branch/worktree variant, not a separately created GitHub repository fork. The original checkout and main receive no feature edits. Subsequent main changes do not alter the recorded baseline.
 - WM-02: catalog entries require stable ID, revision, Japanese name, description, illustration reference, footprint kind, supported controls, defaults, bounds, quantity definition, duration and approximation notice. Candidate membership is captured in the source catalog below; executable membership and defaults require approval. Preserve estimated ranges and evidence categories instead of treating the discussion as official game specifications.
 - WM-03: selecting a spell initially places its anchor at the current visible map center. Persist that location; panning/zooming must not silently move it. Provide explicit “place at map center” and position adjustment. Analysis-domain geometry and casting geometry are separate.
-- WM-04: render a decorative magic illustration and the actual injection footprint as distinct map layers. Illustration scale cannot determine injection area. Keep terrain and analysis boundary visible. Show a direction arrow where applicable. A simple symbolic illustration is allowed when an asset is unavailable, with an accessible text label.
+- WM-04: render a per-spell animated GIF overlay and the actual injection footprint as distinct map layers. Obtain visually similar GIFs from the Web; exact game footage is optional and opaque backgrounds are acceptable. Illustration scale cannot determine injection area. Keep terrain and analysis boundary visible. Show a direction arrow where applicable. A simple symbolic illustration is allowed when an asset is unavailable, with an accessible text label. The GIF overlay requirements below govern acquisition, display and acceptance.
 - WM-05: shape controls must have numeric equivalents: disk radius; sector radius/opening angle/bearing; oriented rectangle length/width/bearing; polygon vertex edit/undo/reset. These are supported geometry proposals, not a confirmed spell list. Show only controls applicable to the selected spell. Distances use metres; bearing is clockwise from true north, independent of map rotation. A rectangle starts at its anchor and extends along its bearing, centered across its width.
 - WM-06: display total injected volume in m³, duration in seconds, average discharge in m³/s, effective injection area in m² and equivalent source depth/rate. A catalog expressed as a rate must resolve to a volume before execution; volume is not silently scaled when footprint changes.
 - WM-07: use nonnegative, spatially local forcing; zero outside the injection support and after casting ends. Do not approximate local forcing by a domain-wide average. Initial time profile is constant discharge over `[0, T_cast)`; later profiles require explicit normalized definitions.
@@ -42,6 +42,8 @@ Choose water magic, preview its placement and footprint on a real map, then simu
 - WM-10: in results distinguish casting from relaxation, keep the footprint available as a toggle, and reuse native depth/velocity/timeline/point inspection. Maximum results cover the entire simulation. Never depict preview artwork as calculated inundation.
 - WM-11: persist catalog revision, resolved values, coordinates/CRS, geometry, forcing profile/hash, source-volume report, baseline, grid and engine provenance. Imported magic runs restore placement without substituting current defaults. Legacy rain archives remain identified as rain results.
 - WM-12: short spells require a new verified forcing/output-time policy. Preserve observations at start, casting end and simulation end, and enough samples during casting to resolve its effect. Any engine quantization must be displayed before execution; do not silently round a subminute spell to one minute.
+- WM-13: all 16 catalog entries require an explicit GIF asset assignment and representative still. Similar generic animations may be shared across spells with an explicit mapping; the same character name alone is not evidence of visual suitability. Reference-only spells may still preview their GIF while analysis remains disabled.
+- WM-14: GIF playback is decorative, independent of hydraulic time, duration, volume and geometry. Provide show/hide and play/stop controls; stop uses the representative still, not CSS animation pause on an animated `<img>`. Reduced-motion preference starts on the still. Do not claim GIF frame seeking or simulation-time synchronization in the initial version.
 
 ## Affected Interfaces / Contracts
 
@@ -105,6 +107,8 @@ Time discretization must conserve the prescribed source volume across casting cu
 - AC-06: disk, directional sector/rectangle and partial-cell fixtures prove area/rotation; invalid/outside/ineligible cases prove rejection or explicit routing disclosure. Engine-backed runs show terrain-driven spreading and no unintended relaxation injection.
 - AC-07: a proposed short-duration fixture (5 seconds casting plus 60 seconds relaxation) observes casting end and subsequent spread without minute rounding; if unsupported, this blocks Ready and requires revising capability/scope.
 - AC-08: export/import reproduces resolved placement, quantity, durations and catalog revision. Legacy rain results retain their identity. Native depth/velocity inspection and all existing retained result controls remain functional.
+- AC-09: every catalog entry resolves to a packaged GIF and still with traceable source, suitability review, attribution/redistribution status and file metadata. Test one opaque-background asset and all shape categories. Local packaged GIF previews work without contacting their original host; online basemap/provider availability is a separate concern.
+- AC-10: browser flows prove selection/replacement, center placement, pan/zoom retention, direction adjustment, opacity/size, show/hide, play/stop, reduced motion, missing/invalid asset fallback and unobstructed map gestures. At most one selected GIF animates; animation cannot alter forcing or result state. GIF preview is not advertised as accepted until assets and these checks exist.
 
 ## Validation
 
@@ -122,6 +126,7 @@ Before implementation acceptance: applicable independent quality checks before f
 - [ ] Engine localization, cutoff, output times and volume acceptance are demonstrated.
 - [ ] Repository review resolves schema/UI/result compatibility and defines implementation tasks.
 - [ ] User review accepts the resulting contract; then status may become Ready.
+- [ ] Per-spell GIF assignments, redistribution evidence, packaged assets/stills and browser acceptance are complete before feature acceptance.
 
 Creating this draft completes the present documentation task; the checklist describes future implementation readiness.
 
@@ -172,3 +177,59 @@ The same conversation supplies area-based equivalent depth. Recompute it from th
 For a source range `[V_min,V_max]` and independently variable area `[A_min,A_max]`, the bounding depth range is `[1000*V_min/A_max,1000*V_max/A_min]`; do not imply endpoints are correlated or precise. Approximate geometry and water volume remain separate uncertainty fields. Do not select a midpoint automatically as an approved preset or interpret estimate ranges as numerical safety limits.
 
 Conversion checks for eventual tests: GW2 `V=0.039 m³,A=468 m²,T=6 s` gives `h≈0.08333 mm,Q=6.5 L/s`; BG3 `V=0.25 m³,r=4 m` gives `h≈4.97359 mm`; Neuvillette `V=60 m³,A=4 m²,T=3 s` gives `h_eq=15000 mm,Q=20000 L/s`, explicitly not a predicted 15 m flood depth. Retain full precision internally and round display only.
+
+## Per-spell GIF Overlay
+
+Added 2026-10-03 JST by user request. This iteration adds specification and Web-discovered candidates, not downloaded binary assets or implemented UI. Exact game footage and transparent cutouts are not required. Candidates are discovery leads; title/page availability does not prove animation quality or permission to redistribute.
+
+### Display and lifecycle
+
+Place the selected GIF at the persisted spell anchor (initially current visible map center). Use a screen-sized image marker/card, default longest edge 240 CSS px, adjustable 120–480 px, default opacity 0.65, adjustable 0.2–1.0, preserving aspect ratio with `contain`. Keep the visible image within available viewport space on small screens. An opaque rectangular background is valid; background removal, chroma key and blend modes are not prerequisites. Label the overlay as an illustrative animation and show the spell name.
+
+The GIF remains anchored while panning/zooming but its screen dimensions are independent of metre-based injection geometry. Render the actual footprint and direction arrow above the GIF. Decorative image content does not consume pointer/touch gestures; controls live in the setup panel. Directional artwork may rotate only when its manifest declares an actual forward axis; otherwise keep the GIF upright and rotate the authoritative footprint/arrow. Do not guess a GIF's direction from its filename.
+
+Selection starts looping the chosen GIF unless reduced motion or the user's stopped state applies; replacing a spell disposes of the prior image. The default is animation visible in setup; starting analysis stops it to a still, preserving the footprint. Result view defaults the GIF off and allows an explicitly decorative preview toggle. Do not tie its loop count to supplied water or use its native animation length as `T_cast`. No audio, autoplay of an entire gallery, or retained hidden GIF decoder after hide/replace. Show/hide removes the animated element; play/stop swaps GIF/still resources. This permits reliable stopping without adding a frame decoder dependency.
+
+### Acquisition and persistence
+
+Prefer downloadable GIFs whose recorded conditions permit bundling in the application. Search the Web for each spell's effect family (rain, wave, flood, water sphere, water body, beam or vortex); a generic similar clip is acceptable and must be labelled as such. Shared clips reduce package size but each spell has an explicit assignment. Do not package external embed scripts/iframes or make the deployed preview depend on a third-party GIF host.
+
+Proposed asset location: `web/public/magic-gifs/`, manifest alongside it; exact schema/API naming requires repository review. Each record carries asset ID/revision, spell IDs, source detail-page URL, original media URL, creator/credit, acquisition date, recorded license/permission, permitted redistribution, local GIF/still paths, SHA-256, bytes, dimensions, frame count/loop duration, opaque/transparent background, optional forward axis and suitability status. Preserve required credits in application credits and release materials. A site's availability is not a redistribution grant; unresolved permission remains candidate-only and prompts a similar distributable replacement.
+
+Initial asset budget proposal: packaged longest edge <=640 px, <=10 MiB per GIF, <=60 MiB unique GIF total, with one selected animation decoded at a time. Verify actual frame count, decode cost and Windows/browser memory before approving the budget. Preserve the original source and conversion settings if optimizing; derivative permission must cover optimization. Do not silently replace a requested GIF with MP4/WebM. A page exposing only video remains a candidate until lawful GIF acquisition/conversion is verified. The original rain GIF below fits the per-file byte budget but still needs display/performance review.
+
+Loading/download failure, corrupt media or missing packaged file uses the still or labelled symbol without blocking analysis. The network timeout cannot leave a blocking spinner. Exported runs save the asset ID/revision, not executable embed code; archives may resolve to a fallback if their asset is unavailable.
+
+### Web-discovered candidate references
+
+| Ref | Detail page | Proposed effect | Evidence / unresolved work |
+| --- | --- | --- | --- |
+| G-R | [Rain 2.gif, Shisma](https://commons.wikimedia.org/wiki/File:Rain_2.gif) | Rain with visible natural background | Page identifies GIF, 640×480, 36 frames, 2.7 s, 9,725,792 bytes and CC0; download/visual review pending |
+| G-W | [FF16 Leviathan](https://tenor.com/view/ff16-ff16-leviathan-leviathan-gif-14897385901495178633) | Large water/summon candidate | Page describes a creature in water, 470×266, 9.3 s; verify it actually shows a useful wave, otherwise replace; redistribution unresolved |
+| G-B | [Shape Water / Water Ball](https://tenor.com/view/shape-water-water-ball-magic-gif-11983037) | Water-sphere / magic body proxy | Page offers GIF, 498×249, 2 s; review motion and redistribution, not an exact spell depiction |
+| G-V | [Blackhole / Whirlpool / Water](https://tenor.com/view/blackhole-whirlpool-black-hole-water-gif-5915936) | Water vortex proxy | Page describes water at a circular opening, 498×280, 3.9 s; suitability/redistribution pending |
+| G-J | [Neuvillette / Abyssal Current](https://gifs.alphacoders.com/gifs/view/220968) | Directional water-stream candidate | Detail page exists; verify GIF bytes, actual beam action, direction and redistribution before adoption |
+| G-F | [Water Magic, Hempions](https://giphy.com/gifs/magic-stoptime-hempions-jnVfGp2ThvvYz7YBYx) | Waterfall/flood-flow proxy | Page tags water/magic/waterfall; review actual frames, download format and redistribution |
+
+Metadata above is discovery evidence from 2026-10-03, not a substitute for validating acquired files. Avoid assigning unrelated character/reaction GIFs just because search matches a spell name.
+
+| Spell ID | Candidate ref | Intended appearance / caveat |
+| --- | --- | --- |
+| ff3-tsunami | G-W | Large wave candidate; replace if clip only depicts a summon |
+| warcraft1-elemental | G-B | Temporary water-body proxy; prefer a humanoid water animation |
+| chrono-water2 | G-F | Flood-flow proxy |
+| ff7-tidalwave | G-W | Wave proxy from another game; not labelled as FFVII footage |
+| ro-waterball5 | G-B | Sphere proxy; not an assertion of 25 visual projectiles |
+| warcraft3-elemental | G-B | Temporary water-body proxy; prefer humanoid water |
+| tales-tidalwave | G-F | Flood-flow proxy |
+| gw2-healingrain | G-R | Rain proxy with background |
+| lol-nami-wave | G-W | Wave proxy; numeric direction comes from the footprint |
+| dos2-rain | G-R | Rain proxy |
+| kh3-waterga | G-B | Water-sphere proxy |
+| genshin-mona | G-B | Temporary water-body proxy; seek flowing water-film motion |
+| genshin-neuvillette | G-J | Beam candidate; confirm correct action rather than idle animation |
+| forspoken-cataract | G-V | Water-vortex proxy |
+| bg3-createwater | G-R | Rain proxy; independent of Wet status duration |
+| wow-elemental | G-B | Temporary water-body proxy; prefer humanoid water |
+
+The table is an acquisition worklist covering every spell, not final artwork approval. Replace unsuitable candidates before acceptance; shared placeholders cannot be presented as completed per-spell visual verification. Reference-only physics status does not prevent an illustrative GIF preview.
